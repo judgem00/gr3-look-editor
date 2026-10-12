@@ -197,7 +197,10 @@
     <section class="tab" data-tab="export" hidden>
       <h3 data-i18n="your_look">Your look</h3>
       <ul class="changes" id="changes"></ul>
-      <button class="btn primary wide" id="export" data-i18n="create_update">Create update file</button>
+      <p class="note warn" data-i18n="risk"></p>
+      <label class="check"><input type="checkbox" id="risk-ok">
+        <span data-i18n="risk_ok">I understand the risk and flash the file at my own responsibility.</span></label>
+      <button class="btn primary wide" id="export" data-i18n="create_update" disabled>Create update file</button>
       <p class="note" id="export-msg"></p>
 
       <div class="downloads" id="downloads" hidden>
@@ -213,7 +216,6 @@
         <li data-i18n-html="flash_4"></li>
         <li data-i18n-html="flash_5"></li>
       </ol>
-      <p class="note warn" data-i18n="risk"></p>
 
       <h3 data-i18n="load_preset">Load preset</h3>
       <label class="btn">

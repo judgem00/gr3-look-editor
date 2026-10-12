@@ -571,6 +571,8 @@ $("reset").onclick = () => {
   update();
 };
 
+$("risk-ok").onchange = e => { $("export").disabled = !e.target.checked; };
+
 $("export").onclick = async () => {
   const matrices = {};
   for (const l of state.fw.looks) if (isChanged(l.name)) matrices[l.name] = effective(l.name);
