@@ -312,3 +312,56 @@ fn graded_channels(curves: &[Vec<i64>], grades: &Value) -> Vec<Vec<i64>> {
     }
     out
 }
+
+/// what the preview needs from one DNG
+pub struct Prepared {
+    pub meta: Value,
+    /// oriented linear RGB, f32
+    pub linear: Vec<f32>,
+    /// the camera JPEG, resized to the preview and oriented, RGBA
+    pub camera: Option<Vec<u8>>,
+}
+
+impl Session {
+    /// POST /api/dng, after the browser decoded the embedded JPEG to RGBA at
+    /// the size of the (unoriented) preview: meta, linear image, camera image
+    pub fn prepare_shot(&self, shot: &crate::dng::Shot, camera_rgba: Option<&[u8]>, filename: &str) -> Result<Prepared, String> {
+        use crate::{dng, fit};
+        let tone_label = shot.image_tone.and_then(looks::image_tone_look);
+        let shot_look = tone_label.map(|t| t.1);
+        let camera: Option<Vec<f32>> = camera_rgba
+            .filter(|c| c.len() == shot.width * shot.height * 4)
+            .map(|c| c.chunks_exact(4).flat_map(|p| [p[0], p[1], p[2]]).map(|v| v as f32 / 255.0).collect());
+
+        let (mut gain, mut scale, mut residual) = (0x1800, 4000.0, None);
+        if let Some(cam) = &camera {
+            let all = looks::looks(&self.fw);
+            let name = shot_look.unwrap_or("Standard");
+            let r = all.iter().find(|l| l["name"] == name).unwrap();
+            let sat_setting = if name == "CrossProcess" { 0 } else {
+                shot.params.iter().find(|p| p.0 == "saturation").map(|p| p.1).unwrap_or(0)
+            };
+            let sat: Vec<f64> = serde_json::from_value(r["sat_matrices"][(sat_setting + 4).clamp(0, 8) as usize].clone()).unwrap();
+            let m: Vec<f64> = serde_json::from_value(r["matrix"].clone()).unwrap();
+            let look: Vec<f64> = (0..9).map(|k| (0..3).map(|j| sat[3 * (k / 3) + j] * m[3 * j + k % 3]).sum()).collect();
+            let rendered = fit::render_linear(&shot.linear, shot.wb, &looks::sensor_ccm(&self.fw), &look,
+                                              r["mono_mix"].as_bool().unwrap_or(false));
+            let engine = Engine::new(&self.fw, &[]);
+            let curve = |g: i32| engine.curve(&self.fw, fit::tone_params(&shot.params, g));
+            let (g, s, res) = fit::fit_camera_tone(&rendered, cam, &curve)?;
+            (gain, scale, residual) = (g, s, Some(res));
+        }
+        let (linear, w, h) = dng::orient(&shot.linear, shot.width, shot.height, 3, shot.flip);
+        let camera = camera_rgba
+            .filter(|c| c.len() == shot.width * shot.height * 4)
+            .map(|c| dng::orient(c, shot.width, shot.height, 4, shot.flip).0);
+        let params: Map<String, Value> = shot.params.iter().map(|(k, v)| (k.to_string(), json!(v))).collect();
+        let meta = json!({
+            "width": w, "height": h, "wb": shot.wb, "model": shot.model,
+            "image_tone": tone_label.map(|t| t.0), "shot_look": shot_look,
+            "params": params, "gain": gain, "scale": scale, "residual": residual,
+            "filename": filename,
+        });
+        Ok(Prepared { meta, linear, camera })
+    }
+}

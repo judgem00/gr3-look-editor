@@ -8,6 +8,8 @@ publish = false
 
 [lib]
 crate-type = ["cdylib", "rlib"]
+# the doc comments hold format diagrams, not examples
+doctest = false
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }

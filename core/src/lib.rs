@@ -5,6 +5,8 @@
 pub mod addr;
 pub mod arm;
 pub mod chan;
+pub mod dng;
+pub mod fit;
 pub mod gamma;
 pub mod grfw;
 pub mod looks;

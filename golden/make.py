@@ -20,6 +20,7 @@ sys.path.insert(0, os.path.join(REPO, "fwpack"))
 import chancurves  # noqa: E402
 import firmware as fwmod  # noqa: E402
 import fwgamma  # noqa: E402
+import rawimage  # noqa: E402
 import server  # noqa: E402
 
 OUT = os.path.join(REPO, "work", "golden")
@@ -158,6 +159,10 @@ def main():
         if cam.status_code == 200:
             with open(os.path.join(OUT, stem + ".camera.jpg"), "wb") as f:
                 f.write(cam.get_data())
+        # the camera JPEG as the fit saw it: resized to the preview, not yet oriented
+        cam = rawimage.load(path)["camera"]
+        if cam is not None:
+            np.round(cam * 255).astype(np.uint8).tofile(os.path.join(OUT, stem + ".cam.u8"))
         gold["dng"].append({"path": os.path.abspath(path), "stem": stem, "meta": meta})
 
     with open(os.path.join(OUT, "golden.json"), "w") as f:
