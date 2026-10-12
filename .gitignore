@@ -13,3 +13,5 @@ unpackedFW*
 __pycache__/
 *.pyc
 .DS_Store
+# rust
+core/target/
