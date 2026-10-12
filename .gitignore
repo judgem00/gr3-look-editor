@@ -15,3 +15,5 @@ __pycache__/
 .DS_Store
 # rust
 core/target/
+editor/static/_local/
+editor/static/pkg/

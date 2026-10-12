@@ -256,3 +256,19 @@ aside:not([data-tab="color"]) #shared-note { display: none; }
 #other-looks select { margin-top: 6px; }
 .seg.rgb button:first-child { color: var(--text); }
 .seg.lang button { padding: 5px 9px; font-size: 12px; font-weight: 600; }
+
+/* ---- firmware screen (web version) ------------------------------------------ */
+.gate {
+  position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 16px;
+  background: rgba(10, 11, 12, .92);
+}
+.gate[hidden] { display: none; }
+.gate-box {
+  width: min(520px, 100%); padding: 22px 24px; border: 1px dashed #4a4d52; border-radius: 10px;
+  background: var(--panel); display: grid; gap: 10px;
+}
+.gate.drag .gate-box { border-color: var(--accent); background: rgba(232,176,74,.07); }
+.gate.busy .gate-box { opacity: .75; cursor: progress; }
+.gate h2 { margin: 0; font-size: 18px; }
+.gate p { margin: 0; }
+.gate a { color: var(--accent); }

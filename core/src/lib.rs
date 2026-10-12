@@ -12,3 +12,4 @@ pub mod grfw;
 pub mod looks;
 pub mod session;
 pub mod tone;
+pub mod wasm;

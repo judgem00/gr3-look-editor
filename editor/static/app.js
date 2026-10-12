@@ -424,7 +424,7 @@ function renderInherit() {
 
 async function setBase(source) {
   if (source === baseOf()) return;
-  const res = await fetch("/api/inherit", {
+  const res = await api("/api/inherit", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ target: CROSS, source }),
@@ -576,7 +576,7 @@ $("export").onclick = async () => {
   for (const l of state.fw.looks) if (isChanged(l.name)) matrices[l.name] = effective(l.name);
   $("export-msg").className = "note";
   $("export-msg").textContent = t("creating");
-  const res = await fetch("/api/export", {
+  const res = await api("/api/export", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -593,8 +593,8 @@ $("export").onclick = async () => {
   if (res.ok) {
     const r = await res.json();
     $("export-msg").className = "note ok";
-    $("export-msg").textContent = r.update_file
-      ? t("done", { path: r.update_file })
+    $("export-msg").textContent = r.web ? t("done_web")
+      : r.update_file ? t("done", { path: r.update_file })
       : t("written", { path: r.written });
     state.lastExport = exportKey();
     offerDownloads(r.downloads || {}, r.update_file);
@@ -610,7 +610,7 @@ function offerDownloads(urls, updateFile) {
   const set = (id, url, name) => {
     const a = $(id);
     a.hidden = !url;
-    if (url) { a.href = `${url}?t=${stamp}`; a.download = name || ""; }
+    if (url) { a.href = url.startsWith("blob:") ? url : `${url}?t=${stamp}`; a.download = name || ""; }
   };
   set("dl-update", urls.update, updateFile && updateFile.split("/").pop());
   set("dl-preset", urls.preset, t("preset_name"));
@@ -620,8 +620,8 @@ function offerDownloads(urls, updateFile) {
 }
 
 async function errorText(res) {
-  const t = await res.text();
-  const m = t.match(/<p>(.*?)<\/p>/s);
+  const body = await res.text();
+  const m = body.match(/<p>(.*?)<\/p>/s);
   return m ? m[1] : t("error", { status: res.status });
 }
 
@@ -632,7 +632,7 @@ async function loadDng(file) {
   try {
     const fd = new FormData();
     fd.append("file", file);
-    const res = await fetch("/api/dng", { method: "POST", body: fd });
+    const res = await api("/api/dng", { method: "POST", body: fd });
     if (!res.ok) throw new Error(await errorText(res));
     await show(await res.json());
   } catch (err) {
@@ -643,7 +643,7 @@ async function loadDng(file) {
 }
 
 async function show(meta) {
-  const lin = new Float32Array(await (await fetch("/api/dng/linear")).arrayBuffer());
+  const lin = new Float32Array(await (await api("/api/dng/linear")).arrayBuffer());
 
   canvas.width = meta.width;
   canvas.height = meta.height;
@@ -654,7 +654,7 @@ async function show(meta) {
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, 256, 1, 0, gl.RED, gl.FLOAT, res));
 
   let cam = null;
-  const camRes = await fetch("/api/dng/camera.jpg");
+  const camRes = await api("/api/dng/camera.jpg");
   if (camRes.ok) cam = await createImageBitmap(await camRes.blob());
   tex.cam = texture(2, () => {
     if (cam) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, cam);
@@ -760,7 +760,7 @@ function requestTone() {
 async function fetchTone() {
   const edits = {};
   for (const [idx, e] of Object.entries(state.chan.edits)) edits[idx] = { base: e.base, points: e.points };
-  const res = await fetch("/api/tone", {
+  const res = await api("/api/tone", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -1061,7 +1061,7 @@ async function loadPreset(file) {
     for (const target of targets) {
       const source = inherit[target] || null;
       if (((state.fw.inherit || {})[target] || null) === source) continue;
-      const res = await fetch("/api/inherit", {
+      const res = await api("/api/inherit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ target, source }),
@@ -1315,7 +1315,7 @@ wrap.addEventListener("drop", (e) => {
 (async () => {
   try {
     initGL();
-    state.fw = await (await fetch("/api/firmware")).json();
+    state.fw = await (await api("/api/firmware")).json();
     for (const l of state.fw.looks) state.looks[l.name] = l;
     state.current = INHERIT_TARGET;
     const build = state.fw.path.split("/").slice(-2, -1)[0] || "";
@@ -1330,7 +1330,7 @@ wrap.addEventListener("drop", (e) => {
     renderWheels();
     update();
     await fetchTone();
-    const pre = await fetch("/api/dng");
+    const pre = await api("/api/dng");
     if (pre.status === 200) await show(await pre.json());
     const tab = store.get("tab");
     if (tab && document.querySelector(`#tabs [data-tab="${tab}"]`)) showTab(tab);

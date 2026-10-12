@@ -4,6 +4,17 @@
 
 const I18N = {
   en: {
+    // firmware screen (web version)
+    gate_title: "Load the camera firmware",
+    gate_text: "The editor builds your look into Ricoh's official update file for the GR III, <b>version 2.10</b> (<code>fwdc239b.bin</code>). Drop that file here.",
+    gate_pick: "Choose firmware file …",
+    gate_drop: "… or drop it onto this window.",
+    gate_where: "Not at hand? Download it from <a href=\"https://www.ricoh-imaging.co.jp/english/products/gr-3/firmup/index.html\" target=\"_blank\" rel=\"noopener\">Ricoh's firmware page</a>.",
+    gate_local: "Everything runs in your browser. The firmware and your photos are not uploaded anywhere.",
+    gate_unofficial: "Unofficial project, not affiliated with or endorsed by Ricoh Imaging. Flashing modified firmware is at your own risk.",
+    gate_checking: "Checking and unpacking the firmware …",
+    gate_error: "This file cannot be used: {msg}",
+    done_web: "Done. The update file was checked (checksums ok) and is ready to download.",
     // header
     loading_fw: "Loading firmware …",
     help_open: "How it works",
@@ -126,6 +137,17 @@ const I18N = {
   },
 
   de: {
+    // Firmware-Bildschirm (Web-Version)
+    gate_title: "Kamera-Firmware laden",
+    gate_text: "Der Editor baut deinen Look in Ricohs offizielle Update-Datei für die GR III ein, <b>Version 2.10</b> (<code>fwdc239b.bin</code>). Zieh diese Datei hier hinein.",
+    gate_pick: "Firmware-Datei wählen …",
+    gate_drop: "… oder auf dieses Fenster ziehen.",
+    gate_where: "Nicht zur Hand? Du bekommst sie auf <a href=\"https://www.ricoh-imaging.co.jp/english/products/gr-3/firmup/index.html\" target=\"_blank\" rel=\"noopener\">Ricohs Firmware-Seite</a>.",
+    gate_local: "Alles läuft in deinem Browser. Firmware und Fotos werden nirgendwohin hochgeladen.",
+    gate_unofficial: "Inoffizielles Projekt, nicht mit Ricoh Imaging verbunden. Das Aufspielen veränderter Firmware geschieht auf eigenes Risiko.",
+    gate_checking: "Prüfe und entpacke die Firmware …",
+    gate_error: "Diese Datei passt nicht: {msg}",
+    done_web: "Fertig. Die Update-Datei wurde geprüft (Prüfsummen ok) und steht zum Download bereit.",
     loading_fw: "Firmware wird geladen …",
     help_open: "So funktioniert's",
     open_photo: "Foto öffnen",
