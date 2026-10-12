@@ -8,7 +8,7 @@ made it.
 The editor shows a live preview on one of your own GR III DNGs. It renders
 the photo the way the camera does: white balance, sensor matrix, look
 matrix, saturation and hue, and the tone curve. The tone curve is computed
-by running the camera's own tone-curve code in a CPU emulator. When you
+by running the camera's own tone-curve code in an ARM interpreter. When you
 export, the editor patches a copy of the firmware image and repacks it into
 `FWDC239B.BIN`, with all checksums recomputed.
 
@@ -60,6 +60,25 @@ read from the file you provide, on your machine.
 
 ## Usage
 
+### In the browser
+
+Open the editor's web page and drop Ricoh's update file `fwdc239b.bin`
+onto it, then a DNG. Everything runs in your browser as WebAssembly: the
+firmware and your photos are not uploaded anywhere. **Create update file**
+on the Export tab gives you `FWDC239B.BIN` to download.
+
+The page is plain static files (`editor/static`), published with GitHub
+Pages by [`.github/workflows/pages.yml`](.github/workflows/pages.yml). To
+run it locally, build the core and serve the folder:
+
+```sh
+wasm-pack build core --release --target web --out-dir ../editor/static/pkg --no-typescript --no-pack
+python3 -m http.server 8790 --directory editor/static
+```
+
+### With Python on your machine
+
+The same interface, with a local Python server doing the work.
 Requirements: Python 3.10+, optionally `exiftool`. If installed, the editor
 uses it to read the look and slider settings of the photo you open.
 
@@ -94,6 +113,27 @@ The interface is in English or German (switch top right).
 ./fw-pack.py check fwdc239b.bin
 ./fw-pack.py pack fwdc239b.bin work/fwdc239b/unpackedFW-looks -o work/fwdc239b/FWDC239B.BIN
 ```
+
+## Development
+
+The browser version runs a Rust port of the server (`core/`) compiled to
+WebAssembly; `editor/static/bridge.js` sends the page's `/api/…` requests
+either to `editor/server.py` or, when no server answers, to that core in a
+web worker. The camera's tone-curve code runs in a small ARM interpreter
+(`core/src/arm.rs`) instead of Unicorn.
+
+The port is checked against the Python editor. `golden/make.py` records
+the Python editor's answers for a set of requests, photos and 7261
+tone-curve cases into `work/golden/`; the Rust tests must reproduce them,
+the update files byte for byte:
+
+```sh
+.venv/bin/python golden/make.py --update fwdc239b.bin --dng a.DNG b.DNG
+cp fwdc239b.bin work/
+cargo test --release --manifest-path core/Cargo.toml
+```
+
+Without that data (as on CI) those tests skip.
 
 ## Documentation
 
