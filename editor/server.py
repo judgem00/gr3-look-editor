@@ -199,8 +199,8 @@ def export():
     points = tone.get("points") or [[0, 0], [1, 1]]
     tone_changed = not toneedit.is_identity(points)
     channels = {int(k): v for k, v in (body.get("channels") or {}).items()}
-    if not matrices and not tone_changed and not channels and not state["inherit"]:
-        abort(400, "nothing changed")
+    # even without edits the export is a new look: Cross Process with linear
+    # curves and its own matrix
     # default next to the input, which keeps the 60 MB image out of git
     default = os.path.join(os.path.dirname(state["fw"].path), "unpackedFW-looks")
     out = os.path.abspath(os.path.join(REPO, body.get("output") or default))
@@ -312,7 +312,13 @@ def main():
     args = ap.parse_args()
 
     firmware = unpack(os.path.abspath(args.update))
-    state["base_fw"] = state["fw"] = fwmod.Firmware(firmware)
+    # Cross Process is the user's look: its channel curves start linear (no
+    # cross-processing), and it gets a colour matrix of its own
+    with open(firmware, "rb") as f:
+        stock = f.read()
+    linear = chancurves.write(stock, {i: chancurves.LINEAR for i in range(chancurves.COUNT)})
+    state["base_fw"] = fwmod.Firmware(firmware, linear)
+    state["fw"] = state["base_fw"].with_inheritance({})
     state["engine"] = fwgamma.GammaEngine(state["fw"].data)
     state["container"] = os.path.abspath(args.update)
     if args.dng:

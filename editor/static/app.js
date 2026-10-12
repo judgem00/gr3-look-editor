@@ -23,7 +23,7 @@ const state = {
   params: { key: 0, contrast: 0, highlight: 0, shadow: 0, saturation: 0, hue: 0 },
   residual: true,
   curves: null,        // last /api/tone answer
-  chan: { edits: {}, set: "Preset 1", channel: 0 },   // Cross Process channel curves
+  chan: { edits: {}, set: "Preset 1", channel: 0, all: true },   // the look's channel curves (Farbton 1-3)
   grade: {},           // set name -> colour wheels, applied on the server after the edits
 };
 const TONE_KEYS = ["key", "contrast", "highlight", "shadow"];
@@ -47,11 +47,12 @@ const toneChanged = () => !state.tone.points.every(([x, y]) => Math.abs(x - y) <
 const LOOK_LABELS = {
   Standard: "Standard", Vivid: "Vivid", MonotoneGR: "Monotone", SoftMonotone: "Soft Monotone",
   HardMonotone: "Hard Monotone", HighContrastBW: "Hi-Contrast B&W", PositiveFilm: "Positive Film",
-  BleechBypass_GR: "Bleach Bypass", "BleechBypass_GR · Var. 2": "Bleach Bypass (Variante 2)",
-  "BleechBypass_GR · Var. 3": "Bleach Bypass (Variante 3)", Retro: "Retro", HdrCuisine: "HDR Tone",
-  "HdrCuisine · Var.": "HDR Tone (Variante)", CrossProcess: "Cross Process", NegativeFilm: "Negative Film",
+  BleechBypass_GR: "Bleach Bypass", "BleechBypass_GR · Var. 2": "Bleach Bypass (2)",
+  "BleechBypass_GR · Var. 3": "Bleach Bypass (3)", Retro: "Retro", HdrCuisine: "HDR Tone",
+  "HdrCuisine · Var.": "HDR Tone (2)", CrossProcess: "Cross Process", NegativeFilm: "Negative Film",
 };
 const label = (name) => LOOK_LABELS[name] || name;
+const esc = (v) => String(v).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const store = {   // per-viewer conveniences only; the page works without storage
   get(k) { try { return localStorage.getItem(k); } catch { return null; } },
   set(k, v) { try { localStorage.setItem(k, v); } catch { /* private mode */ } },
@@ -222,7 +223,7 @@ function compile(type, src) {
 }
 
 function initGL() {
-  if (!gl) throw new Error("WebGL2 nicht verfügbar");
+  if (!gl) throw new Error(t("no_webgl"));
   gl.getExtension("EXT_color_buffer_float");
   prog = gl.createProgram();
   gl.attachShader(prog, compile(gl.VERTEX_SHADER, VS));
@@ -303,8 +304,8 @@ function placeSplit() {
   $("labels").style.right = "auto";
   $("labels").style.width = `${r.w - 16}px`;
   $("labels").style.top = `${r.y + 8}px`;
-  $("label-l").textContent = state.mode === "ab" ? "Original" : "Kamera-JPEG";
-  $("label-r").textContent = "Bearbeitet";
+  $("label-l").textContent = t(state.mode !== "ab" ? "label_camera" : state.current === INHERIT_TARGET ? "label_base" : "label_original");
+  $("label-r").textContent = t(state.current === INHERIT_TARGET ? "label_look" : "label_edited");
 }
 
 let dragging = false;
@@ -327,8 +328,8 @@ function renderLooks() {
     const o = document.createElement("option");
     o.value = look.name;
     o.textContent = label(look.name) +
-      (isChanged(look.name) ? "  ● geändert" : "") +
-      (state.shot && state.shot.shot_look === look.name ? "  · Bildstil des Fotos" : "");
+      (isChanged(look.name) ? t("changed_mark") : "") +
+      (state.shot && state.shot.shot_look === look.name ? t("photo_look") : "");
     sel.appendChild(o);
   }
   sel.value = state.current;
@@ -358,24 +359,24 @@ function renderMatrix() {
     if (i % 3 === 2) box.appendChild(document.createElement("span"));
   });
   const sums = [0, 1, 2].map((r) => m[r * 3] + m[r * 3 + 1] + m[r * 3 + 2]);
-  $("sums").innerHTML = "Zeilensummen: " + sums
+  $("sums").innerHTML = t("row_sums") + sums
     .map((s) => `<span class="${Math.abs(s - 1) > 0.001 ? "bad" : ""}">${s.toFixed(4)}</span>`)
-    .join(" · ") + (sums.some((s) => Math.abs(s - 1) > 0.001) ? ' <span class="bad">— Grau bekommt einen Stich</span>' : "");
+    .join(" · ") + (sums.some((s) => Math.abs(s - 1) > 0.001) ? ` <span class="bad">${t("cast")}</span>` : "");
   $("addr").textContent = `0x${look.address.toString(16)}`;
   const note = $("shared-note");
   note.hidden = !look.shared_with.length;
   note.className = "note warn";
-  note.textContent = `Achtung: ${label(look.name)} teilt seine Farben mit ${look.shared_with.map(label).join(" und ")}. Änderungen gelten für alle.`;
+  note.textContent = t("shared", { look: label(look.name), others: look.shared_with.map(label).join(t("and")) });
   const rows = [0, 1, 2].map((r) => m.slice(r * 3, r * 3 + 3).map((v) => v.toFixed(4)).join());
   if (!look.mono_mix && rows[0] === rows[1] && rows[1] === rows[2]) {
     note.hidden = false;
     note.className = "note";
-    note.textContent = "Schwarzweiß-Look: Die Regler bestimmen, wie hell einzelne Farben im Grau erscheinen (wie ein Farbfilter).";
+    note.textContent = t("mono_filter");
   }
   if (look.mono_mix) {
     note.hidden = false;
     note.className = "note";
-    note.textContent = "Schwarzweiß-Look: Die Kamera mischt die Farben danach zu Grau. Farbänderungen wirken hier kaum.";
+    note.textContent = t("mono_mix");
   }
   renderInherit();
   const e = editOf(state.current);
@@ -389,41 +390,55 @@ function renderMatrix() {
   }
 }
 
+// ---- 1 Grundlage: what the user's look (in the Cross Process slot) starts from
+
+const CROSS = INHERIT_TARGET;
+const BASES = [null, "Vivid", "PositiveFilm", "NegativeFilm", "Retro",
+  "BleechBypass_GR", "BleechBypass_GR · Var. 2", "BleechBypass_GR · Var. 3"];
+const BASE_HINTS = {
+  null: "hint_standard", Vivid: "hint_vivid", PositiveFilm: "hint_positive", NegativeFilm: "hint_negative",
+  Retro: "hint_retro", BleechBypass_GR: "hint_bleach",
+  "BleechBypass_GR · Var. 2": "hint_bleach_var", "BleechBypass_GR · Var. 3": "hint_bleach_var",
+};
+const baseOf = () => (state.fw.inherit || {})[CROSS] || null;
+
 function renderInherit() {
-  const box = $("inherit-box");
-  box.hidden = state.current !== INHERIT_TARGET;
-  if (box.hidden) return;
-  const src = (state.fw.inherit || {})[INHERIT_TARGET] || "";
-  const sel = $("inherit-src");
-  if (!sel.options.length) {
-    sel.innerHTML = `<option value="">Cross Process (Original)</option>` +
-      INHERIT_SOURCES.map((n) => `<option value="${n}">${label(n)}</option>`).join("");
+  const ul = $("base-list");
+  const cur = baseOf();
+  ul.innerHTML = "";
+  for (const b of BASES) {
+    const li = document.createElement("li");
+    li.className = b === cur ? "on" : "";
+    li.innerHTML = `<b>${b ? label(b) : t("base_standard")}</b><span>${t(BASE_HINTS[b])}</span>`;
+    li.onclick = () => setBase(b);
+    ul.appendChild(li);
   }
-  sel.value = src;
-  const p = state.shot && state.shot.shot_look === src && state.shot.params;
+  const src = cur;
+  const p = src && state.shot && state.shot.shot_look === src && state.shot.params;
   $("inherit-note").textContent = src
-    ? `Cross Process rechnet mit den Farben von ${label(src)}, dazu kommen deine RGB-Kurven. ` +
-      `Für dasselbe Ergebnis in der Kamera bei Cross Process dieselben Regler wie bei ${label(src)} einstellen` +
-      (p ? ` (laut DNG: Key ${signed(p.key || 0)}, Kontrast ${signed(p.contrast || 0)}, ` +
-           `Lichter ${signed(p.highlight || 0)}, Schatten ${signed(p.shadow || 0)}, ` +
-           `Sättigung ${signed(p.saturation || 0)}, Schärfe ${signed(p.sharpness || 0)})` : "") +
-      ` und die Farbton-Variante wählen, deren Kanalkurven du bearbeitet hast.`
-    : "Optional: Cross Process mit den Farben eines anderen Bildstils rechnen lassen.";
+    ? t("base_tip", { look: label(src) }) +
+      (p ? t("base_tip_photo", { contrast: signed(p.contrast || 0), highlight: signed(p.highlight || 0),
+                                 shadow: signed(p.shadow || 0), saturation: signed(p.saturation || 0) }) : "") + "."
+    : "";
 }
 
-$("inherit-src").onchange = async (e) => {
+async function setBase(source) {
+  if (source === baseOf()) return;
   const res = await fetch("/api/inherit", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ target: INHERIT_TARGET, source: e.target.value || null }),
+    body: JSON.stringify({ target: CROSS, source }),
   });
   if (!res.ok) { renderInherit(); return; }
   const fw = await res.json();
   Object.assign(state.fw, { looks: fw.looks, inherit: fw.inherit });
   for (const l of fw.looks) state.looks[l.name] = l;
+  // the look keeps its own matrix slot; start it from the new base, keep the sliders
+  const e = state.edits[state.looks[CROSS].address];
+  if (e) e.base = state.looks[CROSS].matrix.slice();
   update();
   requestTone();
-};
+}
 
 function renderChanges() {
   if (!$("downloads").hidden && state.lastExport !== exportKey()) {
@@ -431,58 +446,57 @@ function renderChanges() {
     $("export").classList.add("primary");
     $("export-msg").textContent = "";
   }
-  const looks = state.fw.looks.map((l) => l.name).filter(isChanged);
-  const names = looks.map((n) => `Farben: ${label(n)}`);
-  if (toneChanged()) names.push("Tonkurve (alle Bildstile)");
+  const others = state.fw.looks.map((l) => l.name).filter((n) => n !== CROSS && isChanged(n));
   const sets = new Set(changedChannels().map(chanSetOf));
-  for (const n of SET_ORDER) if (sets.has(n)) names.push(`Cross Process ${setLabel(n)}: RGB-Kurven` +
-    (gradedSets().includes(n) ? " und Farbräder" : ""));
-  for (const [t, src] of Object.entries(state.fw.inherit || {})) names.push(`${label(t)} mit den Farben von ${label(src)}`);
-  $("changes").innerHTML = names.length
-    ? names.map((n) => `<li>${n}</li>`).join("")
-    : '<li class="muted">Noch keine Änderungen</li>';
-  $("export").disabled = !names.length;
-  const badge = { color: looks.length > 0,
-    tone: toneChanged(), cross: sets.size > 0 || Object.keys(state.fw.inherit || {}).length > 0,
-    export: names.length > 0 };
+  const names = [t("ch_base", { look: baseOf() ? label(baseOf()) : t("base_standard") })];
+  if (isChanged(CROSS)) names.push(t("ch_colors"));
+  for (const n of SET_ORDER) names.push(`${setLabel(n)}: ` + (sets.has(n)
+    ? t(gradedSets().includes(n) ? "ch_curves_wheels" : "ch_curves")
+    : t("ch_neutral")));
+  for (const n of others) names.push(`<span class="warn">${t("ch_other", { look: label(n) })}</span>`);
+  if (toneChanged()) names.push(`<span class="warn">${t("ch_tone")}</span>`);
+  $("changes").innerHTML = names.map((n) => `<li>${n}</li>`).join("");
+  const badge = { base: !!baseOf(), color: isChanged(CROSS) || others.length > 0,
+    curves: sets.size > 0 || toneChanged() };
   for (const b of document.querySelectorAll("#tabs button")) b.classList.toggle("dirty", !!badge[b.dataset.tab]);
 }
 const chanSetOf = (idx) => Object.keys(state.fw.channel_sets).find((n) => state.fw.channel_sets[n].includes(idx));
 
 // ---- tabs -------------------------------------------------------------------
 
-let lookBeforeCross = null;
 function showTab(tab) {
   for (const b of document.querySelectorAll("#tabs button")) b.classList.toggle("on", b.dataset.tab === tab);
   for (const s of document.querySelectorAll("section.tab")) s.hidden = s.dataset.tab !== tab;
   store.set("tab", tab);
   document.querySelector("aside").dataset.tab = tab;
-  // the Cross Process tools only act on that look: preview it while they are open
-  if (tab === "cross" && state.current !== "CrossProcess") {
-    lookBeforeCross = state.current;
-    select("CrossProcess");
-  } else if (tab !== "cross" && tab !== "export" && lookBeforeCross && state.current === "CrossProcess") {
-    select(lookBeforeCross);
-    lookBeforeCross = null;
-  }
-  if (tab === "tone") { toneEditor.draw(); drawEffective(); }
-  if (tab === "cross") { chanEditor.draw(); drawChannels(); renderWheels(); }
+  // base and curves belong to the user's look: always preview it there
+  if ((tab === "base" || tab === "curves") && state.current !== CROSS) select(CROSS);
+  if (tab === "curves") { chanEditor.draw(); drawChannels(); renderWheels(); toneEditor.draw(); drawEffective(); }
 }
 for (const b of document.querySelectorAll("#tabs button")) b.onclick = () => showTab(b.dataset.tab);
+
+function renderOtherLook() {
+  const el = $("other-look");
+  el.hidden = state.current === CROSS;
+  if (el.hidden) return;
+  el.innerHTML = t("other_look", { look: label(state.current) }) +
+    `<a href="#" id="back-to-look">${t("back_to_look")}</a>`;
+  $("back-to-look").onclick = (e) => { e.preventDefault(); select(CROSS); };
+}
 
 function update() {
   renderMatrix();
   renderLooks();
+  renderOtherLook();
   renderChanges();
   draw();
 }
 
 function select(name) {
-  if (name !== "CrossProcess") lookBeforeCross = null;
-  const wasCross = state.current === "CrossProcess";
+  const wasCross = state.current === CROSS;
   state.current = name;
   update();
-  if (wasCross !== (name === "CrossProcess")) requestTone();
+  if (wasCross !== (name === CROSS)) requestTone();
   else renderChannelPanel();
 }
 
@@ -498,13 +512,14 @@ for (const b of document.querySelectorAll("#modes button")) {
 const calibUI = {};
 (function buildCalib() {
   const box = $("calib");
-  const names = { r: ["Rot", "#e0645a"], g: ["Grün", "#6fbf73"], b: ["Blau", "#5b8fe0"] };
+  const names = { r: ["red", "#e0645a"], g: ["green", "#6fbf73"], b: ["blue", "#5b8fe0"] };
   PRIMS.forEach((p, n) => {
     if (n) box.insertAdjacentHTML("beforeend", '<span class="gap"></span>');
-    for (const [k, label] of [["hue", "Farbton"], ["sat", "Sättigung"]]) {
+    for (const [k, key] of [["hue", "hue"], ["sat", "saturation"]]) {
       const head = document.createElement("span");
-      head.innerHTML = k === "hue" ? `<span class="prim" style="color:${names[p][1]}">${names[p][0]}</span> <span class="lbl">${label}</span>`
-                                   : `<span class="lbl">${label}</span>`;
+      head.innerHTML = k === "hue"
+        ? `<span class="prim" style="color:${names[p][1]}" data-i18n="${names[p][0]}"></span> <span class="lbl" data-i18n="${key}"></span>`
+        : `<span class="lbl" data-i18n="${key}"></span>`;
       const input = Object.assign(document.createElement("input"), { type: "range", min: -100, max: 100, step: 1, value: 0 });
       const out = document.createElement("output");
       out.textContent = "0";
@@ -560,7 +575,7 @@ $("export").onclick = async () => {
   const matrices = {};
   for (const l of state.fw.looks) if (isChanged(l.name)) matrices[l.name] = effective(l.name);
   $("export-msg").className = "note";
-  $("export-msg").textContent = "Erstelle Update-Datei …";
+  $("export-msg").textContent = t("creating");
   const res = await fetch("/api/export", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -579,8 +594,8 @@ $("export").onclick = async () => {
     const r = await res.json();
     $("export-msg").className = "note ok";
     $("export-msg").textContent = r.update_file
-      ? "Fertig. Die Datei wurde geprüft (Prüfsummen ok) und liegt auch unter " + r.update_file + "."
-      : `Geschrieben: ${r.written}`;
+      ? t("done", { path: r.update_file })
+      : t("written", { path: r.written });
     state.lastExport = exportKey();
     offerDownloads(r.downloads || {}, r.update_file);
   } else {
@@ -598,7 +613,7 @@ function offerDownloads(urls, updateFile) {
     if (url) { a.href = `${url}?t=${stamp}`; a.download = name || ""; }
   };
   set("dl-update", urls.update, updateFile && updateFile.split("/").pop());
-  set("dl-preset", urls.preset, "mein-look.looks.json");
+  set("dl-preset", urls.preset, t("preset_name"));
   $("downloads").hidden = !urls.update && !urls.preset;
   $("export").classList.toggle("primary", $("downloads").hidden);
   if (urls.update) $("dl-update").focus();
@@ -607,7 +622,7 @@ function offerDownloads(urls, updateFile) {
 async function errorText(res) {
   const t = await res.text();
   const m = t.match(/<p>(.*?)<\/p>/s);
-  return m ? m[1] : `Fehler ${res.status}`;
+  return m ? m[1] : t("error", { status: res.status });
 }
 
 // ---- loading a DNG ----------------------------------------------------------
@@ -621,7 +636,7 @@ async function loadDng(file) {
     if (!res.ok) throw new Error(await errorText(res));
     await show(await res.json());
   } catch (err) {
-    alert(`Das Foto konnte nicht geladen werden: ${err.message}`);
+    alert(t("load_failed", { msg: err.message }));
   } finally {
     $("busy").hidden = true;
   }
@@ -662,12 +677,7 @@ async function show(meta) {
     $(`p-${k}-out`).textContent = signed(state.params[k]);
   }
   $("residual").disabled = !meta.residual;
-  $("tone-note").className = "note";
-  $("tone-note").textContent = (Object.keys(p).length
-    ? "Aus dem Foto übernommen. "
-    : "Keine Einstellungen im Foto gefunden, Mittelstellung. ") +
-    (meta.residual ? "Die Vorschau ist am Kamera-JPEG abgeglichen." : "Ohne Kamera-JPEG: Standardwerte.");
-  if (meta.shot_look) state.current = meta.shot_look;
+  renderToneNote();
   if (meta.shot_look === "CrossProcess" && p.cross_variant) {
     state.chan.set = `Preset ${p.cross_variant}`;
     renderWheels();
@@ -685,18 +695,32 @@ const CH_COLORS = ["#e0645a", "#6fbf73", "#5b8fe0"];
 
 const chanSet = (name) => state.fw.channel_sets[name || state.chan.set];
 // internal set names stay (presets store them); the camera menu calls them Farbton 1-3
-const SET_LABEL = { "Preset 1": "Farbton 1", "Preset 2": "Farbton 2", "Preset 3": "Farbton 3",
-  Zufall: "Zufall" };
-const setLabel = (name) => SET_LABEL[name] || name;
-const SET_ORDER = ["Preset 1", "Preset 2", "Preset 3", "Zufall"];
-const chanActive = () => chanSet()[state.chan.channel];
+const SET_LABEL = { "Preset 1": "set_1", "Preset 2": "set_2", "Preset 3": "set_3" };
+const setLabel = (name) => (SET_LABEL[name] ? t(SET_LABEL[name]) : name);
+// "Zufall" cannot be chosen in the camera menu, so the editor leaves it out
+const SET_ORDER = ["Preset 1", "Preset 2", "Preset 3"];
+// state.chan.all: one curve on R, G and B together (a tone curve for the look);
+// the three channel edits then share one points array
+const chanActive = () => chanSet()[state.chan.all ? 0 : state.chan.channel];
+const samePoints = (a, b) => a.length === b.length && a.every((p, i) => p[0] === b[i][0] && p[1] === b[i][1]);
+function linkSet(name, force) {
+  const set = chanSet(name);
+  const pts = set.map((i) => chanEdit(i).points);
+  if (!force && !pts.every((q) => samePoints(q, pts[0]))) return false;
+  for (const i of set) chanEdit(i).points = pts[0];
+  return true;
+}
+function unlinkSet(name) {
+  for (const i of chanSet(name)) chanEdit(i).points = chanEdit(i).points.map((p) => p.slice());
+}
+const relink = () => { if (state.chan.all) for (const n of SET_ORDER) linkSet(n); };
 function chanEdit(idx) {
   if (!state.chan.edits[idx]) state.chan.edits[idx] = { base: null, points: IDENT.map((p) => p.slice()) };
   return state.chan.edits[idx];
 }
 const chanValues = (idx) => (state.curves && state.curves.channel_curves
   ? state.curves.channel_curves[idx] : state.fw.channel_curves[idx]);
-const WHEELS = [["shadows", "Schatten"], ["midtones", "Mitteltöne"], ["highlights", "Lichter"], ["global", "Global"]];
+const WHEELS = [["shadows", "shadows"], ["midtones", "midtones"], ["highlights", "highlights"], ["global", "global"]];
 const wheelNeutral = (w) => !w || (Math.abs(w.amount || 0) < 1e-4 && Math.abs(w.lum || 0) < 1e-4);
 const gradeNeutral = (g) => !g || WHEELS.every(([k]) => wheelNeutral(g[k]));
 const gradedSets = () => Object.keys(state.grade).filter((n) => !gradeNeutral(state.grade[n]));
@@ -716,7 +740,7 @@ const chanLabel = (idx) => {
     const k = set.indexOf(idx);
     if (k >= 0) return `${setLabel(name)} · ${CH_NAMES[k]}`;
   }
-  return `Kurve ${idx}`;
+  return t("curve_n", { n: idx });
 };
 // the set the preview applies: only Cross Process uses channel curves
 const previewSet = () => (state.current === "CrossProcess" ? chanSet() : null);
@@ -894,7 +918,7 @@ const chanEditor = pointEditor($("chan-curve"), {
   points: () => (state.fw ? chanEdit(chanActive()).points : IDENT),
   transfer: () => state.curves && state.curves.channel_transfer &&
     state.curves.channel_transfer[chanActive()],
-  color: () => CH_COLORS[state.chan.channel],
+  color: () => (state.chan.all ? css("--text") : CH_COLORS[state.chan.channel]),
 });
 
 function drawEffective() {
@@ -915,7 +939,7 @@ function drawChannels() {
   const pts = (c) => c.map((v, i) => [(i / 255) * w, h - (v / 16384) * h]);
   chanSet().forEach((idx, k) => {
     polyline(ctx, pts(state.fw.channel_curves[idx]), CH_COLORS[k], 1, [6, 6]);
-    polyline(ctx, pts(chanValues(idx)), CH_COLORS[k], k === state.chan.channel ? 4 : 2);
+    polyline(ctx, pts(chanValues(idx)), CH_COLORS[k], state.chan.all || k === state.chan.channel ? 3 : 1.5);
   });
 }
 
@@ -924,16 +948,16 @@ function renderChannelPanel() {
   for (const b of document.querySelectorAll("#chan-sets button"))
     b.classList.toggle("on", b.dataset.set === state.chan.set);
   document.querySelectorAll("#chan-channels button").forEach((b, k) => {
-    b.classList.toggle("on", k === state.chan.channel);
-    b.textContent = CH_NAMES[k] + (chanChanged(chanSet()[k]) ? " •" : "");
+    b.classList.toggle("on", k === 0 ? state.chan.all : !state.chan.all && k - 1 === state.chan.channel);
+    b.textContent = k === 0 ? "RGB" : CH_NAMES[k - 1] + (chanChanged(chanSet()[k - 1]) ? " •" : "");
   });
-  $("chan-title").textContent = `${setLabel(state.chan.set)}, Kanal ${CH_NAMES[state.chan.channel]}. Klicken setzt einen Punkt, Ziehen verschiebt ihn.`;
+  $("chan-title").textContent = state.chan.all
+    ? t("chan_all")
+    : t("chan_one", { ch: CH_NAMES[state.chan.channel], up: t(["red", "green", "blue"][state.chan.channel]),
+                       down: ["Cyan", "Magenta", LANG === "de" ? "Gelb" : "Yellow"][state.chan.channel] });
   $("chan-panel").classList.toggle("inactive", state.current !== "CrossProcess");
   renderWheels();
-  $("chan-note").className = state.chan.set === "Zufall" ? "note warn" : "note";
-  $("chan-note").textContent = state.chan.set === "Zufall"
-    ? "„Zufall“ ist in der Kamera nicht auswählbar; sie verteilt diese Kurven zufällig auf R, G und B."
-    : "";
+  $("chan-note").textContent = "";
 }
 
 function buildChannelPanel() {
@@ -947,8 +971,20 @@ function buildChannelPanel() {
     sets.appendChild(b);
   }
   document.querySelectorAll("#chan-channels button").forEach((b, k) => {
-    b.style.color = CH_COLORS[k];
-    b.onclick = () => { state.chan.channel = k; chanEditor.deselect(); renderChannelPanel(); chanEditor.draw(); drawChannels(); };
+    if (k) b.style.color = CH_COLORS[k - 1];
+    b.onclick = () => {
+      if (k === 0 && !state.chan.all) {
+        if (!linkSet(state.chan.set) &&
+            !confirm(t("link_confirm"))) return;
+        linkSet(state.chan.set, true);
+        state.chan.all = true;
+      } else if (k > 0) {
+        if (state.chan.all) for (const n of SET_ORDER) unlinkSet(n);
+        state.chan.all = false;
+        state.chan.channel = k - 1;
+      }
+      chanEditor.deselect(); renderChannelPanel(); requestTone(); drawChannels();
+    };
   });
   const src = $("chan-source");
   src.innerHTML = "";
@@ -975,6 +1011,7 @@ $("chan-copy").onclick = () => {
   const from = +$("chan-source").value, to = chanActive();
   if (from === to) return;
   state.chan.edits[to] = { base: chanValues(from).slice(), points: IDENT.map((p) => p.slice()) };
+  relink();
   chanEditor.deselect();
   requestTone();
 };
@@ -984,21 +1021,20 @@ $("chan-copy-set").onclick = () => {
   to.forEach((idx, k) => {
     if (idx !== from[k]) state.chan.edits[idx] = { base: vals[k], points: IDENT.map((p) => p.slice()) };
   });
+  relink();
   chanEditor.deselect();
   requestTone();
 };
-function setLinear(indices) {
-  for (const idx of indices)
-    state.chan.edits[idx] = { base: state.fw.channel_linear.slice(), points: IDENT.map((p) => p.slice()) };
+$("chan-reset").onclick = () => {
+  for (const idx of state.chan.all ? chanSet() : [chanActive()]) delete state.chan.edits[idx];
+  relink();
   chanEditor.deselect();
   requestTone();
-}
-$("chan-linear").onclick = () => setLinear(chanSet());
-$("chan-linear-all").onclick = () => setLinear([...Array(12).keys()]);
-$("chan-reset").onclick = () => { delete state.chan.edits[chanActive()]; chanEditor.deselect(); requestTone(); };
+};
 $("chan-reset-set").onclick = () => {
   for (const idx of chanSet()) delete state.chan.edits[idx];
   delete state.grade[state.chan.set];
+  relink();
   chanEditor.deselect();
   requestTone();
 };
@@ -1015,9 +1051,9 @@ async function loadPreset(file) {
   msg.className = "note";
   try {
     let p;
-    try { p = JSON.parse(await file.text()); } catch { throw new Error("keine gültige JSON-Datei"); }
+    try { p = JSON.parse(await file.text()); } catch { throw new Error(t("e_json")); }
     if (!p || typeof p !== "object" || !("matrices" in p || "tone" in p || "channel_curves" in p || "inherit" in p))
-      throw new Error("kein Look-Editor-Preset");
+      throw new Error(t("e_preset"));
     const warn = [];
 
     const inherit = p.inherit || {};
@@ -1030,7 +1066,7 @@ async function loadPreset(file) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ target, source }),
       });
-      if (!res.ok) { warn.push(`Übernahme ${target} ← ${source}: ${await errorText(res)}`); continue; }
+      if (!res.ok) { warn.push(t("e_inherit", { target, source, msg: await errorText(res) })); continue; }
       const fw = await res.json();
       Object.assign(state.fw, { looks: fw.looks, inherit: fw.inherit });
       for (const l of fw.looks) state.looks[l.name] = l;
@@ -1047,9 +1083,9 @@ async function loadPreset(file) {
     }
     for (const [name, m] of Object.entries(p.matrices || {})) {
       if (p.matrix_edits && p.matrix_edits[name]) continue;
-      if (!state.looks[name]) { warn.push(`unbekannter Bildstil ${name}`); continue; }
+      if (!state.looks[name]) { warn.push(t("e_look", { name })); continue; }
       if (!Array.isArray(m) || m.length !== 9 || m.some((v) => !Number.isFinite(v))) {
-        warn.push(`Matrix ${name}: 9 Zahlen erwartet`); continue;
+        warn.push(t("e_matrix", { name })); continue;
       }
       Object.assign(editOf(name), { base: m.slice(), sat: 1, hue: 0 });
     }
@@ -1058,7 +1094,7 @@ async function loadPreset(file) {
     const pts = Array.isArray(tone.points) && tone.points.length >= 2 &&
       tone.points.every((q) => Array.isArray(q) && q.length === 2 && q.every(Number.isFinite))
       ? tone.points.map((q) => q.slice()).sort((a, b) => a[0] - b[0]) : null;
-    if (p.tone && !pts) warn.push("Tonkurve unlesbar");
+    if (p.tone && !pts) warn.push(t("e_tone"));
     state.tone.points = pts || IDENT.map((q) => q.slice());
     state.tone.families = Array.isArray(tone.families) ? tone.families.filter((f) => [0, 1, 2].includes(f)) : [0, 1, 2];
     for (const cb of document.querySelectorAll(".fam")) cb.checked = state.tone.families.includes(+cb.value);
@@ -1070,39 +1106,40 @@ async function loadPreset(file) {
     const pre = p.channel_grade && p.channel_curves_pre;
     if (pre) {
       for (const [n, g] of Object.entries(p.channel_grade)) {
-        if (!state.fw.channel_sets[n]) { warn.push(`unbekannter Satz ${n}`); continue; }
+        if (!state.fw.channel_sets[n]) { warn.push(t("e_set", { name: n })); continue; }
         state.grade[n] = normGrade(g);
       }
     }
     for (const [idx, vals] of Object.entries((pre ? p.channel_curves_pre : p.channel_curves) || {})) {
       const i = +idx;
       if (!(i >= 0 && i < 12) || !Array.isArray(vals) || vals.length !== 256 || vals.some((v) => !Number.isFinite(v))) {
-        warn.push(`Kanalkurve ${idx}: 256 Werte erwartet`); continue;
+        warn.push(t("e_channel", { idx })); continue;
       }
       state.chan.edits[i] = { base: vals.map((v) => Math.round(v)), points: IDENT.map((q) => q.slice()) };
       channels++;
     }
 
+    relink();
     toneEditor.deselect();
     chanEditor.deselect();
     renderWheels();
     update();
     requestTone();
     if (p.source && state.fw.path && !p.source.endsWith(state.fw.path))
-      warn.push(`erstellt für ${p.source}`);
+      warn.push(t("e_source", { source: p.source }));
     const parts = [
-      Object.keys(p.matrices || {}).length && `${Object.keys(p.matrices).length} Matrizen`,
-      pts && !isIdent(pts) && "Tonkurve",
-      channels && `${channels} Kanalkurven`,
-      gradedSets().length && `Farbräder ${gradedSets().map(setLabel).join(", ")}`,
+      Object.keys(p.matrices || {}).length && t("p_matrices", { n: Object.keys(p.matrices).length }),
+      pts && !isIdent(pts) && t("p_tone"),
+      channels && t("p_channels", { n: channels }),
+      gradedSets().length && t("p_wheels", { list: gradedSets().map(setLabel).join(", ") }),
       Object.keys(inherit).length && Object.entries(inherit).map(([t, s]) => `${t} ← ${s}`).join(", "),
     ].filter(Boolean);
     msg.className = warn.length ? "note warn" : "note";
-    msg.textContent = `Preset „${file.name}“ geladen: ${parts.join(" · ") || "keine Änderungen"}` +
-      (warn.length ? ` — Hinweise: ${warn.join("; ")}` : "");
+    msg.textContent = t("preset_loaded", { name: file.name, parts: parts.join(" · ") || t("preset_nothing") }) +
+      (warn.length ? t("preset_hints", { list: warn.join("; ") }) : "");
   } catch (err) {
     msg.className = "note warn";
-    msg.textContent = `Preset konnte nicht geladen werden: ${err.message}`;
+    msg.textContent = t("preset_failed", { msg: err.message });
   }
 }
 
@@ -1167,9 +1204,9 @@ function buildWheels() {
   for (const [key, label] of WHEELS) {
     const el = document.createElement("div");
     el.className = "wheel";
-    el.innerHTML = `<div class="title"><span>${label}</span><output></output></div>
+    el.innerHTML = `<div class="title"><span data-i18n="${label}"></span><output></output></div>
       <canvas width="280" height="280"></canvas>
-      <input type="range" min="-100" max="100" step="1" value="0" title="Luminanz">`;
+      <input type="range" min="-100" max="100" step="1" value="0" data-i18n-title="luminance">`;
     box.appendChild(el);
     const cv = el.querySelector("canvas"), lum = el.querySelector("input");
     const at = (e) => {
@@ -1221,12 +1258,36 @@ function renderWheels() {
   $("grade-balance-out").textContent = Math.round(g.balance * 100);
   $("grade-panel").classList.toggle("inactive", state.current !== "CrossProcess");
   $("grade-note").className = state.chan.set === "Zufall" && !gradeNeutral(g) ? "note warn" : "note";
-  $("grade-note").textContent = state.chan.set === "Zufall"
-    ? "Für Farbräder besser Farbton 1–3 verwenden: „Zufall“ verteilt die Kurven zufällig."
-    : "";
+  $("grade-note").textContent = "";
 }
 
 $("help-open").onclick = () => $("help").showModal();
+
+function renderToneNote() {
+  const meta = state.shot;
+  $("tone-note").className = "note";
+  $("tone-note").textContent = !meta ? t("tone_none")
+    : t(Object.keys(meta.params || {}).length ? "tone_from_photo" : "tone_defaults") +
+      t(meta.residual ? "tone_matched" : "tone_unmatched");
+}
+
+// ---- language -----------------------------------------------------------------
+
+function setLang(lang) {
+  LANG = lang;
+  try { localStorage.setItem("lang", lang); } catch { /* no storage */ }
+  applyI18n();
+  if (!state.fw) return;
+  $("fw-info").textContent = t("firmware", state.build);
+  buildChannelPanel();
+  renderInherit();
+  renderToneNote();
+  update();
+  renderChannelPanel();
+  placeSplit();
+}
+for (const b of document.querySelectorAll("#lang button")) b.onclick = () => setLang(b.dataset.lang);
+applyI18n();
 $("preset-file").onchange = (e) => {
   if (e.target.files[0]) loadPreset(e.target.files[0]);
   e.target.value = "";     // the same file again must trigger a reload
@@ -1256,13 +1317,16 @@ wrap.addEventListener("drop", (e) => {
     initGL();
     state.fw = await (await fetch("/api/firmware")).json();
     for (const l of state.fw.looks) state.looks[l.name] = l;
-    state.current = "Standard";
+    state.current = INHERIT_TARGET;
     const build = state.fw.path.split("/").slice(-2, -1)[0] || "";
     const VERSIONS = { fwdc239b: "2.10" };
-    $("fw-info").textContent = `Firmware ${VERSIONS[build] || "?"} (${build})`;
+    state.build = { version: VERSIONS[build] || "?", build };
+    $("fw-info").textContent = t("firmware", state.build);
     if (!store.get("helpSeen")) { $("help").showModal(); store.set("helpSeen", "1"); }
     buildChannelPanel();
+    relink();
     buildWheels();
+    applyI18n();
     renderWheels();
     update();
     await fetchTone();
@@ -1271,6 +1335,6 @@ wrap.addEventListener("drop", (e) => {
     const tab = store.get("tab");
     if (tab && document.querySelector(`#tabs [data-tab="${tab}"]`)) showTab(tab);
   } catch (err) {
-    $("fw-info").textContent = `Fehler: ${err.message}`;
+    $("fw-info").textContent = t("error_prefix", { msg: err.message });
   }
 })();

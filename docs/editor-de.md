@@ -38,12 +38,15 @@ Bearbeitung, Farbe und Tonkurve), **Vergleich Kamera**, **Kamera-JPEG**.
 
 ## Bearbeiten
 
-Aufbau der Oberfläche: oben rechts die Bildstil-Auswahl (Namen wie im
-Kameramenü), darunter die Tabs **Farbe**, **Tonkurve**, **Cross Process** und
-**Export**. Fachdetails (Matrixwerte, Kontraststufen, Kurven kopieren) liegen
-jeweils unter „Erweitert". Die Kamera-Einstellungen der Aufnahme stehen in der
-aufklappbaren Leiste unter dem Bild. Der Tab Cross Process schaltet die
-Vorschau auf diesen Bildstil um.
+Aufbau der Oberfläche: Der Editor baut einen eigenen Look in den Platz von
+**Cross Process**; die übrigen Bildstile bleiben unverändert. Tabs:
+**1 Grundlage** (Farben eines vorhandenen Bildstils als Start, werden in eine
+eigene Matrix für Cross Process kopiert), **2 Farbe**, **3 Kurven** (Farbton
+1–3, RGB-Kurven gemeinsam oder je Kanal, Farbräder; die Kurven starten immer
+linear), **4 Export**. Andere Bildstile und die Tonkurve für alle Bildstile
+liegen unter „fortgeschritten". Technisch bekommt Cross Process einen eigenen
+ColorMatrix-Satz und eine eigene Matrix im freien Bereich `0x53002080…`
+(`editor/firmware.py`, `private_cross`).
 
 - **Farbmatrix** pro Bildstil, direkt oder über Sättigung/Farbton.
 - **Kalibrierung** wie in Lightroom: Farbton und Sättigung der Primärfarben

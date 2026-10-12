@@ -1,7 +1,9 @@
 # GR III Look Editor
 
-Create your own image controls ("looks") for the Ricoh GR III and write
-them into a firmware update file the camera accepts.
+Build your own image control ("look") for the Ricoh GR III. **Your look
+replaces the camera's Cross Process slot**, so it shows up in the camera as
+image control *Cross Process*. Every other image control stays as Ricoh
+made it.
 
 The editor shows a live preview on one of your own GR III DNGs. It renders
 the photo the way the camera does: white balance, sensor matrix, look
@@ -18,19 +20,29 @@ export, the editor patches a copy of the firmware image and repacks it into
 This is an independent project. It is not affiliated with or endorsed by
 Ricoh Imaging. "Ricoh" and "GR" are trademarks of their respective owners.
 
-## What you can change
+## How it works
 
-- **Colour matrix per look.** Edit it directly, or use saturation, hue and
-  Lightroom-style calibration (hue and saturation of the red, green and blue
-  primaries).
-- **Tone curve.** The curve is applied to the camera's base curves, so it
-  affects every look. The camera's key, contrast, highlight and shadow
-  sliders keep working on top of it.
-- **Cross Process R/G/B channel curves** for the camera's Cross Process
-  "Tone" settings 1–3, plus colour wheels for shadows, midtones and
-  highlights that are converted into those curves.
-- **Cross Process with another look's data.** For example, Negative Film
-  colours combined with your own RGB curves.
+1. **Base.** Your look starts from the colours of Standard, Vivid,
+   Positive Film, Negative Film, Retro or Bleach Bypass. The base is copied
+   into a colour matrix of the look's own, so the original image controls
+   are never touched.
+2. **Colour.** Saturation, hue, and Lightroom-style calibration (hue and
+   saturation of the red, green and blue primaries).
+3. **Curves.** Three variants, which you select in the camera with
+   Cross Process → *Tone 1, 2, 3*. Each variant has RGB curves (one combined
+   curve or per channel) and colour wheels for shadows, midtones and
+   highlights. The curves always start linear, so the stock
+   cross-processing is gone.
+4. **Export.** Writes the update file and a preset you can load again
+   later.
+
+The camera's contrast, saturation, highlight and shadow settings keep working
+on your look as on any other image control.
+
+Advanced options:
+
+- editing the other image controls
+- a tone curve that applies to all image controls
 
 Not possible: per-hue adjustments (HSL). The camera's hardware has such a
 stage, but nobody has managed to switch it on yet; see
@@ -68,10 +80,11 @@ opens `http://127.0.0.1:8765/`. It listens on localhost only.
   page
 
 To flash, copy `FWDC239B.BIN` unchanged to the root of the SD card and
-start the firmware update from the camera menu. To go back, flash Ricoh's
+start the firmware update from the camera menu. Then select the image
+control Cross Process: that is your look. To go back, flash Ricoh's
 original file the same way.
 
-The user interface is currently in German.
+The interface is in English or German (switch top right).
 
 ### Command-line packing
 

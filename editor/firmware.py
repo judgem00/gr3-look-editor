@@ -69,6 +69,38 @@ def inherit(data, target_table, source_table):
     return bytes(img)
 
 
+# Cross Process is the slot for the user's own look. Stock, it shares its
+# ColorMatrix set (and so its look matrix) with Standard and HdrCuisine, and
+# taking over another look's data points it straight at that look's set. To
+# edit it alone it gets a private copy of the set and of the matrix, placed in
+# zero padding of the read-only image section (0x53002080..0x53004000, between
+# the header copy and the MMU table; nothing points into it, and the MultiAxial
+# per-look tests ran data from there on the camera).
+CROSS_TABLE = 21
+PRIVATE_SET = 0x53002080      # copy of the ColorMatrix set, 8 words (Calc reads +0..+0x10)
+PRIVATE_MATRIX = 0x530020a0   # 9 x int16
+SET_WORDS = 8
+
+
+def private_cross(data):
+    """image bytes where Cross Process has its own ColorMatrix set and look
+    matrix, initialised from whatever it points at now"""
+    img = bytearray(data)
+    entry = file_offset(CM_TABLE + 4 * CROSS_TABLE)
+    cur = struct.unpack_from("<I", img, entry)[0]
+    if cur != PRIVATE_SET:
+        lo, hi = file_offset(PRIVATE_SET), file_offset(PRIVATE_MATRIX) + 18
+        if any(img[lo:hi]):
+            raise ValueError("free area for the Cross Process copy is not empty")
+        words = list(struct.unpack_from(f"<{SET_WORDS}I", img, file_offset(cur)))
+        matrix = struct.unpack_from("<9h", img, file_offset(words[1]))
+        struct.pack_into("<9h", img, file_offset(PRIVATE_MATRIX), *matrix)
+        words[1] = PRIVATE_MATRIX
+        struct.pack_into(f"<{SET_WORDS}I", img, file_offset(PRIVATE_SET), *words)
+        struct.pack_into("<I", img, entry, PRIVATE_SET)
+    return bytes(img)
+
+
 class Firmware:
     def __init__(self, path, data=None):
         self.path = path
@@ -92,11 +124,12 @@ class Firmware:
         return next(t for _, t, n in LOOKS if n == name)
 
     def with_inheritance(self, mapping):
-        """a Firmware whose looks in {target: source} use the source's look data"""
+        """a Firmware whose looks in {target: source} use the source's look data;
+        Cross Process always ends up with a private copy of its colour matrix"""
         data = self.data
         for target, source in mapping.items():
             data = inherit(data, self.table_of(target), self.table_of(source))
-        return Firmware(self.path, data)
+        return Firmware(self.path, private_cross(data))
 
     def look_matrix_address(self, table):
         return self.u32(self.cm_set(table) + 4)

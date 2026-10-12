@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="de">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -10,10 +10,13 @@
 <body>
 <header>
   <div class="brand">GR III <span>Look Editor</span></div>
-  <div class="fw" id="fw-info">Firmware wird geladen …</div>
-  <button class="btn ghost" id="help-open" type="button">So funktioniert's</button>
+  <div class="fw" id="fw-info">Loading firmware …</div>
+  <div class="seg lang" id="lang" role="group" aria-label="Language">
+    <button data-lang="en" type="button">EN</button><button data-lang="de" type="button">DE</button>
+  </div>
+  <button class="btn ghost" id="help-open" type="button" data-i18n="help_open">How it works</button>
   <label class="btn primary">
-    Foto öffnen
+    <span data-i18n="open_photo">Open photo</span>
     <input type="file" id="file" accept=".dng,.DNG,.json" hidden>
   </label>
 </header>
@@ -22,10 +25,10 @@
   <section class="stage">
     <div class="toolbar">
       <div class="seg" id="modes">
-        <button data-mode="edit" class="on" title="Dein Look">Bearbeitet</button>
-        <button data-mode="ab" title="Links das Original der Kamera, rechts dein Look">Vorher / Nachher</button>
-        <button data-mode="camera" title="Links das JPEG aus der Kamera, rechts die Vorschau">Vergleich Kamera</button>
-        <button data-mode="jpeg" title="Das in der DNG eingebettete Kamera-JPEG">Kamera-JPEG</button>
+        <button data-mode="edit" class="on" data-i18n="mode_edit" data-i18n-title="mode_edit_t">Edited</button>
+        <button data-mode="ab" data-i18n="mode_ab" data-i18n-title="mode_ab_t">Before / After</button>
+        <button data-mode="camera" data-i18n="mode_camera" data-i18n-title="mode_camera_t">Compare camera</button>
+        <button data-mode="jpeg" data-i18n="mode_jpeg" data-i18n-title="mode_jpeg_t">Camera JPEG</button>
       </div>
       <div class="shot" id="shot-info"></div>
     </div>
@@ -34,214 +37,208 @@
       <div class="split" id="split" hidden><div class="grip"></div></div>
       <div class="labels" id="labels" hidden><span id="label-l"></span><span id="label-r"></span></div>
       <div class="empty" id="empty">
-        <p class="big">Öffne ein DNG deiner GR III</p>
-        <p>Foto hierher ziehen oder oben auf <b>Foto öffnen</b> klicken.</p>
+        <p class="big" data-i18n="empty_title">Open a DNG from your GR III</p>
+        <p data-i18n-html="empty_drop"></p>
         <ol class="steps">
-          <li><b>Bildstil wählen</b>, den du verändern willst</li>
-          <li><b>Farbe, Tonkurve</b> oder <b>Cross Process</b> anpassen, die Vorschau zeigt das Ergebnis</li>
-          <li>Unter <b>Export</b> die Update-Datei erstellen und auf die Kamera spielen</li>
+          <li data-i18n-html="empty_s1"></li>
+          <li data-i18n-html="empty_s2"></li>
+          <li data-i18n-html="empty_s3"></li>
         </ol>
       </div>
-      <div class="busy" id="busy" hidden>Foto wird geladen …</div>
+      <div class="busy" id="busy" hidden data-i18n="busy">Loading photo …</div>
     </div>
     <details class="drawer" id="shot-drawer">
-      <summary>Kamera-Einstellungen der Aufnahme <span class="muted">· beeinflussen nur die Vorschau</span></summary>
+      <summary><span data-i18n="drawer">Camera settings of the photo</span> <span class="muted" data-i18n="drawer_hint">· affect the preview only</span></summary>
       <div class="drawer-grid">
-        <div class="slider"><label for="p-saturation">Sättigung <output id="p-saturation-out">0</output></label>
+        <div class="slider"><label for="p-saturation"><span data-i18n="p_saturation">Saturation</span> <output id="p-saturation-out">0</output></label>
           <input type="range" id="p-saturation" min="-4" max="4" step="1" value="0"></div>
-        <div class="slider"><label for="p-hue" title="Bei Cross Process wählt diese Einstellung in der Kamera den Farbton 1–3">Farbton <output id="p-hue-out">0</output></label>
+        <div class="slider"><label for="p-hue" data-i18n-title="p_hue_t"><span data-i18n="p_hue">Hue</span> <output id="p-hue-out">0</output></label>
           <input type="range" id="p-hue" min="-4" max="4" step="1" value="0"></div>
-        <div class="slider"><label for="p-key">High/Low Key <output id="p-key-out">0</output></label>
+        <div class="slider"><label for="p-key"><span data-i18n="p_key">High/Low Key</span> <output id="p-key-out">0</output></label>
           <input type="range" id="p-key" min="-4" max="4" step="1" value="0"></div>
-        <div class="slider"><label for="p-contrast">Kontrast <output id="p-contrast-out">0</output></label>
+        <div class="slider"><label for="p-contrast"><span data-i18n="p_contrast">Contrast</span> <output id="p-contrast-out">0</output></label>
           <input type="range" id="p-contrast" min="-4" max="4" step="1" value="0"></div>
-        <div class="slider"><label for="p-highlight">Kontrast Lichter <output id="p-highlight-out">0</output></label>
+        <div class="slider"><label for="p-highlight"><span data-i18n="p_highlight">Highlight contrast</span> <output id="p-highlight-out">0</output></label>
           <input type="range" id="p-highlight" min="-4" max="4" step="1" value="0"></div>
-        <div class="slider"><label for="p-shadow">Kontrast Schatten <output id="p-shadow-out">0</output></label>
+        <div class="slider"><label for="p-shadow"><span data-i18n="p_shadow">Shadow contrast</span> <output id="p-shadow-out">0</output></label>
           <input type="range" id="p-shadow" min="-4" max="4" step="1" value="0"></div>
-        <div class="slider"><label for="ev">Belichtung <output id="ev-out">0.0 EV</output></label>
+        <div class="slider"><label for="ev"><span data-i18n="p_ev">Exposure</span> <output id="ev-out">0.0 EV</output></label>
           <input type="range" id="ev" min="-3" max="3" step="0.1" value="0"></div>
         <label class="check"><input type="checkbox" id="residual" checked>
-          Feinabgleich am Kamera-JPEG</label>
+          <span data-i18n="residual">Fine-match to camera JPEG</span></label>
       </div>
-      <p class="note" id="tone-note">Noch kein Foto geladen.</p>
+      <p class="note" id="tone-note">No photo loaded yet.</p>
     </details>
   </section>
 
-  <aside data-tab="color">
+  <aside data-tab="base">
     <div class="look-head">
-      <label for="look-select">Bildstil</label>
-      <select id="look-select"></select>
-      <p class="note warn" id="shared-note" hidden></p>
+      <div class="hero">
+        <div class="hero-title" data-i18n="hero_title">Your own image control</div>
+        <p data-i18n-html="hero_text"></p>
+      </div>
+      <p class="note warn" id="other-look" hidden></p>
     </div>
 
     <nav class="tabs" id="tabs">
-      <button data-tab="color" class="on">Farbe<i></i></button>
-      <button data-tab="tone">Tonkurve<i></i></button>
-      <button data-tab="cross">Cross Process<i></i></button>
-      <button data-tab="export">Export<i></i></button>
+      <button data-tab="base" class="on"><span class="num">1</span><span data-i18n="tab_base">Base</span><i></i></button>
+      <button data-tab="color"><span class="num">2</span><span data-i18n="tab_color">Colour</span><i></i></button>
+      <button data-tab="curves"><span class="num">3</span><span data-i18n="tab_curves">Curves</span><i></i></button>
+      <button data-tab="export"><span class="num">4</span><span data-i18n="tab_export">Export</span><i></i></button>
     </nav>
 
-    <!-- ===== Farbe ===== -->
-    <section class="tab" data-tab="color" id="editor">
-      <p class="lead">Farben des gewählten Bildstils. Grau bleibt immer neutral.</p>
+    <!-- ===== 1 Base ===== -->
+    <section class="tab" data-tab="base">
+      <p class="lead" data-i18n="base_lead"></p>
+      <ul class="base-list" id="base-list"></ul>
+      <p class="note muted" id="inherit-note"></p>
+      <h3 data-i18n="in_camera">In the camera</h3>
+      <ol class="howto">
+        <li data-i18n-html="cam_1"></li>
+        <li data-i18n-html="cam_2"></li>
+        <li data-i18n-html="cam_3"></li>
+      </ol>
+    </section>
+
+    <!-- ===== 2 Colour ===== -->
+    <section class="tab" data-tab="color" id="editor" hidden>
+      <p class="lead" data-i18n="color_lead"></p>
       <div class="slider">
-        <label for="sat">Sättigung <output id="sat-out">1.00</output></label>
+        <label for="sat"><span data-i18n="saturation">Saturation</span> <output id="sat-out">1.00</output></label>
         <input type="range" id="sat" min="0" max="2" step="0.01" value="1">
       </div>
       <div class="slider">
-        <label for="hue">Farbton <output id="hue-out">0°</output></label>
+        <label for="hue"><span data-i18n="hue">Hue</span> <output id="hue-out">0°</output></label>
         <input type="range" id="hue" min="-45" max="45" step="0.5" value="0">
       </div>
-      <h3>Kalibrierung <span class="muted">· wie in Lightroom</span></h3>
+      <h3><span data-i18n="calibration">Calibration</span> <span class="muted" data-i18n="calibration_hint">· like Lightroom</span></h3>
       <div class="calib" id="calib"></div>
-      <p class="note muted">Verschiebt Rot, Grün und Blau einzeln. Doppelklick setzt einen Regler zurück.</p>
-      <div class="row"><button class="btn" id="reset">Bildstil zurücksetzen</button></div>
+      <p class="note muted" data-i18n="calib_note"></p>
+      <div class="row"><button class="btn" id="reset" data-i18n="reset_colors">Reset colours</button></div>
 
       <details class="adv">
-        <summary>Matrix-Werte (fortgeschritten)</summary>
-        <p class="note muted">Die 3×3-Farbmatrix, wie sie in der Firmware steht <span class="addr" id="addr"></span>.
-          Jede Zeile sollte 1,0 ergeben, sonst bekommt Grau einen Farbstich.</p>
+        <summary data-i18n="matrix_adv">Matrix values (advanced)</summary>
+        <p class="note muted"><span data-i18n="matrix_note"></span> <span class="addr" id="addr"></span></p>
         <div class="matrix" id="matrix"></div>
         <div class="sums" id="sums"></div>
       </details>
-    </section>
-
-    <!-- ===== Tonkurve ===== -->
-    <section class="tab" data-tab="tone" id="tone-panel" hidden>
-      <p class="lead">Helligkeitsverlauf. <b>Gilt für alle Bildstile</b>; Kontrast, Lichter und Schatten
-        der Kamera wirken weiterhin zusätzlich.</p>
-      <canvas id="curve" width="560" height="560"></canvas>
-      <p class="note muted">Klicken setzt einen Punkt, Ziehen verschiebt ihn. Doppelklick oder
-        Rechtsklick entfernt ihn.</p>
-      <div class="row"><button class="btn" id="tone-reset">Tonkurve zurücksetzen</button></div>
-
-      <details class="adv">
-        <summary>Erweitert</summary>
-        <div class="fams">
-          <span class="muted">Anwenden auf Kontraststufen:</span>
-          <label><input type="checkbox" class="fam" value="2" checked> niedrig</label>
-          <label><input type="checkbox" class="fam" value="1" checked> normal</label>
-          <label><input type="checkbox" class="fam" value="0" checked> hoch</label>
-        </div>
-        <h3>Kurve, wie die Kamera sie rechnet</h3>
-        <canvas id="effective" width="560" height="240"></canvas>
-        <p class="note muted" id="effective-note">Grau: Original, orange: bearbeitet. Berechnet mit den
-          Kamera-Einstellungen unter dem Bild.</p>
+      <details class="adv" id="other-looks">
+        <summary data-i18n="other_looks">Change other image controls of the camera (advanced)</summary>
+        <p class="note muted" data-i18n="other_looks_note"></p>
+        <select id="look-select"></select>
+        <p class="note warn" id="shared-note" hidden></p>
       </details>
     </section>
 
-    <!-- ===== Cross Process ===== -->
-    <section class="tab" data-tab="cross" hidden>
-      <p class="lead">Cross Process hat eigene Farbkurven für Rot, Grün und Blau. In der Kamera wählst du
-        sie unter <b>Cross Process → Farbton 1, 2 oder 3</b>. Die Vorschau zeigt hier den Bildstil Cross Process.</p>
+    <!-- ===== 3 Curves ===== -->
+    <section class="tab" data-tab="curves" hidden>
+      <p class="lead" data-i18n-html="curves_lead"></p>
 
-      <label class="field-label" for="chan-sets">Variante</label>
+      <label class="field-label" for="chan-sets" data-i18n="variant">Variant</label>
       <div class="seg small" id="chan-sets"></div>
 
-      <div class="inherit" id="inherit-box" hidden>
-        <label for="inherit-src">Grundlage: Farben von</label>
-        <select id="inherit-src"></select>
-        <p class="note muted" id="inherit-note"></p>
-      </div>
-
-      <div id="grade-panel">
-        <h3>Farbräder <span class="muted">· <span id="grade-set"></span></span></h3>
-        <div class="wheels" id="wheels"></div>
-        <div class="slider"><label for="grade-balance">Balance Schatten ↔ Lichter <output id="grade-balance-out">0</output></label>
-          <input type="range" id="grade-balance" min="-100" max="100" step="1" value="0"></div>
-        <p class="note muted">Ins Rad ziehen tönt den Bereich: Richtung = Farbe, Abstand zur Mitte = Stärke.
-          Der Regler darunter ändert die Helligkeit. Doppelklick setzt zurück.</p>
-        <div class="row"><button class="btn" id="grade-reset">Farbräder zurücksetzen</button></div>
-        <p class="note" id="grade-note"></p>
-      </div>
-
       <div id="chan-panel">
-        <h3>RGB-Kurven</h3>
-        <div class="seg small rgb" id="chan-channels"><button>R</button><button>G</button><button>B</button></div>
+        <h3 data-i18n="curves">Curves</h3>
+        <div class="seg small rgb" id="chan-channels"><button>RGB</button><button>R</button><button>G</button><button>B</button></div>
         <p class="note muted" id="chan-title"></p>
         <canvas id="chan-curve" width="560" height="560"></canvas>
         <div class="row">
-          <button class="btn" id="chan-reset">Kanal zurücksetzen</button>
-          <button class="btn" id="chan-reset-set">Variante zurücksetzen</button>
+          <button class="btn" id="chan-reset" data-i18n="reset_curve">Reset curve</button>
+          <button class="btn" id="chan-reset-set" data-i18n="reset_variant">Reset variant</button>
         </div>
         <p class="note" id="chan-note"></p>
-
-        <details class="adv">
-          <summary>Erweitert</summary>
-          <h3>Alle drei Kurven der Variante</h3>
-          <canvas id="chan-effective" width="560" height="300"></canvas>
-          <p class="note muted">Gestrichelt: Original.</p>
-          <div class="copy">
-            <label for="chan-source">Einzelne Kurve übernehmen von</label>
-            <select id="chan-source"></select>
-            <button class="btn" id="chan-copy">Übernehmen</button>
-          </div>
-          <div class="copy">
-            <label for="chan-source-set">Ganze Variante übernehmen von</label>
-            <select id="chan-source-set"></select>
-            <button class="btn" id="chan-copy-set">Übernehmen</button>
-          </div>
-          <div class="row">
-            <button class="btn" id="chan-linear">Kurven neutral (diese Variante)</button>
-            <button class="btn" id="chan-linear-all">Alle neutral</button>
-          </div>
-        </details>
       </div>
+
+      <div id="grade-panel">
+        <h3><span data-i18n="wheels">Colour wheels</span> <span class="muted">· <span id="grade-set"></span></span></h3>
+        <div class="wheels" id="wheels"></div>
+        <div class="slider"><label for="grade-balance"><span data-i18n="balance">Balance shadows ↔ highlights</span> <output id="grade-balance-out">0</output></label>
+          <input type="range" id="grade-balance" min="-100" max="100" step="1" value="0"></div>
+        <p class="note muted" data-i18n="wheels_note"></p>
+        <div class="row"><button class="btn" id="grade-reset" data-i18n="reset_wheels">Reset colour wheels</button></div>
+        <p class="note" id="grade-note"></p>
+      </div>
+
+      <details class="adv">
+        <summary data-i18n="copy_adv">Copy curves (advanced)</summary>
+        <h3 data-i18n="all_three">All three curves of the variant</h3>
+        <canvas id="chan-effective" width="560" height="300"></canvas>
+        <p class="note muted" data-i18n="dashed_neutral"></p>
+        <div class="copy">
+          <label for="chan-source" data-i18n="copy_one">Copy a single curve from</label>
+          <select id="chan-source"></select>
+          <button class="btn" id="chan-copy" data-i18n="copy_btn">Copy</button>
+        </div>
+        <div class="copy">
+          <label for="chan-source-set" data-i18n="copy_set">Copy a whole variant from</label>
+          <select id="chan-source-set"></select>
+          <button class="btn" id="chan-copy-set" data-i18n="copy_btn">Copy</button>
+        </div>
+      </details>
+
+      <details class="adv" id="tone-panel">
+        <summary data-i18n="tone_adv">Tone curve for all image controls (advanced)</summary>
+        <p class="note warn" data-i18n="tone_warn"></p>
+        <canvas id="curve" width="560" height="560"></canvas>
+        <div class="row"><button class="btn" id="tone-reset" data-i18n="reset_tone">Reset tone curve</button></div>
+        <div class="fams">
+          <span class="muted" data-i18n="families">Apply to contrast levels:</span>
+          <label><input type="checkbox" class="fam" value="2" checked> <span data-i18n="fam_low">low</span></label>
+          <label><input type="checkbox" class="fam" value="1" checked> <span data-i18n="fam_normal">normal</span></label>
+          <label><input type="checkbox" class="fam" value="0" checked> <span data-i18n="fam_high">high</span></label>
+        </div>
+        <h3 data-i18n="tone_camera">Curve as the camera computes it</h3>
+        <canvas id="effective" width="560" height="240"></canvas>
+        <p class="note muted" id="effective-note" data-i18n="tone_legend"></p>
+      </details>
     </section>
 
-    <!-- ===== Export ===== -->
+    <!-- ===== 4 Export ===== -->
     <section class="tab" data-tab="export" hidden>
-      <h3>Deine Änderungen</h3>
-      <ul class="changes" id="changes"><li class="muted">Noch keine Änderungen</li></ul>
-      <button class="btn primary wide" id="export" disabled>Update-Datei erstellen</button>
+      <h3 data-i18n="your_look">Your look</h3>
+      <ul class="changes" id="changes"></ul>
+      <button class="btn primary wide" id="export" data-i18n="create_update">Create update file</button>
       <p class="note" id="export-msg"></p>
 
       <div class="downloads" id="downloads" hidden>
-        <a class="btn primary wide" id="dl-update" download>FWDC239B.BIN herunterladen</a>
-        <a class="btn wide" id="dl-preset" download>Preset speichern (zum späteren Weiterbearbeiten)</a>
+        <a class="btn primary wide" id="dl-update" download data-i18n="dl_update">Download FWDC239B.BIN</a>
+        <a class="btn wide" id="dl-preset" download data-i18n="dl_preset">Save preset</a>
       </div>
 
-      <h3>Auf die Kamera spielen</h3>
+      <h3 data-i18n="flash">Put it on the camera</h3>
       <ol class="howto">
-        <li>Akku voll laden.</li>
-        <li><code>FWDC239B.BIN</code> unverändert ins oberste Verzeichnis der SD-Karte kopieren.</li>
-        <li>Karte einlegen und das Firmware-Update im Menü der Kamera starten, wie bei einem
-          offiziellen Update. Kamera dabei nicht ausschalten.</li>
-        <li>Zurück zum Original: die Originaldatei von Ricoh genauso aufspielen.</li>
+        <li data-i18n-html="flash_1"></li>
+        <li data-i18n-html="flash_2"></li>
+        <li data-i18n-html="flash_3"></li>
+        <li data-i18n-html="flash_4"></li>
+        <li data-i18n-html="flash_5"></li>
       </ol>
-      <p class="note warn">Auf eigenes Risiko. Veränderte Firmware kann die Garantie kosten. Für den Fall,
-        dass ein Update schiefgeht, ist noch kein Rettungsweg bekannt.</p>
+      <p class="note warn" data-i18n="risk"></p>
 
-      <h3>Preset laden</h3>
+      <h3 data-i18n="load_preset">Load preset</h3>
       <label class="btn">
-        Preset öffnen …
+        <span data-i18n="open_preset">Open preset …</span>
         <input type="file" id="preset-file" accept=".json,application/json" hidden>
       </label>
-      <p class="note muted" id="preset-msg">Lädt eine gespeicherte <code>.looks.json</code> und ersetzt alle
-        aktuellen Änderungen. Geht auch per Drag &amp; Drop auf das Bild.</p>
+      <p class="note muted" id="preset-msg" data-i18n-html="preset_note"></p>
     </section>
   </aside>
 </main>
 
 <dialog id="help">
-  <h2>So funktioniert's</h2>
+  <h2 data-i18n="help_open">How it works</h2>
+  <p class="note" data-i18n-html="help_intro"></p>
   <ol class="steps">
-    <li><b>Foto öffnen.</b> Nimm ein DNG deiner GR III. Die Vorschau rechnet es so, wie die Kamera es
-      rechnen würde, und zeigt dir die Wirkung jeder Änderung.</li>
-    <li><b>Bildstil wählen</b> (oben rechts). Unter <b>Farbe</b> änderst du Sättigung, Farbton und die
-      Primärfarben. Die <b>Tonkurve</b> gilt für alle Bildstile. <b>Cross Process</b> hat eigene
-      RGB-Kurven und Farbräder.</li>
-    <li><b>Vergleichen</b> mit „Vorher / Nachher" über dem Bild.</li>
-    <li><b>Export:</b> Update-Datei erstellen, herunterladen und auf die Kamera spielen. Als Preset
-      gespeichert kannst du später weiterarbeiten.</li>
+    <li data-i18n-html="help_1"></li>
+    <li data-i18n-html="help_2"></li>
+    <li data-i18n-html="help_3"></li>
+    <li data-i18n-html="help_4"></li>
   </ol>
-  <p class="note">Deine Einstellungen in der Kamera (Kontrast, Sättigung …) funktionieren mit dem neuen
-    Look weiter wie gewohnt.</p>
-  <p class="note warn">Das Aufspielen veränderter Firmware geschieht auf eigenes Risiko.</p>
-  <form method="dialog"><button class="btn primary">Los geht's</button></form>
+  <p class="note warn" data-i18n="help_risk"></p>
+  <form method="dialog"><button class="btn primary" data-i18n="help_go">Let's go</button></form>
 </dialog>
 
+<script src="i18n.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

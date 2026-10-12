@@ -230,3 +230,29 @@ dialog form { margin-top: 16px; text-align: right; }
 }
 /* the shared-matrix warning concerns the colour tab only */
 aside:not([data-tab="color"]) #shared-note { display: none; }
+
+/* ---- own-look workflow ------------------------------------------------------ */
+.hero { border: 1px solid rgba(232,176,74,.35); background: rgba(232,176,74,.07); border-radius: 8px; padding: 10px 12px; }
+.hero-title { font-weight: 700; font-size: 14px; color: var(--accent); margin-bottom: 2px; }
+.hero p { margin: 0; font-size: 12.5px; color: var(--muted); }
+.hero b { color: var(--text); }
+#other-look { margin-top: 10px; }
+#other-look a { color: var(--accent); }
+.tabs .num {
+  display: inline-grid; place-items: center; width: 16px; height: 16px; margin-right: 5px;
+  border-radius: 50%; background: var(--field); color: var(--muted); font-size: 10px;
+}
+.tabs button.on .num { background: var(--accent); color: #1a1407; }
+.base-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.base-list li {
+  display: flex; flex-direction: column; gap: 1px; padding: 8px 10px; cursor: pointer;
+  border: 1px solid var(--line); border-radius: 6px; background: var(--field);
+}
+.base-list li:hover { border-color: #4a4d52; }
+.base-list li.on { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
+.base-list li b { font-weight: 600; }
+.base-list li span { font-size: 12px; color: var(--muted); }
+.changes .warn { color: var(--warn); }
+#other-looks select { margin-top: 6px; }
+.seg.rgb button:first-child { color: var(--text); }
+.seg.lang button { padding: 5px 9px; font-size: 12px; font-weight: 600; }
