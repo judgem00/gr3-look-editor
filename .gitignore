@@ -1,0 +1,15 @@
+# never commit Ricoh firmware, decoded images or exports
+work/
+*.bin
+*.BIN
+unpackedFW*
+# photos carry the camera serial number in their metadata
+*.DNG
+*.dng
+*.JPG
+*.jpg
+# python
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
