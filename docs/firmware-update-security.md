@@ -1,117 +1,114 @@
-# Update-Sicherheit der GR III — Analyse
+# GR III update security — analysis
 
-Ergebnis von Phase 1 des Farbprofil-Plans: Prüft die
-Kamera modifizierte Firmware kryptografisch, oder nur auf Integrität?
+Result of phase 1 of the colour profile plan: does the camera verify modified
+firmware cryptographically, or only for integrity?
 
-**Kurz: keine Kryptografie. Nur eine nachrechenbare Prüfsumme.**
+**Short answer: no cryptography. Only a checksum that can be recomputed.**
 
-## Vorgehen
+## Approach
 
-Firmware `fwdc239b`, entpackt nach `assets/fwdc239b/unpackedFW`. Ladeadresse
-des RTOS/DSP-Blobs bekannt (Bias `0x52FEF790`, siehe
-`tools/find-load-address.py`), damit sind
-String-Referenzen im Code auflösbar.
+Firmware `fwdc239b`, unpacked to `assets/fwdc239b/unpackedFW`. The load
+address of the RTOS/DSP blob is known (bias `0x52FEF790`, see
+`tools/find-load-address.py`), so string references in the code can be
+resolved.
 
-## Was nach Signatur aussah — und was es wirklich ist
+## What looked like a signature — and what it really is
 
-| Fund im Image | Realität |
+| Finding in the image | Reality |
 |---|---|
-| `No valid EB signature found` | **FAT-Dateisystem** — der `0xAA55`-Bootsektor-Marker im SD-Karten-Formatierer |
-| `%sPRSA -------,0x%08x` | **Hardware-Register** `ProReadUnit` (PR + Source Address), Bildpipeline |
-| `RSA}`, `{AeS`, `#MD5` | Zufalls-Bytes mit falschem 4-Byte-Alignment, keine Symbolnamen |
-| `CHECKSUM NG`, `checksum error!!` | eine **additive Prüfsumme**, kein Signaturvergleich |
+| `No valid EB signature found` | **FAT file system** — the `0xAA55` boot sector marker in the SD card formatter |
+| `%sPRSA -------,0x%08x` | **hardware register** `ProReadUnit` (PR + source address), image pipeline |
+| `RSA}`, `{AeS`, `#MD5` | random bytes with wrong 4-byte alignment, not symbol names |
+| `CHECKSUM NG`, `checksum error!!` | an **additive checksum**, not a signature comparison |
 
-Im gesamten Image findet sich **keine Kryptobibliothek** — kein RSA, SHA, AES,
-HMAC, kein mbedTLS/OpenSSL/wolfSSL. Ein signaturgeprüfter Updater braucht die
-zwingend.
+The entire image contains **no crypto library** — no RSA, SHA, AES, HMAC, no
+mbedTLS/OpenSSL/wolfSSL. A signature-verifying updater would need one.
 
-## Der Update-Pfad
+## The update path
 
 ```
 UserFwUpdateController / FactoryFwUpdateController
    -> src/FwUpdate.cpp
         -> CpuFwUpdate / DspFwUpdate / BothFwUpdate
-             -> SRIC-Protokoll -> Ziel-Bootloader (SAMBA-Z)
+             -> SRIC protocol -> target bootloader (SAMBA-Z)
                   BOOT DOWNLOAD -> BOOT VERIFY -> CHECKSUM
 ```
 
-Fehlermeldungen des Updaters (vollständig): `Low Battery`, `File Bloken`,
-`Update Failure`, `Unknown`. **Keine** Signatur-/Vertrauens-Fehlermeldung.
+Error messages of the updater (complete): `Low Battery`, `File Bloken`,
+`Update Failure`, `Unknown`. **No** signature/trust error message.
 
-Intern lädt die Kamera die Datei als `C:\FWDC239B.BIN` und prüft den
-`RICOH`-Header (Datei beginnt mit `RICOH\0\0\0GR III`).
+Internally the camera loads the file as `C:\FWDC239B.BIN` and checks the
+`RICOH` header (the file starts with `RICOH\0\0\0GR III`).
 
-## Die Prüfung im Maschinencode
+## The check in machine code
 
-Routine bei RAM `0x535796c0` / `0x53579790` (Datei-Offset ~5.808.000), die
-`CHECKSUM NG: Target:%02d` protokolliert:
+Routine at RAM `0x535796c0` / `0x53579790` (file offset ~5,808,000), which
+logs `CHECKSUM NG: Target:%02d`:
 
 ```
-53579708  ldrb r1,[r0]; add r2,r2,r1,lsl#24    ; Byte, Index % 4 == 0
-53579774  ldrb r1,[r0]; add r2,r2,r1,lsl#16    ; Index % 4 == 1
-53579730  ...          add r2,r2,r1,lsl#8      ; Index % 4 == 2
-53579744  ...          add r2,r2,r1            ; Index % 4 == 3
+53579708  ldrb r1,[r0]; add r2,r2,r1,lsl#24    ; byte, index % 4 == 0
+53579774  ldrb r1,[r0]; add r2,r2,r1,lsl#16    ; index % 4 == 1
+53579730  ...          add r2,r2,r1,lsl#8      ; index % 4 == 2
+53579744  ...          add r2,r2,r1            ; index % 4 == 3
 ...
-537597c4  ldrb r3,[r5,#15]   ; gespeichertes Prüfbyte aus dem Header
-537597c8  ldrb r2,[fp,#-36]  ; gerade berechnetes Byte
+537597c4  ldrb r3,[r5,#15]   ; stored check byte from the header
+537597c8  ldrb r2,[fp,#-36]  ; byte just computed
 537597cc  cmp  r2,r3
-537597d0  beq  ok            ; sonst -> CHECKSUM NG
+537597d0  beq  ok            ; otherwise -> CHECKSUM NG
 ```
 
-Die Bytes werden in ein 32-Bit-Register akkumuliert (äquivalent: Summe der
-Daten als Big-Endian-32-Bit-Wörter), auf ein Byte gefaltet und gegen **ein
-einzelnes gespeichertes Byte** verglichen. Nichts, was eine modifizierte Datei
-nicht neu berechnen könnte. Der Algorithmus ist in
-`tools/fw-checksum.py` reproduziert.
+The bytes are accumulated into a 32-bit register (equivalently: the sum of
+the data as big-endian 32-bit words), folded to one byte and compared against
+**a single stored byte**. Nothing a modified file could not recompute. The
+algorithm is reproduced in `tools/fw-checksum.py`.
 
-## Bedeutung
+## Implications
 
-Der Update-Pfad wehrt sich technisch nicht gegen modifizierte Firmware. Damit
-ist **Gate 1 des Plans vorsichtig positiv**: echte eigene Farbprofile sind
-grundsätzlich flashbar.
+The update path offers no technical defence against modified firmware. So
+**gate 1 of the plan is cautiously positive**: real custom colour profiles
+can be flashed in principle.
 
-## Offene Vorbehalte
+## Open caveats
 
-1. **Statische Analyse, keine Ausführung.** Der Befund beruht auf gelesenem
-   Code und fehlenden Krypto-Strings — starke Evidenz, aber der endgültige
-   Beweis wäre, den Updater im Emulator gegen eine modifizierte Datei laufen zu
-   lassen.
-2. **Recovery-Pfad ungeklärt.** `SAMBA-Z`/`SRIC` deutet auf einen
-   Bootloader-Modus, der Wiederherstellung erlauben könnte — muss bestätigt
-   werden, bevor irgendjemand flasht. Ohne Recovery bleibt Bricking real.
-3. **Packen der `.bin` — gelöst.** Siehe [firmware-packing.md](firmware-packing.md).
-   Korrektur: Die oben beschriebene Byte-Summe gehört zum SRIC-Update des
-   Sub-CPU; die Update-Datei selbst ist durch zwei Wortsummen gesichert.
+1. **Static analysis, no execution.** The finding rests on code that was read
+   and on missing crypto strings — strong evidence, but the final proof would
+   be running the updater in an emulator against a modified file.
+2. **Recovery path unclear.** `SAMBA-Z`/`SRIC` hints at a bootloader mode
+   that might allow recovery — this must be confirmed before anyone flashes.
+   Without recovery, bricking remains a real risk.
+3. **Packing the `.bin` — solved.** See [firmware-packing.md](firmware-packing.md).
+   Correction: the byte sum described above belongs to the SRIC update of the
+   sub-CPU; the update file itself is protected by two word sums.
 
 ---
 
-# Recovery-Pfad — Analyse
+# Recovery path — analysis
 
-Zweiter Teil von Phase 1: Gibt es einen Rückweg, wenn ein Flash fehlschlägt?
+Second part of phase 1: is there a way back if a flash fails?
 
-**Kurz: Ja, mehrere Anzeichen für Recovery — aber keiner am echten Gerät
-bestätigt. Vor einem Flash zwingend praktisch verifizieren.**
+**Short answer: yes, several signs of recovery — but none confirmed on a real
+device. Must be verified in practice before flashing.**
 
-## Die Boot-Architektur
+## Boot architecture
 
-Vier Segmente im Image, die auf getrennte eMMC-Partitionen abgebildet werden
-(Adressen aus dem `PARTPARA`-Header):
+Four segments in the image, mapped to separate eMMC partitions (addresses
+from the `PARTPARA` header):
 
-| Segment | Datei-Offset | Rolle |
+| Segment | File offset | Role |
 |---|---:|---|
-| RTOS/DSP/ISP + Tuning | 11,2–16,3 MB | Bildpipeline, **hier liegen die Farbtabellen** |
-| Bootloader `stubby-sc2000-rtos` | 16,8 MB | lädt Kernel + DTB aus dem romfs |
-| romfs (Kernel, `sc2000.dtb`) | 16,8 MB | |
-| cpio (Linux-Rootfs) | 19,7 MB | |
-| **M0-Supervisor** (`KB588CPU project`) | 33,0 MB | eigener Always-On-Kern |
+| RTOS/DSP/ISP + tuning | 11.2–16.3 MB | image pipeline, **this is where the colour tables live** |
+| bootloader `stubby-sc2000-rtos` | 16.8 MB | loads kernel + DTB from the romfs |
+| romfs (kernel, `sc2000.dtb`) | 16.8 MB | |
+| cpio (Linux rootfs) | 19.7 MB | |
+| **M0 supervisor** (`KB588CPU project`) | 33.0 MB | separate always-on core |
 
-Der **M0-Supervisor** ist der Schlüssel: ein kleiner, immer laufender Kern für
-Laden, Charging, Power und DSP-Reset — in einer **eigenen Partition**, getrennt
-von der Hauptfirmware.
+The **M0 supervisor** is the key: a small, always-running core for loading,
+charging, power and DSP reset — in its **own partition**, separate from the
+main firmware.
 
-## Was das Update tut (Brick-Risiko)
+## What the update does (brick risk)
 
-`src/CpuFwUpdate.cpp` / `DspFwUpdate.cpp` schreiben **direkt in den eMMC**:
+`src/CpuFwUpdate.cpp` / `DspFwUpdate.cpp` write **directly to the eMMC**:
 
 ```
 make partition table -> write partition table
@@ -121,61 +118,62 @@ write partition data
 format resource drive -> mount resource drive
 ```
 
-Das ist ein **In-Place-Flash**. Eine Unterbrechung mitten im Schreiben (Akku
-leer, Abschaltung) ist der Brick-Fall. Deshalb prüft der Updater vorab den
-Akku (`Low Battery`) und die Projektnummer (`project number is different!` —
-eine modifizierte Firmware muss die Projektnummer erhalten).
+This is an **in-place flash**. An interruption in the middle of writing
+(battery empty, power-off) is the brick case. That is why the updater checks
+the battery beforehand (`Low Battery`) and the project number (`project
+number is different!` — modified firmware must keep the project number).
 
-## Anzeichen für Recovery
+## Signs of recovery
 
-**1. SD_BOOT-Modus (Hardware-nah).** Der M0-Supervisor kennt einen SD-Boot-
-Modus und wechselt bei fehlgeschlagenem Handshake mit dem Hauptsystem hinein:
+**1. SD_BOOT mode (close to hardware).** The M0 supervisor knows an SD boot
+mode and switches into it when the handshake with the main system fails:
 
 ```
 Selected SD_BOOT MODE.
 HS error, SD BOOT mode.
 ```
 
-Ausgelöst wird er über Tastenzustände beim Einschalten (`SWMAIN`,
-`SWPLAY_LONG` u. a.) — das klassische Ricoh/Pentax-Recovery-Muster (Taste
-halten + Firmware auf SD-Karte). Da der M0 in einer eigenen Partition liegt,
-überlebt er einen Brick der Hauptfirmware.
+It is triggered by button states at power-on (`SWMAIN`, `SWPLAY_LONG` and
+others) — the classic Ricoh/Pentax recovery pattern (hold a button + firmware
+on the SD card). Since the M0 lives in its own partition, it survives a brick
+of the main firmware.
 
-**2. Service-Modus mit Dump/Restore.** `src/FlashMemoryFactory.cpp` bietet
-einen Werkzeugsatz auf Flash-Ebene:
+**2. Service mode with dump/restore.** `src/FlashMemoryFactory.cpp` offers a
+flash-level tool set:
 
 ```
-dump drive     -> C:\dump_%s.bin / C:\fwdump.bin   (Flash sichern)
-restore drive  <- load dump file                   (Flash zurückschreiben)
+dump drive     -> C:\dump_%s.bin / C:\fwdump.bin   (back up flash)
+restore drive  <- load dump file                   (write flash back)
 format drive / copy drive / break drive
 ```
 
-Damit lässt sich der Flash vor einem Experiment vollständig sichern und danach
-zurückschreiben — ein eingebautes Backup.
+This allows a complete flash backup before an experiment and restoring it
+afterwards — a built-in backup.
 
-**3. Factory-Full-Update.** Neben dem User-Pfad gibt es
-`FactoryFwUpdateController` mit `DSP & CPU FULL Update FW` — ein vollständiger
-Reflash, der mehr überschreibt als das normale Update.
+**3. Factory full update.** Besides the user path there is
+`FactoryFwUpdateController` with `DSP & CPU FULL Update FW` — a complete
+reflash that overwrites more than the normal update.
 
-## Ehrliche Bewertung
+## Honest assessment
 
-Ein Recovery-Mechanismus **existiert nachweisbar** im Code — SD-Boot des
-M0-Supervisors, Service-Dump/Restore, Factory-Full-Update. Das senkt das
-Brick-Risiko deutlich: Der M0 liegt separat und hat einen SD-Boot-Pfad.
+A recovery mechanism **demonstrably exists** in the code — SD boot of the M0
+supervisor, service dump/restore, factory full update. That lowers the brick
+risk considerably: the M0 lives separately and has an SD boot path.
 
-**Was statisch nicht beweisbar ist:**
+**What cannot be proven statically:**
 
-- Ob SD_BOOT ein vollständig gebricktes Hauptsystem wiederherstellt (die ganze
-  Firmware von SD lädt) oder nur die begrenzte M0-Funktion
-- Der genaue Tastentrigger für den Recovery-Modus
-- Ob der Maskrom des SoC (die unflashbare erste Stufe) einen USB-Download-Modus
-  hat (die `SAMBA-Z`-Strings deuten darauf hin, sind aber nicht eindeutig)
+- Whether SD_BOOT restores a completely bricked main system (loads the whole
+  firmware from SD) or only the limited M0 function
+- The exact button trigger for recovery mode
+- Whether the SoC's mask ROM (the unflashable first stage) has a USB download
+  mode (the `SAMBA-Z` strings hint at it but are not conclusive)
 
-**Konsequenz für das Vorgehen:** Nicht blind flashen. Vor dem ersten Flash
-- den genauen SD_BOOT-Trigger in der GR-Service-Szene recherchieren,
-- mit dem Service-Dump ein vollständiges Flash-Backup ziehen,
-- und den Recovery-Weg an der Hardware verifizieren, **bevor** etwas
-  Modifiziertes geschrieben wird.
+**Consequence for the approach:** do not flash blindly. Before the first
+flash
+- research the exact SD_BOOT trigger in the GR service scene,
+- take a complete flash backup with the service dump,
+- and verify the recovery path on the hardware **before** anything modified
+  is written.
 
-Erst wenn der Rückweg praktisch bestätigt ist, ist ein Flash-Experiment
-vertretbar.
+Only once the way back is confirmed in practice is a flash experiment
+justifiable.

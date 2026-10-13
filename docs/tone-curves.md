@@ -1,192 +1,207 @@
-# Tonkurven der GR III
+# GR III tone curves
 
-Wie die Kamera ihre Tonkurve bildet, wo die Daten liegen und wie der
-[Look Editor](editor-de.md) sie bearbeitet. Firmware
-`fwdc239b`, Analyse mit REA/Ghidra und Capstone.
+How the camera builds its tone curve, where the data lives and how the
+[Look Editor](editor.md) edits it. Firmware `fwdc239b`, analysed with
+REA/Ghidra and Capstone.
 
-## Kurzfassung
+## Summary
 
-- Die Tonkurve wird **pro Aufnahme berechnet**, nicht pro Bildstil
-  nachgeschlagen. `GammaTuning` (RTOS `0x536e7b64`) mischt sie aus
-  **15 Basiskurven** anhand von vier Reglern: Key, Kontrast, Kontrast Lichter,
-  Kontrast Schatten.
-- Die Bildstile unterscheiden sich in der Tonkurve nur über diese Reglerwerte;
-  einen Look-Index nimmt GammaTuning nicht entgegen.
-- Der Editor führt **den Originalcode der Kamera** in einem ARM-Interpreter
-  aus (`core/src/arm.rs`; geprüft gegen 7261 Kurven aus dem CPU-Emulator
-  Unicorn). Bearbeitete Basiskurven laufen durch dieselbe Arithmetik wie in der
-  Kamera; die Vorschau ist bei gleichen Reglern bitgenau die Kamerakurve.
+- The tone curve is **computed per shot**, not looked up per image control.
+  `GammaTuning` (RTOS `0x536e7b64`) blends it from **15 base curves** based on
+  four sliders: key, contrast, highlight contrast, shadow contrast.
+- The image controls differ in their tone curve only through these slider
+  values; GammaTuning does not take a look index.
+- The editor runs **the camera's original code** in an ARM interpreter
+  (`core/src/arm.rs`; checked against 7261 curves from the CPU emulator
+  Unicorn). Edited base curves go through the same arithmetic as in the
+  camera; with the same sliders the preview is bit-exact with the camera
+  curve.
 
-## Datenlage
+## Data
 
-| Was | Wo | Format |
+| What | Where | Format |
 |---|---|---|
-| 3 Kurvenfamilien | `.data` `0x550204d4[0..2]` | Zeiger auf je 5 Kurvenzeiger |
-| 15 Basiskurven | z. B. `0x53ddd394`, `0x53dcf7f0` … | 256 × u16, 0…~16300 |
-| Key-Tabelle | `0x538f34e0` | 9 × int: 512 … 256 … 128 |
-| Glättung Übergang | `0x53ddd594` | u16-Gewichte, /2048 |
+| 3 curve families | `.data` `0x550204d4[0..2]` | pointer to 5 curve pointers each |
+| 15 base curves | e.g. `0x53ddd394`, `0x53dcf7f0` … | 256 × u16, 0…~16300 |
+| key table | `0x538f34e0` | 9 × int: 512 … 256 … 128 |
+| transition smoothing | `0x53ddd594` | u16 weights, /2048 |
 
-Familie 0 = hoher, 1 = normaler, 2 = niedriger Kontrast. Die 5 Kurven einer
-Familie gehören zu Weißpunkt-Bändern (Knie bei 0x80, 0x100, 0x200, 0x400,
-0x800 auf der 12-Bit-Eingangsskala).
+Family 0 = high, 1 = normal, 2 = low contrast. The 5 curves of a family
+belong to white point bands (knee at 0x80, 0x100, 0x200, 0x400, 0x800 on the
+12-bit input scale).
 
-## Der Algorithmus (`0x536e7b64`)
+## The algorithm (`0x536e7b64`)
 
-Eingaben aus dem Setting (befüllt von `0x536e84d0`): Key−4, Kontrast−4,
-4−Schatten, Lichter−4, ein Flag und ein Laufzeit-Gain (`setting+100`).
+Inputs from the setting (filled by `0x536e84d0`): key−4, contrast−4,
+4−shadows, highlights−4, a flag and a runtime gain (`setting+100`).
 
-1. **Knie:** `Gain × Key-Tabelle[Key]` ergibt den Kniepunkt auf der
-   12-Bit-Eingangsskala und damit die zwei Weißpunkt-Bänder.
-2. **Kontrast je Bereich:** Für Lichter, Mitte und Schatten getrennt wird
-   `2·Kontrast + Bereichsregler` (−12…+12) auf eine Mischung zweier
-   benachbarter Familien abgebildet.
-3. **Bänder mischen** so, dass der Wert am Knie **fest bei `0x1d80`** liegt —
-   die Kamera verankert ihre Kurve dort.
-4. **256 Stützstellen** (Eingang in 16er-Schritten): oberhalb des Knies die
-   Lichter-, unterhalb die Schatten-Mischung, in den Übergängen mit der
-   Glättungstabelle zur Mitte überblendet; Ausgabe `× 0x4000 / 0x3f02`.
+1. **Knee:** `gain × key table[key]` gives the knee point on the 12-bit input
+   scale and thus the two white point bands.
+2. **Contrast per range:** separately for highlights, midtones and shadows,
+   `2·contrast + range slider` (−12…+12) is mapped to a blend of two
+   neighbouring families.
+3. **Blend the bands** so that the value at the knee is **fixed at
+   `0x1d80`** — the camera anchors its curve there.
+4. **256 sample points** (input in steps of 16): above the knee the
+   highlight blend, below it the shadow blend, cross-faded to the midtones in
+   the transitions using the smoothing table; output `× 0x4000 / 0x3f02`.
 
-Folge für Bearbeitungen: Eine globale Anhebung aller Basiskurven wird durch
-Schritt 3 teilweise wieder ausgeglichen. Deshalb zeigt der Editor die
-**wirksame** Kurve aus dem Emulator, nicht die naive Erwartung.
+Consequence for edits: a global lift of all base curves is partly cancelled
+out again by step 3. That is why the editor shows the **effective** curve
+from the emulator, not the naive expectation.
 
-## Bildstil-Regler in der Pipeline
+## Image control sliders in the pipeline
 
-`FUN_536db7d8` bildet die Kamera-Einstellungen pro Look auf die
-Tuning-Parameter ab (Monochrom-Looks: Sättigung/Farbton fest in Mitte):
+`FUN_536db7d8` maps the camera settings per look to the tuning parameters
+(monochrome looks: saturation/hue fixed at centre):
 
-| Kamera-Feld | Regler | Tuning → Setting |
+| Camera field | Slider | Tuning → setting |
 |---|---|---|
-| `+0x77d` | Sättigung | `+0x1e0` → `+0x57` |
-| `+0x77e` | Farbton | `+0x1e2` → `+0x5c` |
-| `+0x77f` | Key | `+0x1e4` → `+0x68` |
-| `+0x780` | Kontrast | `+0x1e6` → `+0x6c` |
-| `+0x781` | Kontrast Lichter | `+0x1e8` → `+0x74` |
-| `+0x782` | Kontrast Schatten | `+0x1ea` → `+0x70` |
-| `+0x785…788` | Filter/Tonung je Look | `+0x1f0` → `+0x60` |
+| `+0x77d` | saturation | `+0x1e0` → `+0x57` |
+| `+0x77e` | hue | `+0x1e2` → `+0x5c` |
+| `+0x77f` | key | `+0x1e4` → `+0x68` |
+| `+0x780` | contrast | `+0x1e6` → `+0x6c` |
+| `+0x781` | highlight contrast | `+0x1e8` → `+0x74` |
+| `+0x782` | shadow contrast | `+0x1ea` → `+0x70` |
+| `+0x785…788` | filter/toning per look | `+0x1f0` → `+0x60` |
+| `+0x793` | shading (vignette) | `+0x1f4` → ? |
+| `+0x794` | clarity | `+0x1f6` → ? |
+| `+0x795` | grain ("Particle") | `+0x1f8` → ? |
+| `+0x797` | Cross Process: Color Tone 1–3 (probably) | `+0x1fe` → ? |
 
-Im DNG stehen die Werte in Makernote-Tag `0x0247` (int16, −4…+4,
-`0x8000` = nicht belegt). Die Reihenfolge Sättigung, Farbton, Key, Kontrast,
-Lichter, Schatten, Schärfe ist **abgeleitet** (Speicherlayout und
-Parameterreihenfolge der Firmware), nicht am Schreibcode belegt.
+The rows from `+0x793` on are **derived** from two pieces of evidence: the
+firmware's parameter names (`StillImageControlNo0Param…`) are in the order
+Sharpness, ColorTone…, FilterEffect…, Shading, ClarityControl, Particle. And
+`FUN_536db7d8` reads `+0x795` exactly for the looks that have a "Particle"
+parameter: MonotoneGR, SoftMonotone, HardMonotone, HighContrastBW and
+NegativeFilm. The setting filler `0x536dc0f4` does not read
+`+0x1f4…+0x1fe`. Who reads them is open; they have no effect in the R2Y
+pipeline.
 
-## Vorschau-Treue
+In the DNG the values are in makernote tag `0x0247` (int16, −4…+4,
+`0x8000` = not set). The order saturation, hue, key, contrast, highlights,
+shadows, sharpness is **derived** (memory layout and parameter order of the
+firmware), not established from the writing code.
 
-Zwei Größen hängen an der Aufnahme und werden am Kamera-JPEG gefittet: die
-Eingangsskalierung (Sensor → 12-Bit-Eingang) und der Gain. Was keine globale
-Kurve abbildet — vor allem die bildabhängige **Schattenkorrektur**
-(`ToneControlTuning`, Makernote „ShadowCorrection") — fängt eine abschaltbare
-Rest-Korrektur aus dem JPEG auf.
+## Preview fidelity
 
-| Aufnahme | nur Kamerakurve | mit Rest-Korrektur | freie Kurve (Referenz) |
+Two quantities depend on the shot and are fitted against the camera JPEG: the
+input scaling (sensor → 12-bit input) and the gain. Whatever a global curve
+cannot represent — above all the image-dependent **shadow correction**
+(`ToneControlTuning`, makernote "ShadowCorrection") — is absorbed by a
+residual correction from the JPEG that can be switched off.
+
+| Shot | camera curve only | with residual correction | free curve (reference) |
 |---|---|---|---|
-| Standard, alle Regler 0 | 6,9 | 5,0 | 4,9 |
-| Negative Film, eigene Regler | 9,9 | 7,8 | 7,9 |
+| Standard, all sliders 0 | 6.9 | 5.0 | 4.9 |
+| Negative Film, custom sliders | 9.9 | 7.8 | 7.9 |
 
-(mittlere Abweichung zum Kamera-JPEG in 8-Bit-Stufen)
+(mean deviation from the camera JPEG in 8-bit steps)
 
-Die Kurve selbst ist exakt — der Emulator führt den Kameracode aus, und die
-Kurve auf einem exportierten Image ist bitgleich mit der Vorschau. Die
-Restabweichung kommt aus lokaler Verarbeitung und den nicht emulierten
-Stufen danach.
+The curve itself is exact — the emulator runs the camera code, and the curve
+in an exported image is bit-identical to the preview. The remaining deviation
+comes from local processing and the non-emulated stages after it.
 
-## Kanalkurven (R, G, B)
+## Channel curves (R, G, B)
 
-GammaTuning legt **vier Ausgabetabellen** an (Objekt `+0x2a08` R, `+0x2c08` G,
-`+0x2e08` B, `+0x3008` Luma). Normalerweise kopiert `0x536e8660` die
-berechnete Kurve in alle vier. Ist das Filter-Flag gesetzt (`setting+0x9b`,
-aus der Kamera-Einstellung `+0x38a98`), entsteht jeder Kanal über eine
-Kanalkurve:
+GammaTuning sets up **four output tables** (object `+0x2a08` R, `+0x2c08` G,
+`+0x2e08` B, `+0x3008` luma). Normally `0x536e8660` copies the computed curve
+into all four. If the filter flag is set (`setting+0x9b`, from the camera
+setting `+0x38a98`), each channel is produced through a channel curve:
 
 ```
-Kanal[i] = C(Basis[i])      C über Basis >> 6 interpoliert (64er-Schritte)
-Luma[i]  = (77 R + 150 G + 29 B) >> 8
+channel[i] = C(base[i])      C interpolated over base >> 6 (steps of 64)
+luma[i]    = (77 R + 150 G + 29 B) >> 8
 ```
 
-Der Filter ist **Cross Process**. Sein Koordinator (Konstruktor `0x536eea90`,
-Auswahl `0x536ef140`) wählt je Variante drei der **12 Kanalkurven**
-(`.data 0x55037604[0..11]` → `0x53efb0e4…0x53efc728`, je 256 × u16):
+The filter is **Cross Process**. Its coordinator (constructor `0x536eea90`,
+selection `0x536ef140`) picks three of the **12 channel curves** per variant
+(`.data 0x55037604[0..11]` → `0x53efb0e4…0x53efc728`, 256 × u16 each):
 
-| Variante | R | G | B |
+| Variant | R | G | B |
 |---|---|---|---|
-| Zufall | 0–2, Reihenfolge pro Aufnahme zufällig (`0x53efb910/918/920`) | | |
+| Random | 0–2, order randomised per shot (`0x53efb910/918/920`) | | |
 | Preset 1 | 3 | 4 | 5 |
 | Preset 2 | 6 | 7 | 8 |
 | Preset 3 | 9 | 10 | 11 |
 
-Bei den Presets übernimmt der Koordinator die aktuellen Look-Einstellungen
-und setzt nur die Kanalkurven.
+For the presets the coordinator keeps the current look settings and only sets
+the channel curves.
 
-**Menü-Zuordnung, an der Kamera belegt (2026-10-12):** Cross Process hat eine
-Einstellung „Farbton" 1–3; sie steht als letzter Wert in Makernote-Tag
-`0x0247`. Eine Testfirmware mit Markerkurven (Preset 1 rot, 2 grün, 3 blau,
-Zufall als Negativ) ergab für Farbton 1, 2, 3 genau rot, grün, blau:
-**Farbton n = Preset n.** Der Zufallssatz trat nicht auf; über Farbton 1–3 ist
-er nicht erreichbar. Damit lassen sich drei RGB-Kurvensätze flashen und in der
-Kamera umschalten.
+**Menu mapping, established on the camera (2026-10-12):** Cross Process has a
+"Color Tone" setting 1–3; it is the last value in makernote tag `0x0247`. A
+test firmware with marker curves (preset 1 red, 2 green, 3 blue, Random as a
+negative) gave exactly red, green, blue for Color Tone 1, 2, 3: **Color Tone
+n = preset n.** The Random set did not appear; it cannot be reached via Color
+Tone 1–3. This means three RGB curve sets can be flashed and switched in the
+camera.
 
-Offen: Preset 1 hebt Blau in den Tiefen an (Kurve 5 beginnt bei 1920); in
-Original-Aufnahmen mit Farbton 1 waren die Schwärzen aber nicht blau. Die
-Vorschau der Tiefen von Farbton 1 ist daher nicht gesichert. Andere Bildstile nutzen die Kanalkurven nicht — dafür wäre ein
-Code-Patch nötig.
+Open: preset 1 lifts blue in the shadows (curve 5 starts at 1920); in
+original shots with Color Tone 1, however, the blacks were not blue. The
+preview of the shadows of Color Tone 1 is therefore not certain. Other image
+controls do not use the channel curves — that would need a code patch.
 
-Der Editor bildet `0x536e8660` in `chan::compose` (`core/src/chan.rs`) nach; gegen den
-emulierten Originalcode ist das für alle vier Sätze bitgleich geprüft.
+The editor reproduces `0x536e8660` in `chan::compose` (`core/src/chan.rs`);
+it is checked to be bit-identical against the emulated original code for all
+four sets.
 
-## Cross Process als Träger für RGB-Kurven
+## Cross Process as a carrier for RGB curves
 
-Weil nur Cross Process Kanalkurven anwendet, kann es als „Look mit
-RGB-Kurven" dienen:
+Since only Cross Process applies channel curves, it can serve as a "look with
+RGB curves":
 
-1. **Look-Daten übernehmen.** Der Setting-Befüller wählt die Look-Daten über
-   drei Tabellen in `.data` (`0x55018d94`, `0x55018cf0`, `0x55018e4c`), indiziert
-   mit dem Look. Zeigt Eintrag 21 (Cross Process) auf dieselben Daten wie
-   Eintrag 25 (Negative Film), rechnet Cross Process mit Matrix und Look-Daten
-   von Negative Film. Standard und HDR, die bisher denselben Datensatz wie
-   Cross Process nutzen, bleiben unberührt. Für Negative Film ändert sich nur
-   ein Zeiger.
-2. **Tonkurve.** Sie hängt an den Reglern, nicht am Look: In der Kamera bei
-   Cross Process dieselben Werte wie bei Negative Film einstellen und eine
-   Preset-Variante wählen (die übernimmt die aktuellen Einstellungen; „Zufall"
-   setzt Look und Regler selbst).
-3. **RGB linear.** `C[k] = 64·k` reicht die Tonkurve durch. Die Kamera liest
-   für Eingaben ≥ 0xff·64 nur den letzten Eintrag; mit `C[255] = 16383` bleibt
-   Weiß Weiß und die Abweichung unter einer 8-Bit-Stufe (nur oberste 0,8 %).
+1. **Take over look data.** The setting filler selects the look data via
+   three tables in `.data` (`0x55018d94`, `0x55018cf0`, `0x55018e4c`),
+   indexed by the look. If entry 21 (Cross Process) points to the same data
+   as entry 25 (Negative Film), Cross Process computes with the matrix and
+   look data of Negative Film. Standard and HDR, which previously used the
+   same data set as Cross Process, are unaffected. For Negative Film only one
+   pointer changes.
+2. **Tone curve.** It depends on the sliders, not on the look: in the camera,
+   set the same values for Cross Process as for Negative Film and choose a
+   preset variant (it takes over the current settings; "Random" sets look and
+   sliders itself).
+3. **RGB linear.** `C[k] = 64·k` passes the tone curve through. For inputs
+   ≥ 0xff·64 the camera only reads the last entry; with `C[255] = 16383`
+   white stays white and the deviation stays below one 8-bit step (only the
+   top 0.8 %).
 
-Im Editor ist Cross Process mit übernommenen Negative-Film-Daten und linearen
-Kanalkurven pixelgleich mit Negative Film; von dort aus lassen sich die
-RGB-Kurven bearbeiten. Nicht belegt: ob andere Module den Look-Index
-(21 statt 25) für eigene Fallunterscheidungen nutzen — `FUN_536db7d8`
-behandelt 21 anders als 22 (Cross-Process-Tonung `+0x797` statt
-`+0x795`).
+In the editor, Cross Process with taken-over Negative Film data and linear
+channel curves is pixel-identical to Negative Film; from there the RGB curves
+can be edited. Not established: whether other modules use the look index
+(21 instead of 25) for their own case distinctions — `FUN_536db7d8` treats 21
+differently from 22: Negative Film passes on the grain `+0x795`, Cross
+Process `+0x797` instead. Filter and toning (`+0x1f0`, `+0x1f2`) are 0 for
+both, as for Standard; so Negative Film has no Cb/Cr toning. The grain acts
+outside the R2Y pipeline and is missing from the Cross Process look.
 
-## Farbräder
+## Colour wheels
 
-Die Farbräder des Editors sind eine Bedienschicht über den Kanalkurven
-(`chan::grade` in `core/src/chan.rs`). Ein Rad mit Farbton h, Stärke a und Luminanz l
-verschiebt Kanal c (φ = 0°, 120°, 240° für R, G, B) um
+The editor's colour wheels are a control layer on top of the channel curves
+(`chan::grade` in `core/src/chan.rs`). A wheel with hue h, strength a and
+luminance l shifts channel c (φ = 0°, 120°, 240° for R, G, B) by
 
 ```
-w(x) · (0,2 · a · cos(h − φ_c) + 0,2 · l)
+w(x) · (0.2 · a · cos(h − φ_c) + 0.2 · l)
 ```
 
-mit den Gewichten Schatten (1 − x)², Mitteltöne 4x(1 − x), Lichter x²,
-Global 1 über dem berechneten Tonwert x. Balance verschiebt x → x^(2^−b).
-Die Kosinusterme summieren sich zu null, eine Tönung lässt den Kanalmittelwert
-also unverändert. Das Ergebnis wird auf 0…0x3fff begrenzt. Monotonie wird nicht
-erzwungen, weil schon mehrere Original-Kanalkurven kleine Dellen haben.
+with the weights shadows (1 − x)², midtones 4x(1 − x), highlights x², global
+1 over the computed tone value x. Balance shifts x → x^(2^−b). The cosine
+terms sum to zero, so a tint leaves the channel mean unchanged. The result is
+clamped to 0…0x3fff. Monotonicity is not enforced, because several original
+channel curves already have small dips.
 
-Selektive Farbänderungen (HSL je Farbton) sind so nicht möglich. Dafür braucht
-es eine farbtonabhängige Stufe in der Firmware, Kandidat ist MultiAxial
-(noch nicht untersucht).
+Selective colour changes (HSL per hue) are not possible this way. That needs
+a hue-dependent stage in the firmware; the candidate is MultiAxial (not yet
+investigated).
 
-## Was offen ist
+## What is open
 
-- Die Basiskurven werden auch von anderen Pfaden gelesen (Zeigertabelle in
-  `.data` ab `0x55020470`, z. B. `0x536e82d0` für Sonderfälle). Eine
-  Bearbeitung wirkt dort mit.
-- Die Schattenkorrektur (`0x536e955c`, Histogramm) ist nicht emuliert.
-- Retro- und Bleach-Bypass-Tonungen laufen über eigene Tabellen
-  (`setting+8` → `+0x34…+0x40`); nicht bearbeitbar.
-- Was die Einstellung `+0x38a98` im Kameramenü ist (Werte 1–11, Zuordnung
-  über `0x53dbd19c`).
+- The base curves are also read by other paths (pointer table in `.data`
+  from `0x55020470`, e.g. `0x536e82d0` for special cases). An edit takes
+  effect there too.
+- The shadow correction (`0x536e955c`, histogram) is not emulated.
+- Retro and Bleach Bypass tonings use their own tables
+  (`setting+8` → `+0x34…+0x40`); not editable.
+- What the setting `+0x38a98` is in the camera menu (values 1–11, mapping
+  via `0x53dbd19c`).
