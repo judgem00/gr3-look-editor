@@ -1,6 +1,6 @@
 //! A small ARM (A32) interpreter, enough to run the camera's GammaTuning.
 //!
-//! The Python editor runs that function in Unicorn. Its path is integer-only
+//! The earlier Python editor ran that function in Unicorn. Its path is integer-only
 //! and short (~465 distinct instructions, ~25k executed per curve): data
 //! processing, multiplies, divides, loads/stores, LDM/STM and branches. This
 //! covers those instruction classes fully (all conditions, shifts and flags)

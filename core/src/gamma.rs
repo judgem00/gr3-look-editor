@@ -7,7 +7,7 @@
 //!     0x550204d4[family] -> 5 curve pointers, one per white-level band
 //!     family 0 = high contrast, 1 = normal, 2 = low contrast
 //!
-//! As in the Python editor (fwgamma.py, Unicorn) the original ARM code runs on
+//! As in the earlier Python editor (there in Unicorn) the original ARM code runs on
 //! the firmware image, here in the interpreter of arm.rs. Edited base curves go
 //! through exactly the arithmetic the camera uses.
 

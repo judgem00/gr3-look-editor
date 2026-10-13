@@ -3,14 +3,10 @@
 Bearbeitet Farbmatrizen und Tonkurven der GR-III-Bildstile mit Live-Vorschau
 auf einem GR-III-DNG und schreibt eine flashbare Update-Datei.
 
-```sh
-./run.sh --update fwdc239b.bin                 # öffnet http://127.0.0.1:8765/
-./run.sh --update fwdc239b.bin --dng ~/Pictures/…/MR020978.DNG --port 8765
-```
-
-Beim ersten Start legt `run.sh` eine virtuelle Umgebung an (rawpy, numpy,
-Flask, Pillow, Unicorn). `exiftool` wird genutzt, wenn vorhanden, um Bildstil
-und Regler der Aufnahme aus der Makernote zu lesen.
+Läuft komplett im Browser: Ricohs Update-Datei `fwdc239b.bin` hineinziehen,
+dann ein DNG. Der Rust-Kern (`core/`, als WebAssembly) liest Firmware und DNG,
+auch Bildstil und Regler der Aufnahme aus der Makernote. Nichts wird
+hochgeladen.
 
 ## Was die Vorschau rechnet
 
@@ -26,7 +22,8 @@ kommen aus der Firmware ([docs/look-mapping.md](look-mapping.md)).
 - **Matrizen** kommen aus dem Firmware-Image
   ([docs/look-mapping.md](look-mapping.md)).
 - **Die Tonkurve rechnet der Originalcode der Kamera** (`GammaTuning`,
-  RTOS `0x536e7b64`), ausgeführt im CPU-Emulator Unicorn auf den (bearbeiteten)
+  RTOS `0x536e7b64`), ausgeführt in einem kleinen ARM-Interpreter
+  (`core/src/arm.rs`) auf den (bearbeiteten)
   Basiskurven, mit Key/Kontrast/Lichter/Schatten
   ([docs/tone-curves.md](tone-curves.md)).
 - Eingangsskalierung und Gain werden pro DNG am eingebetteten Kamera-JPEG
@@ -46,7 +43,7 @@ eigene Matrix für Cross Process kopiert), **2 Farbe**, **3 Kurven** (Farbton
 linear), **4 Export**. Andere Bildstile und die Tonkurve für alle Bildstile
 liegen unter „fortgeschritten". Technisch bekommt Cross Process einen eigenen
 ColorMatrix-Satz und eine eigene Matrix im freien Bereich `0x53002080…`
-(`editor/firmware.py`, `private_cross`).
+(`core/src/looks.rs`, `private_cross`; der Satz ist 21 Wörter groß).
 
 - **Farbmatrix** pro Bildstil, direkt oder über Sättigung/Farbton.
 - **Kalibrierung** wie in Lightroom: Farbton und Sättigung der Primärfarben
@@ -81,21 +78,22 @@ ColorMatrix-Satz und eine eigene Matrix im freien Bereich `0x53002080…`
 
 ## Export
 
-Schreibt eine **Kopie** von `unpackedFW` (unter `work/<fw>/unpackedFW-looks`),
-eine JSON mit Matrizen und Kurvenpunkten und die gepackte Update-Datei
-`FWDC239B.BIN` mit neu berechneten Prüfsummen
-([docs/firmware-packing.md](firmware-packing.md)). Das Original wird
-nie überschrieben. Nach dem Export bietet die Oberfläche die Dateien zum
-**Download** an; die Update-Datei behält ihren Namen `FWDC239B.BIN`, den die
-Kamera im Wurzelverzeichnis der SD-Karte erwartet. Ändert man danach weiter,
+Baut die Update-Datei `FWDC239B.BIN` mit neu berechneten Prüfsummen
+([docs/firmware-packing.md](firmware-packing.md)), prüft sie wie der
+Decoder der Kamera und bietet sie zusammen mit einem Preset (`*.looks.json`)
+zum **Download** an. Die Update-Datei heißt `FWDC239B.BIN`, wie die Kamera
+sie im Wurzelverzeichnis der SD-Karte erwartet. Ändert man danach weiter,
 verschwindet das Angebot, bis neu exportiert wird. Vor einem Flash:
 Recovery-Weg klären.
 
 **Preset laden:** Die beim Export geschriebene `*.looks.json` lässt sich über
-„Preset laden (JSON)" oder per Drag & Drop auf die Vorschau wieder einlesen.
-Sie ersetzt alle aktuellen Änderungen: Matrizen, Tonkurve,
-Kontrastfamilien, Kanalkurven und Look-Übernahme. Von dort lässt sich
+„Preset laden" in der Titelleiste oder per Drag & Drop auf die Vorschau wieder
+einlesen; „Beispiel-Preset laden" lädt das mitgelieferte
+`editor/static/presets/example.looks.json`. Ein Preset ersetzt alle aktuellen
+Änderungen: Regler, Tonkurve, Kontrastfamilien, Kurvenpunkte der Kanalkurven,
+Farbräder und Look-Übernahme. Die Basis-Matrix steht nur drin, wenn sie von
+Hand eingegeben wurde; sonst kommt sie beim Laden aus der Firmware. Von dort lässt sich
 weiterarbeiten und neu exportieren.
 
-Standard, HdrCuisine und CrossProcess teilen sich eine Matrix: eine Änderung
-gilt für alle drei.
+Standard und HdrCuisine teilen sich eine Matrix: eine Änderung gilt für
+beide. Cross Process hat seine eigene Kopie.

@@ -1,5 +1,5 @@
-//! Read and patch the colour data of the image controls (port of
-//! editor/firmware.py; docs/look-mapping.md has the background):
+//! Read and patch the colour data of the image controls (ported from
+//! the earlier Python editor; docs/look-mapping.md has the background):
 //!
 //!     look -> internal index -> 0x55018d94[index] -> ColorMatrix set
 //!          set+0x00 sensor CCM (shared)   set+0x04 look matrix   set+0x10 luma

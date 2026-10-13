@@ -1,6 +1,5 @@
 //! JavaScript bindings for the web worker (editor/static/worker.js). JSON in
-//! and out, as the Flask endpoints took and returned it; image data as typed
-//! arrays.
+//! and out, as session.rs takes and returns it; image data as typed arrays.
 
 use crate::dng::{self, Shot};
 use crate::session::Session;

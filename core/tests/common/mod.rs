@@ -1,5 +1,6 @@
-//! Reference data written by golden/make.py (work/golden, not in git).
-//! Tests skip when it is missing.
+//! Reference data in work/golden (not in git): the requests and the earlier
+//! Python editor's answers, refreshed by examples/golden.rs. Tests skip when
+//! it is missing.
 
 #![allow(dead_code)]
 
@@ -15,9 +16,9 @@ pub fn golden() -> Option<serde_json::Value> {
     Some(serde_json::from_str(&s).unwrap())
 }
 
-/// the decoded stock image, as the Python editor caches it
+/// the decoded stock image
 pub fn stock_image() -> Option<Vec<u8>> {
-    std::fs::read(work().join("fwdc239b/unpackedFW")).ok()
+    grlook::grfw::Container::parse(update_file()?).ok()?.decode().ok()
 }
 
 /// the update file as Ricoh distributes it; set GR_UPDATE or put it in work/
@@ -31,7 +32,7 @@ macro_rules! need {
         match $e {
             Some(v) => v,
             None => {
-                eprintln!("skipped: reference data missing (run golden/make.py)");
+                eprintln!("skipped: reference data or update file missing (see README, Development)");
                 return;
             }
         }

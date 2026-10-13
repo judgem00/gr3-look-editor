@@ -1,7 +1,7 @@
 //! The two numbers that tie the linear render to the camera's tone curve
 //! (input scale and GammaTuning gain), fitted against the camera JPEG, and a
 //! residual curve for what a global tone curve cannot explain -- the camera's
-//! image-dependent shadow correction (port of rawimage.fit_camera_tone).
+//! image-dependent shadow correction (ported from the earlier Python editor).
 //!
 //! The Python editor picked its 30000 sample pixels with numpy's random
 //! generator; this uses its own fixed sequence, so the fit agrees closely but

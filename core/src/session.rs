@@ -1,7 +1,6 @@
-//! What editor/server.py does per request, without a server: one Session
-//! holds the update file the user dropped in, the decoded image and the
-//! current look data. Requests and answers are the JSON the Flask endpoints
-//! took and returned, so the browser code stays the same.
+//! The editor's requests, without a server: one Session holds the update
+//! file the user dropped in, the decoded image and the current look data.
+//! Requests and answers are JSON, routed by editor/static/bridge.js.
 
 use crate::{chan, gamma, grfw, looks, tone};
 use crate::gamma::{Engine, ToneParams};

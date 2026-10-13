@@ -1,4 +1,4 @@
-//! Edits to the camera's base tone curves (port of editor/toneedit.py).
+//! Edits to the camera's base tone curves (ported from the earlier Python editor).
 //!
 //! An edit is a transfer curve T on the output axis, given as control points
 //! in 0..1, applied to the selected base curves: base'(i) = T(base(i)). T is

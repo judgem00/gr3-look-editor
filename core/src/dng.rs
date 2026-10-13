@@ -1,5 +1,5 @@
-//! GR III DNGs, decoded into what the preview needs (port of the decoding
-//! half of editor/rawimage.py, which used LibRaw through rawpy).
+//! GR III DNGs, decoded into what the preview needs (ported from the
+//! earlier Python editor, which used LibRaw through rawpy).
 //!
 //! The raw data is a 14-bit lossless JPEG. The linear image is computed as
 //! LibRaw's half-size postprocess does it, which the Python editor used:

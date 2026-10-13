@@ -1,26 +1,16 @@
 // api(url, options) answers the editor's /api/... requests like fetch().
 //
-// Served by editor/server.py, it is fetch(). As a static page (GitHub Pages)
-// there is no server: the requests go to worker.js, which runs the Rust core
+// There is no server: the requests go to worker.js, which runs the Rust core
 // as WebAssembly. Before the first request the user drops Ricoh's update file
 // in; it is checked against the known build and never leaves the browser.
 
 const api = (() => {
-  let mode = null;
   let worker = null;
   let seq = 0;
   const pending = new Map();
   const shot = { linear: null, camera: null };
   let urls = [];
   let firmwareReady = null;
-
-  async function detect() {
-    try {
-      const r = await fetch("api/firmware", { method: "HEAD" });
-      if (r.ok && (r.headers.get("content-type") || "").includes("json")) return "server";
-    } catch { /* no server */ }
-    return "web";
-  }
 
   function call(op, args, transfer = []) {
     if (!worker) {
@@ -86,7 +76,7 @@ const api = (() => {
     return firmwareReady;
   }
 
-  // ---- the routes of editor/server.py ----------------------------------------------
+  // ---- the routes ------------------------------------------------------------------
 
   async function web(url, opts = {}) {
     const method = (opts.method || "GET").toUpperCase();
@@ -124,8 +114,5 @@ const api = (() => {
     }
   }
 
-  return async (url, opts) => {
-    if (!mode) mode = detect();
-    return (await mode) === "server" ? fetch(url, opts) : web(url, opts);
-  };
+  return web;
 })();

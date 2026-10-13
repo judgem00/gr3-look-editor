@@ -1,5 +1,5 @@
-//! Per-channel tone curves (R, G, B) of Cross Process (port of
-//! editor/chancurves.py). 12 tables of 256 x u16, reached through .data
+//! Per-channel tone curves (R, G, B) of Cross Process (ported
+//! from the earlier Python editor). 12 tables of 256 x u16, reached through .data
 //! 0x55037604[0..11]; the camera builds each channel from the computed tone
 //! curve through one of them (RTOS 0x536e8660):
 //!
@@ -64,7 +64,7 @@ pub fn compose(base: &[u16], curve: &[i64]) -> Vec<i64> {
         .collect()
 }
 
-// ---- colour grading wheels (see chancurves.py) ----
+// ---- colour grading wheels (docs/tone-curves.md) ----
 
 const WHEELS: [&str; 4] = ["shadows", "midtones", "highlights", "global"];
 const TINT: f64 = 0.2;

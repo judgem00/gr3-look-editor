@@ -1,4 +1,4 @@
-//! The session against the Flask editor's answers (golden/make.py).
+//! The session against the reference answers (work/golden, examples/golden.rs).
 
 mod common;
 use common::need;

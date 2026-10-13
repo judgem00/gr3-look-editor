@@ -1,4 +1,5 @@
-//! GammaTuning in the interpreter against Unicorn (golden/make.py gamma_grid).
+//! GammaTuning in the interpreter against Unicorn: 7261 curves the earlier
+//! Python editor computed with the camera's code in Unicorn (gamma.u16).
 
 mod common;
 use common::need;

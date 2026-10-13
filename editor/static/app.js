@@ -2,7 +2,7 @@
 //
 // The preview runs the colour part of ColorMatrixTuning on the GPU:
 //   camera RGB -> white balance -> sensor CCM -> look matrix -> (mono mix)
-// followed by the camera's tone curve. That curve comes from the server, which
+// followed by the camera's tone curve. That curve comes from the core (worker), which
 // runs the camera's own GammaTuning code on the (edited) base curves; a small
 // residual fitted from the camera JPEG stands in for its image-dependent shadow
 // correction.
@@ -24,7 +24,7 @@ const state = {
   residual: true,
   curves: null,        // last /api/tone answer
   chan: { edits: {}, set: "Preset 1", channel: 0, all: true },   // the look's channel curves (Farbton 1-3)
-  grade: {},           // set name -> colour wheels, applied on the server after the edits
+  grade: {},           // set name -> colour wheels, applied by the core after the edits
 };
 const TONE_KEYS = ["key", "contrast", "highlight", "shadow"];
 // camera settings that act through matrices, not the tone curve: saturation
@@ -598,15 +598,12 @@ $("export").onclick = async () => {
         })),
       channels_pre: gradedSets().length ? Object.fromEntries(changedChannels().map((i) => [i, chanPre(i)])) : null,
       grade: gradedSets().length ? Object.fromEntries(gradedSets().map((n) => [n, state.grade[n]])) : null,
-      update_file: !!state.fw.container,
     }),
   });
   if (res.ok) {
     const r = await res.json();
     $("export-msg").className = "note ok";
-    $("export-msg").textContent = r.web ? t("done_web")
-      : r.update_file ? t("done", { path: r.update_file })
-      : t("written", { path: r.written });
+    $("export-msg").textContent = t("done_web");
     state.lastExport = exportKey();
     offerDownloads(r.downloads || {}, r.update_file);
   } else {
@@ -616,12 +613,10 @@ $("export").onclick = async () => {
 };
 
 function offerDownloads(urls, updateFile) {
-  // a fresh query string per export, so the browser never hands out a cached older file
-  const stamp = Date.now();
   const set = (id, url, name) => {
     const a = $(id);
     a.hidden = !url;
-    if (url) { a.href = url.startsWith("blob:") ? url : `${url}?t=${stamp}`; a.download = name || ""; }
+    if (url) { a.href = url; a.download = name || ""; }
   };
   set("dl-update", urls.update, updateFile && updateFile.split("/").pop());
   set("dl-preset", urls.preset, t("preset_name"));

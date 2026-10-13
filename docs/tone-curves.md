@@ -12,8 +12,9 @@ Wie die Kamera ihre Tonkurve bildet, wo die Daten liegen und wie der
   Kontrast Schatten.
 - Die Bildstile unterscheiden sich in der Tonkurve nur über diese Reglerwerte;
   einen Look-Index nimmt GammaTuning nicht entgegen.
-- Der Editor führt **den Originalcode der Kamera im CPU-Emulator** (Unicorn)
-  aus. Bearbeitete Basiskurven laufen durch dieselbe Arithmetik wie in der
+- Der Editor führt **den Originalcode der Kamera** in einem ARM-Interpreter
+  aus (`core/src/arm.rs`; geprüft gegen 7261 Kurven aus dem CPU-Emulator
+  Unicorn). Bearbeitete Basiskurven laufen durch dieselbe Arithmetik wie in der
   Kamera; die Vorschau ist bei gleichen Reglern bitgenau die Kamerakurve.
 
 ## Datenlage
@@ -129,7 +130,7 @@ Original-Aufnahmen mit Farbton 1 waren die Schwärzen aber nicht blau. Die
 Vorschau der Tiefen von Farbton 1 ist daher nicht gesichert. Andere Bildstile nutzen die Kanalkurven nicht — dafür wäre ein
 Code-Patch nötig.
 
-Der Editor bildet `0x536e8660` in `chancurves.compose` nach; gegen den
+Der Editor bildet `0x536e8660` in `chan::compose` (`core/src/chan.rs`) nach; gegen den
 emulierten Originalcode ist das für alle vier Sätze bitgleich geprüft.
 
 ## Cross Process als Träger für RGB-Kurven
@@ -162,7 +163,7 @@ behandelt 21 anders als 22 (Cross-Process-Tonung `+0x797` statt
 ## Farbräder
 
 Die Farbräder des Editors sind eine Bedienschicht über den Kanalkurven
-(`chancurves.grade`). Ein Rad mit Farbton h, Stärke a und Luminanz l
+(`chan::grade` in `core/src/chan.rs`). Ein Rad mit Farbton h, Stärke a und Luminanz l
 verschiebt Kanal c (φ = 0°, 120°, 240° für R, G, B) um
 
 ```

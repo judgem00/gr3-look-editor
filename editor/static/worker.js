@@ -1,5 +1,5 @@
-// The editor's back end in the browser: the Rust core (pkg/grlook_bg.wasm)
-// does what editor/server.py does on the desktop. Nothing leaves this machine.
+// The editor's back end in the browser: the Rust core (pkg/grlook_bg.wasm).
+// Nothing leaves this machine.
 //
 // Messages: {id, op, args} -> {id, ok, result | error}. Large buffers travel
 // as transferables.

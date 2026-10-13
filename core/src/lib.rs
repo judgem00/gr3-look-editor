@@ -1,6 +1,8 @@
 //! Core of the GR III look editor, compiled to WebAssembly for the browser.
-//! Everything the Python editor's server did runs here, on the user's machine:
-//! the firmware container, the look data, the camera's tone curve and the DNG.
+//! Everything runs here, on the user's machine: the firmware container, the
+//! look data, the camera's tone curve and the DNG. It started as a port of a
+//! Python editor (removed; see the git history), whose answers the tests
+//! still check against.
 
 pub mod addr;
 pub mod arm;

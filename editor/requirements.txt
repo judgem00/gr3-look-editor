@@ -1,5 +1,0 @@
-rawpy
-numpy
-flask
-pillow
-unicorn

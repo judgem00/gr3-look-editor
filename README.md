@@ -62,8 +62,8 @@ read from the file you provide, on your machine.
 
 ### In the browser
 
-Open the editor's web page and drop Ricoh's update file `fwdc239b.bin`
-onto it, then a DNG. Everything runs in your browser as WebAssembly: the
+Open [the editor](https://judgem00.github.io/gr3-look-editor/) and drop
+Ricoh's update file `fwdc239b.bin` onto it, then a DNG. Everything runs in your browser as WebAssembly: the
 firmware and your photos are not uploaded anywhere. **Create update file**
 on the Export tab gives you `FWDC239B.BIN` to download.
 
@@ -76,64 +76,52 @@ wasm-pack build core --release --target web --out-dir ../editor/static/pkg --no-
 python3 -m http.server 8790 --directory editor/static
 ```
 
-### With Python on your machine
+### Flashing
 
-The same interface, with a local Python server doing the work.
-Requirements: Python 3.10+, optionally `exiftool`. If installed, the editor
-uses it to read the look and slider settings of the photo you open.
-
-```sh
-./run.sh --update ~/Downloads/fwdc239b.bin
-./run.sh --update ~/Downloads/fwdc239b.bin --dng ~/Pictures/R0001234.DNG
-```
-
-On the first run, `run.sh` creates a virtualenv (rawpy, numpy, Flask,
-Pillow, Unicorn). The editor then decodes the update file into `work/` and
-opens `http://127.0.0.1:8765/`. It listens on localhost only.
-
-**Export** writes into `work/fwdc239b/`:
-
-- `unpackedFW-looks`: the patched image
-- `unpackedFW-looks.looks.json`: a preset you can load again later
-- `FWDC239B.BIN`: the update file, which you can also download from the
-  page
-
-To flash, copy `FWDC239B.BIN` unchanged to the root of the SD card and
-start the firmware update from the camera menu. Then select the image
-control Cross Process: that is your look. To go back, flash Ricoh's
-original file the same way.
+Copy `FWDC239B.BIN` unchanged to the root of the SD card and start the
+firmware update from the camera menu. Then select the image control Cross
+Process: that is your look. To go back, flash Ricoh's original file the same
+way.
 
 The interface is in English or German (switch top right).
 
-### Command-line packing
+### Command-line check
 
-`fw-pack.py` checks and rebuilds update files without the editor:
+`fw-pack.py` (Python 3 with numpy) runs every check the camera's decoder
+makes on an update file, and can rebuild one from a modified image:
 
 ```sh
-./fw-pack.py check fwdc239b.bin
-./fw-pack.py pack fwdc239b.bin work/fwdc239b/unpackedFW-looks -o work/fwdc239b/FWDC239B.BIN
+./fw-pack.py check FWDC239B.BIN
+./fw-pack.py pack fwdc239b.bin unpackedFW-modified -o FWDC239B.BIN
 ```
 
 ## Development
 
-The browser version runs a Rust port of the server (`core/`) compiled to
-WebAssembly; `editor/static/bridge.js` sends the page's `/api/…` requests
-either to `editor/server.py` or, when no server answers, to that core in a
-web worker. The camera's tone-curve code runs in a small ARM interpreter
-(`core/src/arm.rs`) instead of Unicorn.
+The editor is the static page in `editor/static` plus a Rust core
+(`core/`) compiled to WebAssembly. `bridge.js` hands the page's `/api/…`
+requests to the core in a web worker. The camera's tone-curve code runs in a
+small ARM interpreter (`core/src/arm.rs`).
 
-The port is checked against the Python editor. `golden/make.py` records
-the Python editor's answers for a set of requests, photos and 7261
-tone-curve cases into `work/golden/`; the Rust tests must reproduce them,
-the update files byte for byte:
+The core started as a port of a Python editor, which is gone from the tree
+(see the git history). Its answers are kept as reference data in
+`work/golden/` (not in git, since everything there derives from Ricoh's
+firmware or from photos): the editor's answers to a set of requests and
+exports, 7261 tone curves computed with the camera's code in Unicorn, and
+photos as LibRaw decoded them. The tests compare against that data, the
+update files byte for byte:
 
 ```sh
-.venv/bin/python golden/make.py --update fwdc239b.bin --dng a.DNG b.DNG
 cp fwdc239b.bin work/
 cargo test --release --manifest-path core/Cargo.toml
 ```
 
-Without that data (as on CI) those tests skip.
+Without that data (as on CI) those tests skip. After an intended change to
+what the editor answers, refresh its answers from the core; the Unicorn
+curves and the decoded photos stay as they are:
+
+```sh
+cargo run --release --example golden --manifest-path core/Cargo.toml
+```
 
 ## Documentation
 
