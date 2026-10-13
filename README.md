@@ -36,6 +36,12 @@ Ricoh Imaging. "Ricoh" and "GR" are trademarks of their respective owners.
 4. **Export.** Writes the update file and a preset you can load again
    later.
 
+A **Lightroom preset** (`.xmp`, or `.lrtemplate` from Lightroom Classic)
+can be loaded like a preset. As in Lightroom it sets only what it contains:
+point curves and colour grading go to the selected variant, calibration and
+saturation to the look. HSL, the Basic panel, grain, masks and profiles with
+colour tables have no counterpart in the camera and are listed as skipped.
+
 The camera's contrast, saturation, highlight and shadow settings keep working
 on your look as on any other image control.
 

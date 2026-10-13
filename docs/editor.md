@@ -128,3 +128,17 @@ firmware on load. From there you can keep working and export again.
 
 Standard and HdrCuisine share a matrix: a change applies to both. Cross
 Process has its own copy.
+
+**Loading a Lightroom preset:** `.xmp` (Lightroom, Camera Raw) and
+`.lrtemplate` (Lightroom Classic) go the same ways. As in Lightroom, a preset
+sets only what it contains and does not replace everything: point curves (RGB
+and R/G/B) and colour wheels (split toning, Color Grading) go into the
+selected variant, calibration and saturation into the image control being
+edited. The RGB curve alone becomes the shared points of the three channels;
+together with channel curves it is baked into the base (Lightroom applies the
+RGB curve first, then the channel curves) and the channel points stay
+editable. HSL, the Basic panel (exposure, contrast, highlights/shadows,
+whites/blacks), the parametric curve, grain, masks and profiles with colour
+tables (LUT) have no counterpart in the camera; the note lists them as
+skipped. Parser and mapping: `editor/static/lightroom.js`; check with
+`node editor/lightroom-check.js [preset files …]`.

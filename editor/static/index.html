@@ -17,13 +17,13 @@
   <button class="btn ghost" id="help-open" type="button" data-i18n="help_open">How it works</button>
   <div class="open">
     <button class="btn accent" id="example-preset" type="button" data-i18n="example_preset">Load example preset</button>
-    <label class="btn">
+    <label class="btn" data-i18n-title="load_preset_t">
       <span data-i18n="load_preset">Load preset</span>
-      <input type="file" id="head-preset-file" accept=".json,application/json" hidden>
+      <input type="file" id="head-preset-file" accept=".json,.xmp,.lrtemplate,application/json" hidden>
     </label>
     <label class="btn primary">
       <span data-i18n="open_photo">Open photo</span>
-      <input type="file" id="file" accept=".dng,.DNG,.json" hidden>
+      <input type="file" id="file" accept=".dng,.DNG,.json,.xmp,.lrtemplate" hidden>
     </label>
   </div>
 </header>
@@ -152,6 +152,7 @@
 
       <label class="field-label" for="chan-sets" data-i18n="variant">Variant</label>
       <div class="seg small" id="chan-sets"></div>
+      <p class="note muted" data-i18n-html="variant_lr"></p>
 
       <div id="chan-panel">
         <h3 data-i18n="curves">Curves</h3>
@@ -236,7 +237,7 @@
       <h3 data-i18n="load_preset">Load preset</h3>
       <label class="btn">
         <span data-i18n="open_preset">Open preset …</span>
-        <input type="file" id="preset-file" accept=".json,application/json" hidden>
+        <input type="file" id="preset-file" accept=".json,.xmp,.lrtemplate,application/json" hidden>
       </label>
       <p class="note muted" id="preset-msg" data-i18n-html="preset_note"></p>
     </section>
@@ -272,6 +273,7 @@
 </dialog>
 
 <script src="i18n.js"></script>
+<script src="lightroom.js"></script>
 <script src="bridge.js"></script>
 <script src="wb.js"></script>
 <script src="app.js"></script>

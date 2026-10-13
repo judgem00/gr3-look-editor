@@ -1364,6 +1364,62 @@ async function loadPreset(file) {
 }
 
 
+// ---- loading a Lightroom preset -----------------------------------------------
+
+// A Lightroom develop preset (.xmp, or .lrtemplate from Lightroom Classic) sets,
+// as in Lightroom, only what it contains: point curves and colour grading go to
+// the selected variant, calibration and saturation to the look being edited.
+// What the camera cannot do (HSL, Basic panel, grain, …) is reported, see
+// lightroom.js.
+async function loadLightroom(file) {
+  const msg = $("preset-msg");
+  msg.className = "note";
+  let ok = false;
+  try {
+    const s = parseLightroom(await file.text());
+    if (!s) throw new Error(t("e_lightroom"));
+    const lr = lightroomLook(s);
+    const parts = [];
+    const e = editOf(state.current);
+    for (const p of PRIMS) for (const k of ["hue", "sat"])
+      if (lr.calib[p] && lr.calib[p][k] != null) e.calib[p][k] = lr.calib[p][k];
+    if (lr.sat != null) e.sat = lr.sat;
+    if (Object.keys(lr.calib).length || lr.sat != null) parts.push(t("p_colors"));
+    if (lr.curves) {
+      // one RGB curve: the three channels share its points, as the RGB button does;
+      // separate channel curves: unlink everything first, as the R/G/B buttons do
+      const linked = lr.curves.every((c) => c.points === lr.curves[0].points);
+      if (state.chan.all && !linked) for (const n of SET_ORDER) unlinkSet(n);
+      state.chan.all = linked;
+      chanSet().forEach((idx, k) => { state.chan.edits[idx] = lr.curves[k]; });
+      parts.push(t("p_lr_curves"));
+    }
+    if (Object.keys(lr.grade).length) {
+      const g = gradeOf(state.chan.set);
+      for (const [k, w] of Object.entries(lr.grade)) if (k === "balance") g.balance = w; else Object.assign(g[k], w);
+      if (!gradeNeutral(g)) parts.push(t("p_wheels", { list: setLabel(state.chan.set) }));
+    }
+    relink();
+    chanEditor.deselect();
+    renderWheels();
+    update();
+    requestTone();
+    ok = !lr.skipped.length;
+    msg.className = ok ? "note" : "note warn";
+    msg.textContent = t("lr_loaded", { name: lr.name || file.name, set: setLabel(state.chan.set),
+                                       parts: parts.join(" · ") || t("preset_nothing") }) +
+      (lr.skipped.length ? t("lr_skipped", { list: lr.skipped.map((id) => t("lr_" + id)).join(", ") }) : "");
+  } catch (err) {
+    msg.className = "note warn";
+    msg.textContent = t("preset_failed", { msg: err.message });
+  }
+  return ok;
+}
+// a preset file of either kind
+const isPreset = (f) => /\.(json|xmp|lrtemplate)$/i.test(f.name);
+const loadAnyPreset = (f) => (/\.json$/i.test(f.name) ? loadPreset(f) : loadLightroom(f));
+
+
 // ---- colour grading wheels -----------------------------------------------------
 
 // hue in degrees (red 0, yellow 60, green 120, ...), amount 0..1, lum -1..1
@@ -1514,7 +1570,7 @@ applyI18n();
 $("head-preset-file").onchange = async (e) => {
   const f = e.target.files[0];
   e.target.value = "";
-  if (f && !(await loadPreset(f))) showTab("export");
+  if (f && !(await loadAnyPreset(f))) showTab("export");
 };
 // a look shipped with the editor, to start from
 $("example-preset").onclick = async () => {
@@ -1523,13 +1579,13 @@ $("example-preset").onclick = async () => {
   if (!(await loadPreset(new File([await res.blob()], t("example_name"))))) showTab("export");
 };
 $("preset-file").onchange = (e) => {
-  if (e.target.files[0]) loadPreset(e.target.files[0]);
+  if (e.target.files[0]) loadAnyPreset(e.target.files[0]);
   e.target.value = "";     // the same file again must trigger a reload
 };
 
 $("file").onchange = (e) => {
   const f = e.target.files[0];
-  if (f) (/\.json$/i.test(f.name) ? loadPreset(f) : loadDng(f));
+  if (f) (isPreset(f) ? loadAnyPreset(f) : loadDng(f));
   e.target.value = "";
 };
 const wrap = $("wrap");
@@ -1540,7 +1596,7 @@ wrap.addEventListener("drop", (e) => {
   wrap.classList.remove("drag");
   const f = e.dataTransfer.files[0];
   if (!f) return;
-  if (/\.json$/i.test(f.name)) loadPreset(f);
+  if (isPreset(f)) loadAnyPreset(f);
   else loadDng(f);
 });
 
