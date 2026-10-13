@@ -18,12 +18,17 @@ const state = {
   mode: "edit",
   split: 0.5,
   ev: 0,
+  wb: { kelvin: false, k: 5200, ab: 0, gm: 0 },   // preview-only white balance (false: as shot)
+  wbCal: null,         // [R, B] calibration of the photo's camera, null: typical
+  wbShot: null,        // { k, gm } closest to the shot's white balance
   shot: null,          // /api/dng meta
   tone: { points: [[0, 0], [1, 1]], families: [0, 1, 2] },
   params: { key: 0, contrast: 0, highlight: 0, shadow: 0, saturation: 0, hue: 0 },
   residual: true,
   curves: null,        // last /api/tone answer
   chan: { edits: {}, set: "Preset 1", channel: 0, all: true },   // the look's channel curves (Farbton 1-3)
+  extBases: [],        // extra bases from _local/bases.json (not in the repo)
+  extBase: null,       // id of the active extra base
   grade: {},           // set name -> colour wheels, applied by the core after the edits
 };
 const TONE_KEYS = ["key", "contrast", "highlight", "shadow"];
@@ -272,7 +277,7 @@ function draw() {
   gl.uniformMatrix3fv(uni("uHue"), false, transpose(hueMatrix(look)));
   gl.uniform1i(uni("uMono"), look.mono_mix ? 1 : 0);
   gl.uniform1i(uni("uResidual"), state.residual && state.shot.residual ? 1 : 0);
-  gl.uniform3fv(uni("uWb"), state.shot.wb);
+  gl.uniform3fv(uni("uWb"), wbGains());
   gl.uniform1f(uni("uExp"), Math.pow(2, state.ev));
   gl.uniform1f(uni("uScale"), state.shot.scale);
   gl.uniform1f(uni("uSplit"), state.mode === "edit" || state.mode === "jpeg" ? -1 : state.split);
@@ -405,39 +410,160 @@ const baseOf = () => (state.fw.inherit || {})[CROSS] || null;
 function renderInherit() {
   const ul = $("base-list");
   const cur = baseOf();
+  const ext = extBaseOf();
   ul.innerHTML = "";
   for (const b of BASES) {
     const li = document.createElement("li");
-    li.className = b === cur ? "on" : "";
+    li.className = b === cur && !ext ? "on" : "";
     li.innerHTML = `<b>${b ? label(b) : t("base_standard")}</b><span>${t(BASE_HINTS[b])}</span>`;
     li.onclick = () => setBase(b);
     ul.appendChild(li);
   }
+  for (const x of state.extBases) {
+    const li = document.createElement("li");
+    li.className = ext === x ? "on" : "";
+    li.innerHTML = `<b>${esc(extText(x.label))}</b><span>${esc(extText(x.hint))}</span>`;
+    li.onclick = () => setExtBase(x);
+    ul.appendChild(li);
+  }
   const src = cur;
   const p = src && state.shot && state.shot.shot_look === src && state.shot.params;
-  $("inherit-note").textContent = src
+  $("inherit-note").textContent = ext ? extText(ext.tip)
+    : src
     ? t("base_tip", { look: label(src) }) +
       (p ? t("base_tip_photo", { contrast: signed(p.contrast || 0), highlight: signed(p.highlight || 0),
                                  shadow: signed(p.shadow || 0), saturation: signed(p.saturation || 0) }) : "") + "."
     : "";
 }
 
-async function setBase(source) {
-  if (source === baseOf()) return;
+// switch the look data of the Cross Process slot to `source` (null: Standard)
+async function applyInherit(source) {
+  if (source === baseOf()) return true;
   const res = await api("/api/inherit", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ target: CROSS, source }),
   });
-  if (!res.ok) { renderInherit(); return; }
+  if (!res.ok) return false;
   const fw = await res.json();
   Object.assign(state.fw, { looks: fw.looks, inherit: fw.inherit });
   for (const l of fw.looks) state.looks[l.name] = l;
+  return true;
+}
+
+async function setBase(source) {
+  const hadExt = !!extBaseOf();
+  if (source === baseOf() && !hadExt) return;
+  if (hadExt) clearExtBase();
+  if (!(await applyInherit(source))) { renderInherit(); return; }
   // the look keeps its own matrix slot; start it from the new base, keep the sliders
   const e = state.edits[state.looks[CROSS].address];
   if (e) e.base = state.looks[CROSS].matrix.slice();
+  renderInherit();
   update();
+  if (hadExt) renderChannelPanel();
   requestTone();
+}
+
+// ---- extra bases ----------------------------------------------------------------
+// Bases that are not image controls of the GR III firmware.
+// Each: { id, label, hint, tip: {en, de}, matrix_from: look name, matrix_mul: [9],
+//         channel_curve: [256] }. The matrix is matrix_mul x the look's matrix of the
+// loaded firmware; the curve goes on R, G and B of Color Tone 1-3. An optional
+// _local/bases.json (not in the repo) adds bases or replaces one with the same id.
+
+// Extra bases built into the editor: a colour matrix relative to Standard and a
+// tone curve for Color Tone 1-3.
+const BUILTIN_BASES = [{
+  id: "positive-film-classic",
+  label: {"en": "Positive Film (GR 1)", "de": "Positive Film (GR 1)"},
+  hint: {"en": "rich red, muted green and yellow, deep blacks", "de": "kräftiges Rot, gedämpftes Grün und Gelb, tiefe Schwärzen"},
+  tip: {"en": "Colour as a matrix, tone as curves on Color Tone 1-3. In the camera: Cross Process, controls at 0.", "de": "Farbe als Matrix, Ton als Kurven auf Farbton 1–3. In der Kamera: Cross Process, Regler auf 0."},
+  matrix_from: "Standard",
+  matrix_mul: [1.040811742340139, 0.20596874929707515, -0.19377299757717903, 0.04734633241530474, 0.9336765395681852, -0.01931811901750858, -0.06289532853274803, 0.3269147342454318, 0.7756132715716554],
+  channel_curve: [
+    0, 0, 0, 0, 21, 42, 64, 85, 107, 128, 159, 191, 223, 255, 297, 340,
+    383, 430, 478, 526, 574, 608, 640, 672, 704, 750, 798, 846, 894, 956, 1020, 1084,
+    1134, 1182, 1230, 1279, 1340, 1404, 1468, 1532, 1596, 1660, 1724, 1788, 1852, 1916, 1980, 2044,
+    2134, 2231, 2301, 2365, 2429, 2518, 2614, 2685, 2749, 2813, 2902, 2998, 3094, 3190, 3310, 3438,
+    3518, 3582, 3646, 3733, 3829, 3925, 4021, 4117, 4213, 4309, 4405, 4501, 4597, 4693, 4789, 4885,
+    4981, 5056, 5120, 5206, 5302, 5398, 5494, 5653, 5782, 5878, 5974, 6070, 6145, 6209, 6355, 6465,
+    6529, 6594, 6658, 6801, 6914, 6978, 7042, 7106, 7170, 7234, 7298, 7400, 7490, 7554, 7655, 7728,
+    7760, 7846, 7938, 8002, 8066, 8130, 8194, 8258, 8322, 8386, 8484, 8562, 8594, 8643, 8706, 8803,
+    8882, 8915, 8963, 9058, 9154, 9218, 9267, 9299, 9347, 9411, 9475, 9568, 9666, 9731, 9766, 9795,
+    9859, 9986, 10023, 10050, 10114, 10178, 10242, 10280, 10370, 10434, 10498, 10537, 10562, 10626, 10690, 10794,
+    10818, 10882, 10946, 10986, 11051, 11074, 11138, 11202, 11266, 11330, 11372, 11436, 11458, 11522, 11586, 11650,
+    11693, 11757, 11822, 11842, 11905, 11950, 12014, 12078, 12143, 12161, 12225, 12289, 12336, 12353, 12417, 12464,
+    12528, 12592, 12657, 12673, 12721, 12785, 12849, 12865, 12928, 12992, 13042, 13106, 13171, 13184, 13235, 13299,
+    13363, 13428, 13492, 13504, 13556, 13620, 13685, 13749, 13813, 13877, 13942, 13952, 14016, 14070, 14134, 14199,
+    14263, 14327, 14391, 14456, 14520, 14528, 14592, 14656, 14713, 14777, 14841, 14905, 14970, 15034, 15098, 15162,
+    15167, 15231, 15295, 15359, 15423, 15487, 15551, 15615, 15679, 15743, 15807, 15933, 16000, 16064, 16190, 16383,
+  ],
+}];
+
+const extText = (v) => (v && typeof v === "object" ? v[LANG] || v.en || "" : v || "");
+const extBaseOf = () => state.extBases.find((x) => x.id === state.extBase) || null;
+const extMatrix = (x) => mul(x.matrix_mul, state.looks[x.matrix_from].matrix);
+const sameCurve = (a, b) => a && b && a.length === b.length && a.every((v, k) => v === b[k]);
+
+async function loadExtBases() {
+  let local = [];
+  try {
+    const res = await fetch("_local/bases.json", { cache: "no-store" });
+    if (res.ok) local = await res.json();
+  } catch { /* no local bases */ }
+  const curve = (v) => Array.isArray(v) && v.length === 256 && v.every(Number.isFinite);
+  const valid = (x) => x && typeof x.id === "string" &&
+    state.looks[x.matrix_from] && Array.isArray(x.matrix_mul) && x.matrix_mul.length === 9 &&
+    x.matrix_mul.every(Number.isFinite) && (x.channel_curve == null || curve(x.channel_curve));
+  const byId = new Map(BUILTIN_BASES.filter(valid).map((x) => [x.id, x]));
+  for (const x of (Array.isArray(local) ? local : []).filter(valid)) byId.set(x.id, x);
+  return [...byId.values()];
+}
+
+async function setExtBase(x) {
+  if (extBaseOf() === x) return;
+  if (extBaseOf()) clearExtBase();
+  // Cross Process keeps the Standard look data; the base only sets matrix and curves
+  if (!(await applyInherit(null))) { renderInherit(); return; }
+  editOf(CROSS).base = extMatrix(x);
+  if (x.channel_curve) {
+    for (const n of SET_ORDER) for (const i of chanSet(n))
+      state.chan.edits[i] = { base: x.channel_curve.map((v) => Math.round(v)), points: IDENT.map((p) => p.slice()) };
+    relink();
+  }
+  state.extBase = x.id;
+  renderInherit();
+  update();
+  renderChannelPanel();
+  requestTone();
+}
+
+// leave an extra base: its matrix goes, its curves go where they are still untouched
+function clearExtBase() {
+  const x = extBaseOf();
+  state.extBase = null;
+  if (!x) return;
+  const e = state.edits[state.looks[CROSS].address];
+  if (e) e.base = state.looks[CROSS].matrix.slice();
+  if (!x.channel_curve) return;
+  for (const n of SET_ORDER) for (const i of chanSet(n)) {
+    const c = state.chan.edits[i];
+    if (c && sameCurve(c.base, x.channel_curve.map((v) => Math.round(v))) && isIdent(c.points)) delete state.chan.edits[i];
+  }
+  relink();
+}
+
+// after loading a preset: was it made from an extra base?
+function detectExtBase() {
+  state.extBase = null;
+  if (baseOf() !== null) return;
+  const e = state.edits[state.looks[CROSS].address];
+  if (!e) return;
+  for (const x of state.extBases) {
+    const m = extMatrix(x);
+    if (m.every((v, k) => Math.abs(v - e.base[k]) < 1e-6)) { state.extBase = x.id; return; }
+  }
 }
 
 function renderChanges() {
@@ -448,7 +574,8 @@ function renderChanges() {
   }
   const others = state.fw.looks.map((l) => l.name).filter((n) => n !== CROSS && isChanged(n));
   const sets = new Set(changedChannels().map(chanSetOf));
-  const names = [t("ch_base", { look: baseOf() ? label(baseOf()) : t("base_standard") })];
+  const ext = extBaseOf();
+  const names = [t("ch_base", { look: ext ? extText(ext.label) : baseOf() ? label(baseOf()) : t("base_standard") })];
   if (isChanged(CROSS)) names.push(t("ch_colors"));
   for (const n of SET_ORDER) names.push(`${setLabel(n)}: ` + (sets.has(n)
     ? t(gradedSets().includes(n) ? "ch_curves_wheels" : "ch_curves")
@@ -456,7 +583,7 @@ function renderChanges() {
   for (const n of others) names.push(`<span class="warn">${t("ch_other", { look: label(n) })}</span>`);
   if (toneChanged()) names.push(`<span class="warn">${t("ch_tone")}</span>`);
   $("changes").innerHTML = names.map((n) => `<li>${n}</li>`).join("");
-  const badge = { base: !!baseOf(), color: isChanged(CROSS) || others.length > 0,
+  const badge = { base: !!baseOf() || !!ext, color: isChanged(CROSS) || others.length > 0,
     curves: sets.size > 0 || toneChanged() };
   for (const b of document.querySelectorAll("#tabs button")) b.classList.toggle("dirty", !!badge[b.dataset.tab]);
 }
@@ -565,6 +692,43 @@ $("ev").oninput = (e) => {
   $("ev-out").textContent = `${state.ev >= 0 ? "+" : ""}${state.ev.toFixed(1)} EV`;
   draw();
 };
+// preview-only white balance. "As shot" uses the photo's gains; otherwise they
+// come from colour temperature and fine adjustment, computed like the camera
+// (wb.js). They multiply the camera RGB before the colour matrices, which is
+// where the camera applies white balance too.
+const wbCal = () => state.wbCal || WB_DEFAULT_CAL;
+function wbGains() {
+  if (!state.wb.kelvin) return state.shot.wb;
+  return wbGainsKelvin(state.wb.k, state.wb.ab, state.wb.gm, wbCal());
+}
+const fineLabel = (v, neg, pos) => (v > 0 ? `${pos}${v}` : v < 0 ? `${neg}${-v}` : "0");
+function renderWb() {
+  const w = state.wb;
+  $("wb-k").value = w.k; $("wb-ab").value = w.ab; $("wb-gm").value = w.gm;
+  $("wb-k-out").textContent = w.kelvin ? `${w.k} K` : t("wb_as_shot");
+  $("wb-ab-out").textContent = fineLabel(w.ab, "B", "A");
+  $("wb-gm-out").textContent = fineLabel(w.gm, "G", "M");
+  const s = state.wbShot;
+  $("wb-note").textContent = !state.shot ? ""
+    : (s ? t("wb_note", { k: s.k, gm: fineLabel(s.gm, "G", "M") }) : "") +
+      t(state.wbCal ? "wb_cal_photo" : "wb_cal_default");
+}
+function setWb(key, value) {
+  if (!state.wb.kelvin && state.wbShot) Object.assign(state.wb, { k: state.wbShot.k, ab: 0, gm: state.wbShot.gm });
+  state.wb.kelvin = true;
+  state.wb[key] = value;
+  renderWb();
+  draw();
+}
+$("wb-k").oninput = (e) => setWb("k", parseInt(e.target.value, 10));
+$("wb-ab").oninput = (e) => setWb("ab", parseInt(e.target.value, 10));
+$("wb-gm").oninput = (e) => setWb("gm", parseInt(e.target.value, 10));
+$("wb-reset").onclick = () => { wbAsShot(); draw(); };
+function wbAsShot() {
+  const s = state.wbShot || { k: 5200, gm: 0 };
+  state.wb = { kelvin: false, k: s.k, ab: 0, gm: s.gm };
+  renderWb();
+}
 $("reset").onclick = () => {
   const look = state.looks[state.current];
   state.edits[look.address] = { base: look.matrix.slice(), sat: 1, hue: 0, calib: neutralCalib() };
@@ -636,6 +800,10 @@ async function errorText(res) {
 async function loadDng(file) {
   $("busy").hidden = false;
   try {
+    // the camera's colour temperature calibration from the makernote (near the start)
+    let kwb = parseKelvinWB(await file.slice(0, 4 << 20).arrayBuffer());
+    if (!kwb && file.size > 4 << 20) kwb = parseKelvinWB(await file.arrayBuffer());
+    state.wbCal = kwb ? wbCalibration(kwb) : null;
     const fd = new FormData();
     fd.append("file", file);
     const res = await api("/api/dng", { method: "POST", body: fd });
@@ -671,6 +839,8 @@ async function show(meta) {
   if (!cam && (state.mode === "camera" || state.mode === "jpeg")) $("modes").querySelector("button").click();
 
   state.shot = meta;
+  state.wbShot = wbEstimate(meta.wb, wbCal());   // a new photo starts from its own white balance
+  wbAsShot();
   $("empty").hidden = true;
   $("shot-info").textContent = [meta.filename, meta.shot_look ? label(meta.shot_look) : meta.image_tone]
     .filter(Boolean).join(" · ");
@@ -1149,6 +1319,7 @@ async function loadPreset(file) {
       }
     }
 
+    detectExtBase();
     relink();
     toneEditor.deselect();
     chanEditor.deselect();
@@ -1314,6 +1485,7 @@ function setLang(lang) {
   buildChannelPanel();
   renderInherit();
   renderToneNote();
+  renderWb();
   update();
   renderChannelPanel();
   placeSplit();
@@ -1367,6 +1539,7 @@ wrap.addEventListener("drop", (e) => {
     state.build = { version: VERSIONS[build] || "?", build };
     $("fw-info").textContent = t("firmware", state.build);
     if (!store.get("helpSeen")) { $("help").showModal(); store.set("helpSeen", "1"); }
+    state.extBases = await loadExtBases();
     buildChannelPanel();
     relink();
     buildWheels();

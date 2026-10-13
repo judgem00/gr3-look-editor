@@ -71,10 +71,18 @@
           <input type="range" id="p-shadow" min="-4" max="4" step="1" value="0"></div>
         <div class="slider"><label for="ev"><span data-i18n="p_ev">Exposure</span> <output id="ev-out">0.0 EV</output></label>
           <input type="range" id="ev" min="-3" max="3" step="0.1" value="0"></div>
+        <div class="slider"><label for="wb-k" data-i18n-title="p_wb_t"><span data-i18n="p_wb_k">Colour temperature</span> <output id="wb-k-out">as shot</output></label>
+          <input type="range" class="grad" id="wb-k" min="2500" max="10000" step="10" value="5200"></div>
+        <div class="slider"><label for="wb-ab" data-i18n-title="p_wb_t"><span data-i18n="p_wb_ab">Blue – Amber</span> <output id="wb-ab-out">0</output></label>
+          <input type="range" class="grad" id="wb-ab" min="-14" max="14" step="1" value="0"></div>
+        <div class="slider"><label for="wb-gm" data-i18n-title="p_wb_t"><span data-i18n="p_wb_gm">Green – Magenta</span> <output id="wb-gm-out">0</output></label>
+          <input type="range" class="grad" id="wb-gm" min="-14" max="14" step="1" value="0"></div>
+        <button class="btn" id="wb-reset" data-i18n="wb_reset">White balance as shot</button>
         <label class="check"><input type="checkbox" id="residual" checked>
           <span data-i18n="residual">Fine-match to camera JPEG</span></label>
       </div>
       <p class="note" id="tone-note">No photo loaded yet.</p>
+      <p class="note muted" id="wb-note"></p>
     </details>
   </section>
 
@@ -264,6 +272,7 @@
 
 <script src="i18n.js"></script>
 <script src="bridge.js"></script>
+<script src="wb.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

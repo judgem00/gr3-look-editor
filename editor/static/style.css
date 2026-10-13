@@ -90,6 +90,20 @@ h2 { margin: 0 0 10px; font-size: 11px; text-transform: uppercase; letter-spacin
 .slider label { display: flex; justify-content: space-between; color: var(--muted); font-size: 12px; }
 .slider output { color: var(--text); font-family: ui-monospace, Menlo, monospace; }
 input[type=range] { width: 100%; accent-color: var(--accent); }
+/* sliders that show their effect as a colour gradient (white balance) */
+input[type=range].grad { -webkit-appearance: none; appearance: none; height: 18px; background: transparent; }
+input[type=range].grad::-webkit-slider-runnable-track { height: 6px; border-radius: 3px; background: var(--grad); }
+input[type=range].grad::-moz-range-track { height: 6px; border-radius: 3px; background: var(--grad); }
+input[type=range].grad::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 14px; height: 14px;
+  margin-top: -4px; border-radius: 50%; background: #f4f1ea; border: 2px solid #1d1d20; box-shadow: 0 0 0 1px rgba(255,255,255,.25); }
+input[type=range].grad::-moz-range-thumb { width: 10px; height: 10px; border-radius: 50%; background: #f4f1ea;
+  border: 2px solid #1d1d20; box-shadow: 0 0 0 1px rgba(255,255,255,.25); }
+input[type=range].grad:focus-visible { outline: 1px solid var(--accent); outline-offset: 2px; }
+/* colour temperature: the camera setting, so a low value renders blue and a high one warm;
+   neutral sits near 5200 K (36 % of 2500..10000 K) */
+#wb-k { --grad: linear-gradient(90deg, #3d6fd4 0%, #9db5e3 22%, #dcdad4 36%, #e8c487 62%, #e3902c 100%); }
+#wb-ab { --grad: linear-gradient(90deg, #3d6fd4 0%, #dcdad4 50%, #e3902c 100%); }
+#wb-gm { --grad: linear-gradient(90deg, #3fae4c 0%, #dcdad4 50%, #c24fb8 100%); }
 
 .row { display: flex; gap: 8px; margin-top: 10px; }
 .btn {
