@@ -816,6 +816,33 @@ async function loadDng(file) {
   }
 }
 
+// preview settings: defaults (false) or the shot's values from the DNG (true)
+function applyShotParams(fromDng) {
+  const meta = state.shot;
+  const p = (fromDng && meta && meta.params) || {};
+  for (const k of [...TONE_KEYS, ...COLOR_KEYS]) {
+    // Cross Process: the DNG's saturation value does not act like A[sat]
+    // in measurements (MR024511/12 fit better without), so it stays at 0
+    state.params[k] = k === "saturation" && meta && meta.shot_look === "CrossProcess" ? 0 : p[k] || 0;
+    $(`p-${k}`).value = state.params[k];
+    $(`p-${k}-out`).textContent = signed(state.params[k]);
+  }
+  state.paramsFromDng = fromDng;
+  if (fromDng && meta.shot_look === "CrossProcess" && p.cross_variant) {
+    state.chan.set = `Preset ${p.cross_variant}`;
+    renderWheels();
+    renderChannelPanel();
+  }
+  $("load-shot").disabled = !meta || !(Object.keys(meta.params || {}).length || meta.shot_look === "CrossProcess");
+  renderToneNote();
+}
+$("load-shot").onclick = async () => {
+  if (!state.shot) return;
+  applyShotParams(true);
+  await fetchTone();
+  update();
+};
+
 async function show(meta) {
   const lin = new Float32Array(await (await api("/api/dng/linear")).arrayBuffer());
 
@@ -844,20 +871,10 @@ async function show(meta) {
   $("empty").hidden = true;
   $("shot-info").textContent = [meta.filename, meta.shot_look ? label(meta.shot_look) : meta.image_tone]
     .filter(Boolean).join(" · ");
-  const p = meta.params || {};
-  for (const k of [...TONE_KEYS, ...COLOR_KEYS]) {
-    // Cross Process: the DNG's saturation value does not act like A[sat]
-    // in measurements (MR024511/12 fit better without), so start at 0
-    state.params[k] = k === "saturation" && meta.shot_look === "CrossProcess" ? 0 : p[k] || 0;
-    $(`p-${k}`).value = state.params[k];
-    $(`p-${k}-out`).textContent = signed(state.params[k]);
-  }
+  // a new photo starts with the preview settings at their defaults; only the
+  // white balance comes from the DNG ("Load preview settings from DNG" takes the rest)
+  applyShotParams(false);
   $("residual").disabled = !meta.residual;
-  renderToneNote();
-  if (meta.shot_look === "CrossProcess" && p.cross_variant) {
-    state.chan.set = `Preset ${p.cross_variant}`;
-    renderWheels();
-  }
   await fetchTone();
   update();
 }
@@ -1468,10 +1485,11 @@ $("help-open").onclick = () => $("help").showModal();
 
 function renderToneNote() {
   const meta = state.shot;
+  const has = meta && Object.keys(meta.params || {}).length;
   $("tone-note").className = "note";
   $("tone-note").textContent = !meta ? t("tone_none")
-    : t(Object.keys(meta.params || {}).length ? "tone_from_photo" : "tone_defaults") +
-      t(meta.residual ? "tone_matched" : "tone_unmatched");
+    : (state.paramsFromDng ? t(has ? "tone_from_photo" : "tone_defaults") : t("tone_reset")) +
+      t(!meta.residual ? "tone_unmatched" : state.paramsFromDng || !has ? "tone_matched" : "tone_matched_shot");
 }
 
 // ---- language -----------------------------------------------------------------
