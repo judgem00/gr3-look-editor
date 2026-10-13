@@ -29,7 +29,7 @@ Ricoh Imaging. "Ricoh" and "GR" are trademarks of their respective owners.
 2. **Colour.** Saturation, hue, and Lightroom-style calibration (hue and
    saturation of the red, green and blue primaries).
 3. **Curves.** Three variants, which you select in the camera with
-   Cross Process → *Tone 1, 2, 3*. Each variant has RGB curves (one combined
+   Cross Process → *Color Tone 1, 2, 3*. Each variant has RGB curves (one combined
    curve or per channel) and colour wheels for shadows, midtones and
    highlights. The curves always start linear, so the stock
    cross-processing is gone.

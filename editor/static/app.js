@@ -1335,7 +1335,7 @@ $("head-preset-file").onchange = async (e) => {
 $("example-preset").onclick = async () => {
   const res = await fetch("presets/example.looks.json");
   if (!res.ok) return;
-  await loadPreset(new File([await res.blob()], t("example_name")));
+  if (!(await loadPreset(new File([await res.blob()], t("example_name"))))) showTab("export");
 };
 $("preset-file").onchange = (e) => {
   if (e.target.files[0]) loadPreset(e.target.files[0]);

@@ -38,7 +38,7 @@ const I18N = {
     // shot drawer
     drawer: "Camera settings of the photo", drawer_hint: "· affect the preview only",
     p_saturation: "Saturation", p_hue: "Hue",
-    p_hue_t: "With Cross Process this setting selects Hue 1–3 in the camera",
+    p_hue_t: "With Cross Process this setting selects Color Tone 1–3 in the camera",
     p_key: "High/Low Key", p_contrast: "Contrast", p_highlight: "Highlight contrast",
     p_shadow: "Shadow contrast", p_ev: "Exposure", residual: "Fine-match to camera JPEG",
     tone_none: "No photo loaded yet.",
@@ -61,7 +61,7 @@ const I18N = {
     base_tip_photo: " (this photo: contrast {contrast}, highlights {highlight}, shadows {shadow}, saturation {saturation})",
     in_camera: "In the camera",
     cam_1: "Select the image control <b>Cross Process</b>.",
-    cam_2: "<b>Hue 1, 2 or 3</b> selects one of your three curve variants (step 3).",
+    cam_2: "<b>Color Tone 1, 2 or 3</b> selects one of your three curve variants (step 3).",
     cam_3: "The camera's contrast, saturation, highlight and shadow settings work on your look as usual.",
     // 2 colour
     color_lead: "Colours of your look. Grey always stays neutral.",
@@ -81,8 +81,8 @@ const I18N = {
     mono_filter: "Black-and-white look: the sliders set how bright individual colours appear in grey (like a colour filter).",
     mono_mix: "Black-and-white look: the camera mixes the colours to grey afterwards. Colour changes have little effect here.",
     // 3 curves
-    curves_lead: "Three variants of your look, selectable in the camera via <b>Hue 1–3</b>. They start neutral; brightness and colour mood are set here.",
-    variant: "Variant", set_1: "Hue 1", set_2: "Hue 2", set_3: "Hue 3",
+    curves_lead: "Three variants of your look, selectable in the camera via <b>Color Tone 1–3</b>. They start neutral; brightness and colour mood are set here.",
+    variant: "Variant", set_1: "Color Tone 1", set_2: "Color Tone 2", set_3: "Color Tone 3",
     curves: "Curves",
     chan_all: "One curve for all three channels: brightness and contrast of your look. Click adds a point, drag moves it.",
     chan_one: "Channel {ch} only: raising tints towards {up}, lowering towards {down}.",
@@ -131,7 +131,7 @@ const I18N = {
     help_intro: "With this editor you build an image control of your own for your GR III. In the camera it replaces the <b>Cross Process</b> image control; all other image controls stay as they are.",
     help_1: "<b>Open a photo.</b> A DNG from your GR III. The preview renders it the way the camera would.",
     help_2: "<b>Choose a base,</b> e.g. Standard or Negative Film.",
-    help_3: "Adjust <b>Colour</b> (saturation, hue, primaries) and <b>Curves</b>. Under Curves you set up to three variants, which you select in the camera via “Hue 1–3”.",
+    help_3: "Adjust <b>Colour</b> (saturation, hue, primaries) and <b>Curves</b>. Under Curves you set up to three variants, which you select in the camera via “Color Tone 1–3”.",
     help_4: "<b>Export:</b> create the update file and put it on the camera. Saved as a preset you can continue later.",
     help_risk: "Installing modified firmware is at your own risk.",
     help_go: "Let's go",
