@@ -77,9 +77,12 @@ def inherit(data, target_table, source_table):
 # the header copy and the MMU table; nothing points into it, and the MultiAxial
 # per-look tests ran data from there on the camera).
 CROSS_TABLE = 21
-PRIVATE_SET = 0x53002080      # copy of the ColorMatrix set, 8 words (Calc reads +0..+0x10)
-PRIVATE_MATRIX = 0x530020a0   # 9 x int16
-SET_WORDS = 8
+# A set is 21 words (0x54 bytes, the spacing of the sets in .data); words 8..16
+# are pointers too. Copying only the first 8 put matrix bytes where those
+# pointers belong, and the camera did not start.
+PRIVATE_SET = 0x53002080      # copy of the ColorMatrix set, 21 words
+PRIVATE_MATRIX = 0x530020d4   # 9 x int16, right after the set
+SET_WORDS = 21
 
 
 def private_cross(data):

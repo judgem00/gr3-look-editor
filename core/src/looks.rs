@@ -63,11 +63,14 @@ pub fn inherit(img: &mut [u8], target: u32, source: u32) {
 
 // Cross Process is the slot for the user's own look. To edit it alone it gets
 // a private copy of its ColorMatrix set and matrix, placed in zero padding of
-// the read-only image section (0x53002080..0x53004000).
+// the read-only image section (0x53002080..0x53004000). A set is 21 words
+// (0x54 bytes, the spacing of the sets in .data); words 8..16 are pointers too.
+// Copying only the first 8 put matrix bytes where those pointers belong, and
+// the camera did not start.
 const CROSS_TABLE: u32 = 21;
 const PRIVATE_SET: u32 = 0x5300_2080;
-const PRIVATE_MATRIX: u32 = 0x5300_20a0;
-const SET_WORDS: u32 = 8;
+const PRIVATE_MATRIX: u32 = 0x5300_20d4;
+const SET_WORDS: u32 = 21;
 
 pub fn private_cross(img: &mut [u8]) -> Result<(), String> {
     let entry = file_offset(CM_TABLE + 4 * CROSS_TABLE);
