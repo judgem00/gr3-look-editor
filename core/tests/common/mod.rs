@@ -27,6 +27,12 @@ pub fn update_file() -> Option<Vec<u8>> {
     std::fs::read(p).ok()
 }
 
+/// the GR IIIx update file (firmware 1.60); set GR3X_UPDATE or put it in work/
+pub fn update_file_gr3x() -> Option<Vec<u8>> {
+    let p = std::env::var("GR3X_UPDATE").map(PathBuf::from).unwrap_or_else(|_| work().join("fwdc243b.bin"));
+    std::fs::read(p).ok()
+}
+
 macro_rules! need {
     ($e:expr) => {
         match $e {

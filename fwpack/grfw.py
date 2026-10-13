@@ -1,9 +1,9 @@
-"""The GR III firmware container (FWDC*.BIN): parse, decode, verify, rebuild.
+"""The GR III / GR IIIx firmware container (FWDC*.BIN): parse, decode, verify, rebuild.
 
 Layout, as checked by FwDecoder in the camera (RTOS 0x5362bd40 ff.):
 
     0x00   header, 0x80 bytes
-             +0x30  project number (0x24c on the GR III)
+             +0x30  project number (0x24c on the GR III, 0x261 on the GR IIIx)
              +0x78  project number twice (0x024c024c)
              +0x7c  0xa55a5aa5
     0x80   compressed stream: frames, then a 0x0000 end marker

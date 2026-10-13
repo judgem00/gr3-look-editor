@@ -43,8 +43,13 @@ fn firmware_tone_inherit_export() {
     let g = need!(common::golden());
     let mut s = need!(session());
     let mut fw = s.firmware();
+    assert_eq!((&fw["camera"], &fw["version"], &fw["update_file"]), (&json!("GR III"), &json!("2.10"), &json!("FWDC239B.BIN")));
     // the web version names the build, not a path on disk
     fw["path"] = json!("work/fwdc239b/unpackedFW");
+    // which camera the file is for: newer than the reference answers
+    for k in ["camera", "version", "update_file"] {
+        fw.as_object_mut().unwrap().remove(k);
+    }
     if let Some(d) = diff(&fw, &g["firmware"], "firmware", 1e-12) {
         panic!("{d}");
     }
@@ -56,6 +61,10 @@ fn firmware_tone_inherit_export() {
     }
     let mut inh = s.set_inherit(&json!({"target": "CrossProcess", "source": "NegativeFilm"})).unwrap();
     inh["path"] = json!("work/fwdc239b/unpackedFW");
+    // which camera the file is for: newer than the reference answers
+    for k in ["camera", "version", "update_file"] {
+        inh.as_object_mut().unwrap().remove(k);
+    }
     if let Some(d) = diff(&inh, &g["inherit"]["NegativeFilm"], "inherit", 1e-12) {
         panic!("{d}");
     }

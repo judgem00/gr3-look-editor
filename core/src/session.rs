@@ -7,14 +7,38 @@ use crate::gamma::{Engine, ToneParams};
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
 
-/// Every address the editor reads and patches was found in this one build.
+/// Every address the editor reads and patches was found in one build: GR III
+/// 2.10. GR IIIx 1.60 is the same build, compiled two minutes later; its image
+/// differs only in the model's identity (name, project number, model ID,
+/// version, checksums), and the editor reads and patches none of those bytes
+/// except the image checksum, which it recomputes (core/tests/models.rs).
 /// Other versions move code and data, so they are refused, not patched blindly.
-/// sha256 of the update file as Ricoh distributes it -> (name, sha256 of the image)
-pub const SUPPORTED: [(&str, &str, &str); 1] = [(
-    "d6a3c9c288d784080e7b283222ecdd8752adfeed6faa36dab44f73115354bfd4",
-    "fwdc239b",
-    "53da690797f35ad6dc2c429d8ca1d0de8e333c211ed959816813982cd093b703",
-)];
+pub struct Build {
+    /// sha256 of the update file as Ricoh distributes it
+    pub update_sha256: &'static str,
+    pub name: &'static str,
+    /// sha256 of the decoded image
+    pub image_sha256: &'static str,
+    pub camera: &'static str,
+    pub version: &'static str,
+}
+
+pub const SUPPORTED: [Build; 2] = [
+    Build {
+        update_sha256: "d6a3c9c288d784080e7b283222ecdd8752adfeed6faa36dab44f73115354bfd4",
+        name: "fwdc239b",
+        image_sha256: "53da690797f35ad6dc2c429d8ca1d0de8e333c211ed959816813982cd093b703",
+        camera: "GR III",
+        version: "2.10",
+    },
+    Build {
+        update_sha256: "708e79f3b7b96a7e1581b4acf4c412233050a1832718ef7f06c8397db1b431c7",
+        name: "fwdc243b",
+        image_sha256: "c4bfc09d1148deec2155b21bd3d63be8085cf835cbe5e5cde4832747f519e630",
+        camera: "GR IIIx",
+        version: "1.60",
+    },
+];
 
 pub fn sha256_hex(d: &[u8]) -> String {
     Sha256::digest(d).iter().map(|b| format!("{b:02x}")).collect()
@@ -27,7 +51,7 @@ pub struct Session {
     /// stock + linear channel curves + inheritance + private Cross Process set
     fw: Vec<u8>,
     inherit: Vec<(String, String)>,
-    pub build: String,
+    pub build: &'static Build,
     /// the dropped file's name, and the name the camera expects (FWDC239B.BIN)
     pub filename: String,
     pub update_name: String,
@@ -60,10 +84,10 @@ impl Session {
     /// check and decode the update file; refuses unknown builds
     pub fn open(update: Vec<u8>, filename: &str) -> Result<Session, String> {
         let hash = sha256_hex(&update);
-        let Some(&(_, build, image_hash)) = SUPPORTED.iter().find(|s| s.0 == hash) else {
+        let Some(build) = SUPPORTED.iter().find(|b| b.update_sha256 == hash) else {
             return Err(format!(
                 "unknown firmware file. Only these builds are supported: {}",
-                SUPPORTED.iter().map(|s| s.1).collect::<Vec<_>>().join(", ")
+                SUPPORTED.iter().map(|b| format!("{} {} ({})", b.camera, b.version, b.name)).collect::<Vec<_>>().join(", ")
             ));
         };
         let mut container = grfw::Container::parse(update)?;
@@ -72,7 +96,7 @@ impl Session {
             return Err(problems.join("; "));
         }
         let stock = container.decode()?;
-        if sha256_hex(&stock) != image_hash {
+        if sha256_hex(&stock) != build.image_sha256 {
             return Err("decoded image does not match the known build".into());
         }
         // self-test: the untouched image must pack back to the very same file
@@ -84,8 +108,8 @@ impl Session {
         let name = filename.to_uppercase();
         let base_curves = gamma::base_curves(&stock);
         let mut s = Session {
-            container, fw: vec![], stock, inherit: vec![], build: build.into(), filename,
-            update_name: if name.is_empty() { format!("{}.BIN", build.to_uppercase()) } else { name },
+            container, fw: vec![], stock, inherit: vec![], build, filename,
+            update_name: if name.is_empty() { format!("{}.BIN", build.name.to_uppercase()) } else { name },
             base_curves,
         };
         s.rebuild()?;
@@ -119,7 +143,10 @@ impl Session {
         let img = &self.fw;
         let sets: Map<String, Value> = chan::SETS.iter().map(|(n, i)| (n.to_string(), json!(i))).collect();
         json!({
-            "path": format!("{}/unpackedFW", self.build),
+            "path": format!("{}/unpackedFW", self.build.name),
+            "camera": self.build.camera,
+            "version": self.build.version,
+            "update_file": self.update_name,
             "looks": looks::looks(img),
             "sensor_ccm": looks::sensor_ccm(img),
             "luma": looks::luma_weights(img),
@@ -235,7 +262,7 @@ impl Session {
         };
         let channel_json = if channels.is_empty() { Value::Null } else { body["channels"].clone() };
         let preset = json!({
-            "source": format!("{}/unpackedFW", self.build),
+            "source": format!("{}/unpackedFW", self.build.name),
             "matrices": matrices,
             "tone": if tone_changed { tone_req.clone() } else { Value::Null },
             "channel_curves": channel_json,
@@ -261,8 +288,8 @@ impl Session {
         }
         let packed = rebuilt.data;
         let result = json!({
-            "written": format!("{}.looks.json", self.build),
-            "preset": format!("{}.looks.json", self.build),
+            "written": format!("{}.looks.json", self.build.name),
+            "preset": format!("{}.looks.json", self.build.name),
             "update_file": self.update_name,
             "frames_reencoded": redo,
             "update_sha256": sha256_hex(&packed),
