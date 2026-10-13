@@ -240,6 +240,8 @@ impl Session {
             "matrices": matrices,
             "tone": if tone_changed { tone_req.clone() } else { Value::Null },
             "channel_curves": channel_json,
+            // the points behind them, to edit the curves again
+            "channel_edits": or_null("channel_edits"),
             // to edit the wheels again: the curves before grading and the wheels
             "channel_curves_pre": or_null("channels_pre"),
             "channel_grade": or_null("grade"),

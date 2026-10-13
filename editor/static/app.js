@@ -585,8 +585,17 @@ $("export").onclick = async () => {
       matrices,
       tone: toneChanged() ? state.tone : null,
       channels: Object.fromEntries(changedChannels().map((i) => [i, chanValues(i)])),
+      // the points behind those curves, so a loaded preset can be edited again
+      channel_edits: Object.fromEntries(changedChannels().filter((i) => state.chan.edits[i])
+        .map((i) => [i, { base: state.chan.edits[i].base, points: state.chan.edits[i].points }])),
+      // slider positions; the base only when typed in by hand, since otherwise it is
+      // the firmware's own matrix and comes from there again on load
       matrix_edits: Object.fromEntries(state.fw.looks.filter((l) => isChanged(l.name))
-        .map((l) => [l.name, editOf(l.name)])),
+        .map((l) => {
+          const e = editOf(l.name);
+          const own = e.base.every((v, i) => Math.abs(v - l.matrix[i]) < 1e-9);
+          return [l.name, { ...e, base: own ? null : e.base }];
+        })),
       channels_pre: gradedSets().length ? Object.fromEntries(changedChannels().map((i) => [i, chanPre(i)])) : null,
       grade: gradedSets().length ? Object.fromEntries(gradedSets().map((n) => [n, state.grade[n]])) : null,
       update_file: !!state.fw.container,
@@ -1045,16 +1054,18 @@ $("chan-reset-set").onclick = () => {
 
 // A preset is the *.looks.json an export writes:
 //   { source, matrices: {look: [9]}, tone: {points, families} | null,
-//     channel_curves: {idx: [256]} | null, inherit: {target: source} | null }
+//     channel_curves: {idx: [256]} | null, channel_edits: {idx: {base, points}} | null,
+//     inherit: {target: source} | null }
 // It replaces every current edit. Look data inheritance goes first, because
 // it changes which matrix address a look edits.
 async function loadPreset(file) {
   const msg = $("preset-msg");
+  let ok = false;
   msg.className = "note";
   try {
     let p;
     try { p = JSON.parse(await file.text()); } catch { throw new Error(t("e_json")); }
-    if (!p || typeof p !== "object" || !("matrices" in p || "tone" in p || "channel_curves" in p || "inherit" in p))
+    if (!p || typeof p !== "object" || !["matrices", "matrix_edits", "tone", "channel_curves", "channel_edits", "inherit"].some((k) => k in p))
       throw new Error(t("e_preset"));
     const warn = [];
 
@@ -1077,11 +1088,14 @@ async function loadPreset(file) {
     state.edits = {};
     // newer presets keep base + sliders (incl. calibration) per look
     for (const [name, e] of Object.entries(p.matrix_edits || {})) {
-      if (!state.looks[name] || !Array.isArray(e.base) || e.base.length !== 9) continue;
+      if (!state.looks[name] || !e) continue;
+      const base = e.base == null ? state.looks[name].matrix
+        : Array.isArray(e.base) && e.base.length === 9 && e.base.every(Number.isFinite) ? e.base : null;
+      if (!base) { warn.push(t("e_matrix", { name })); continue; }
       const cal = neutralCalib();
       for (const q of PRIMS) for (const k of ["hue", "sat"])
         cal[q][k] = Math.max(-100, Math.min(100, +(((e.calib || {})[q] || {})[k]) || 0));
-      Object.assign(editOf(name), { base: e.base.slice(), sat: +e.sat || 1, hue: +e.hue || 0, calib: cal });
+      Object.assign(editOf(name), { base: base.slice(), sat: +e.sat || 1, hue: +e.hue || 0, calib: cal });
     }
     for (const [name, m] of Object.entries(p.matrices || {})) {
       if (p.matrix_edits && p.matrix_edits[name]) continue;
@@ -1092,6 +1106,8 @@ async function loadPreset(file) {
       Object.assign(editOf(name), { base: m.slice(), sat: 1, hue: 0 });
     }
 
+    const matrixCount = new Set([...Object.keys(p.matrices || {}), ...Object.keys(p.matrix_edits || {})]
+      .filter((n) => state.looks[n])).size;
     const tone = p.tone || {};
     const pts = Array.isArray(tone.points) && tone.points.length >= 2 &&
       tone.points.every((q) => Array.isArray(q) && q.length === 2 && q.every(Number.isFinite))
@@ -1106,19 +1122,36 @@ async function loadPreset(file) {
     let channels = 0;
     // with wheels the preset keeps the curves before grading, so the wheels stay editable
     const pre = p.channel_grade && p.channel_curves_pre;
-    if (pre) {
+    if (p.channel_grade && (pre || p.channel_edits)) {
       for (const [n, g] of Object.entries(p.channel_grade)) {
         if (!state.fw.channel_sets[n]) { warn.push(t("e_set", { name: n })); continue; }
         state.grade[n] = normGrade(g);
       }
     }
-    for (const [idx, vals] of Object.entries((pre ? p.channel_curves_pre : p.channel_curves) || {})) {
-      const i = +idx;
-      if (!(i >= 0 && i < 12) || !Array.isArray(vals) || vals.length !== 256 || vals.some((v) => !Number.isFinite(v))) {
-        warn.push(t("e_channel", { idx })); continue;
+    const curve = (v) => Array.isArray(v) && v.length === 256 && v.every(Number.isFinite);
+    const validPoints = (v) => Array.isArray(v) && v.length >= 2 &&
+      v.every((q) => Array.isArray(q) && q.length === 2 && q.every(Number.isFinite));
+    if (p.channel_edits) {
+      // newer presets keep the points, so the curves stay editable
+      for (const [idx, e] of Object.entries(p.channel_edits)) {
+        const i = +idx;
+        if (!(i >= 0 && i < 12) || !e || !(e.base == null || curve(e.base)) || !validPoints(e.points)) {
+          warn.push(t("e_channel", { idx })); continue;
+        }
+        state.chan.edits[i] = {
+          base: e.base == null ? null : e.base.map((v) => Math.round(v)),
+          points: e.points.map((q) => q.slice()).sort((a, b) => a[0] - b[0]),
+        };
+        channels++;
       }
-      state.chan.edits[i] = { base: vals.map((v) => Math.round(v)), points: IDENT.map((q) => q.slice()) };
-      channels++;
+    } else {
+      // older presets: only the finished curves, which become the base under straight points
+      for (const [idx, vals] of Object.entries((pre ? p.channel_curves_pre : p.channel_curves) || {})) {
+        const i = +idx;
+        if (!(i >= 0 && i < 12) || !curve(vals)) { warn.push(t("e_channel", { idx })); continue; }
+        state.chan.edits[i] = { base: vals.map((v) => Math.round(v)), points: IDENT.map((q) => q.slice()) };
+        channels++;
+      }
     }
 
     relink();
@@ -1130,19 +1163,21 @@ async function loadPreset(file) {
     if (p.source && state.fw.path && !p.source.endsWith(state.fw.path))
       warn.push(t("e_source", { source: p.source }));
     const parts = [
-      Object.keys(p.matrices || {}).length && t("p_matrices", { n: Object.keys(p.matrices).length }),
+      matrixCount && t("p_matrices", { n: matrixCount }),
       pts && !isIdent(pts) && t("p_tone"),
       channels && t("p_channels", { n: channels }),
       gradedSets().length && t("p_wheels", { list: gradedSets().map(setLabel).join(", ") }),
       Object.keys(inherit).length && Object.entries(inherit).map(([t, s]) => `${t} ← ${s}`).join(", "),
     ].filter(Boolean);
     msg.className = warn.length ? "note warn" : "note";
+    ok = !warn.length;
     msg.textContent = t("preset_loaded", { name: file.name, parts: parts.join(" · ") || t("preset_nothing") }) +
       (warn.length ? t("preset_hints", { list: warn.join("; ") }) : "");
   } catch (err) {
     msg.className = "note warn";
     msg.textContent = t("preset_failed", { msg: err.message });
   }
+  return ok;
 }
 
 
@@ -1290,6 +1325,18 @@ function setLang(lang) {
 }
 for (const b of document.querySelectorAll("#lang button")) b.onclick = () => setLang(b.dataset.lang);
 applyI18n();
+// from the header: the result note sits on the Export tab, so show it when there is a problem
+$("head-preset-file").onchange = async (e) => {
+  const f = e.target.files[0];
+  e.target.value = "";
+  if (f && !(await loadPreset(f))) showTab("export");
+};
+// a look shipped with the editor, to start from
+$("example-preset").onclick = async () => {
+  const res = await fetch("presets/example.looks.json");
+  if (!res.ok) return;
+  await loadPreset(new File([await res.blob()], t("example_name")));
+};
 $("preset-file").onchange = (e) => {
   if (e.target.files[0]) loadPreset(e.target.files[0]);
   e.target.value = "";     // the same file again must trigger a reload

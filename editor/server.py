@@ -227,6 +227,8 @@ def export():
         json.dump({"source": os.path.relpath(state["fw"].path, REPO), "matrices": matrices,
                    "tone": tone if tone_changed else None,
                    "channel_curves": channels or None,
+                   # the points behind them, to edit the curves again
+                   "channel_edits": body.get("channel_edits") or None,
                    # to edit the wheels again: the curves before grading and the wheels
                    "channel_curves_pre": body.get("channels_pre") or None,
                    "channel_grade": body.get("grade") or None,

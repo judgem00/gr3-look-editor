@@ -21,6 +21,7 @@ header {
 }
 .brand { font-weight: 700; letter-spacing: .04em; }
 .brand span { font-weight: 400; color: var(--muted); }
+.open { display: flex; gap: 8px; }
 .fw { flex: 1; color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 main { flex: 1; display: flex; min-height: 0; }
