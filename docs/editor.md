@@ -86,8 +86,13 @@ its own ColorMatrix set and its own matrix in the free area `0x53002080…`
   `editor/static/app.js` (`BUILTIN_BASES`); an optional
   `editor/static/_local/bases.json` (ignored by git) adds bases or replaces
   one with the same id.
-- **Camera settings** (key, contrast, highlights, shadows, exposure, white
-  balance) affect the preview only; pre-filled from the DNG.
+- **Camera settings** (saturation, hue, key, contrast, highlights, shadows,
+  exposure, white balance) affect the preview only. A newly loaded photo
+  starts with them at their defaults; only the white balance comes from the
+  DNG. **Load preview settings from DNG** takes the shot's values from the
+  makernote (for a Cross Process shot also its Color Tone). The fine-match
+  to the camera JPEG is fitted with the shot's settings, so "Compare camera"
+  only lines up after loading them.
 - **White balance (preview only):** "as shot" uses the DNG's AsShotNeutral.
   Moving **Colour temperature** (2500–10000 K), **Blue – Amber** or
   **Green – Magenta** (14 steps each) switches to white balance by colour
