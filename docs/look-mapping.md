@@ -1,47 +1,48 @@
-# Bildstil → Daten: die Zuordnung
+# Image control → data: the mapping
 
-Phase 3 des Farbprofil-Plans: Welche Daten gehören zu
-welchem Bildstil? Für die **Farbmatrix** ist die Kette jetzt vollständig im
-Code belegt.
+Phase 3 of the colour profile plan: which data belongs to which image
+control? For the **colour matrix** the chain is now fully established in the
+code.
 
-Firmware `fwdc239b` (GR III), Datei `assets/fwdc239b/unpackedFW`.
+Firmware `fwdc239b` (GR III), file `assets/fwdc239b/unpackedFW`.
 
-## Kurzfassung
+## Summary
 
 ```
-Bildstil (UI)            ConvertToCommonPropertyImageControl  0x53289058
-  -> interner Index      Byte setting+0x77c (11 … 22)
-  -> 0x55018d94[Index]   26 Zeiger, einer pro Index (.data)
-       -> ColorMatrix-Satz   +0x00 Sensor-CCM (für alle Looks gleich)
-                             +0x04 Look-Matrix   <- der Charakter des Looks
-  -> ColorMatrixTuning::Calc 0x536deecc -> ISP-Register
+image control (UI)       ConvertToCommonPropertyImageControl  0x53289058
+  -> internal index      byte setting+0x77c (11 … 22)
+  -> 0x55018d94[index]   26 pointers, one per index (.data)
+       -> ColorMatrix set    +0x00 sensor CCM (same for all looks)
+                             +0x04 look matrix   <- the character of the look
+  -> ColorMatrixTuning::Calc 0x536deecc -> ISP registers
 ```
 
-Werkzeug: `tools/look-matrices.py` zeigt die
-Matrix jedes Looks und schreibt eine geänderte in eine Kopie des Images.
+Tool: `tools/look-matrices.py` shows the matrix of each look and writes a
+modified one into a copy of the image.
 
-## 1. Zweite Adressabbildung: `.data` liegt bei `0x55000000`
+## 1. Second address mapping: `.data` lives at `0x55000000`
 
-Der Startup-Code (`0x5300038c`) kopiert vor allem anderen `0x3a080` Bytes von
-`0x5407b540` nach **`0x55000000`** und nullt danach BSS
+The startup code (`0x5300038c`) copies, before anything else, `0x3a080`
+bytes from `0x5407b540` to **`0x55000000`** and then zeroes the BSS
 (`0x5503a100 … 0x55804374`).
 
 ```
-RTOS-Code/rodata:  RAM = Datei-Offset + 0x52FEF790
-.data:             RAM 0x55000000 + x  =  Datei-Offset (0x5407b540 - 0x52FEF790) + x
+RTOS code/rodata:  RAM = file offset + 0x52FEF790
+.data:             RAM 0x55000000 + x  =  file offset (0x5407b540 - 0x52FEF790) + x
 ```
 
-Folgen für die bisherigen Funde:
+Consequences for earlier findings:
 
-- Die „Tuning-Registry" bei Datei-Offset 17.454.552 **ist** diese
-  `.data`-Sektion (RAM `0x55019828`). Deshalb hatte sie keine statischen
-  Referenzen — der Code spricht sie unter `0x5501…` an.
-- Zeiger nach `0x5501…`/`0x5502…` sind keine Laufzeitpuffer, sondern
-  initialisierte Daten aus dem Image — und damit patchbar.
+- The "tuning registry" at file offset 17,454,552 **is** this `.data`
+  section (RAM `0x55019828`). That is why it had no static references — the
+  code addresses it under `0x5501…`.
+- Pointers to `0x5501…`/`0x5502…` are not runtime buffers but initialised
+  data from the image — and therefore patchable.
 
-## 2. Die Klasse `ImageTuning`
+## 2. The `ImageTuning` class
 
-Konstruktor bei `0x536da2xx` (`src/ImageTuning.cpp`), Member laut Asserts:
+Constructor at `0x536da2xx` (`src/ImageTuning.cpp`), members according to
+asserts:
 
 | Offset | Member | Init |
 |---|---|---|
@@ -54,128 +55,129 @@ Konstruktor bei `0x536da2xx` (`src/ImageTuning.cpp`), Member laut Asserts:
 | +0x180 | **ToneControlTuning** | `0x536e90ac` |
 | +0x204 / +0x208 | BasicGammaTable Natural / Reversal | – |
 
-Jede Tuning-Klasse bekommt ein `setting`-Struct; dessen Zeigerfelder füllt die
-Funktion ab `0x536dc0f4` — **indiziert mit dem Bildstil**.
+Each tuning class receives a `setting` struct; its pointer fields are filled
+by the function at `0x536dc0f4` — **indexed by the image control**.
 
 ## 3. ColorMatrixTuning::Calc (`0x536deecc`)
 
-1. WB-Gains (`setting+0x7c/7e/80`) × **Look-Matrix** (`set+0x04`)
-2. optional × feste Matrix `0x53dc1430` (`setting+0x52`)
-3. × **Sensor-CCM** (`set+0x00`, `0x53dc2b58`, für alle Looks gleich)
-4. Sättigung: Stufe `setting+0x58` → Faktor aus `0x53dc140c`
-   (17 Werte, /128: 0,5× … 2,0×) × Stärke `setting+0x5a`
-5. Zeilensummen korrigiert (Grau bleibt grau), Clamp ±0x7FF → Register
+1. WB gains (`setting+0x7c/7e/80`) × **look matrix** (`set+0x04`)
+2. optionally × fixed matrix `0x53dc1430` (`setting+0x52`)
+3. × **sensor CCM** (`set+0x00`, `0x53dc2b58`, same for all looks)
+4. Saturation: level `setting+0x58` → factor from `0x53dc140c`
+   (17 values, /128: 0.5× … 2.0×) × strength `setting+0x5a`
+5. Row sums corrected (grey stays grey), clamp ±0x7FF → registers
 
-Bei den Indizes 13, 14 und 16 setzt der Code die Gains auf `0xAAA` (≈ ⅓ je
-Kanal): gleichgewichtete Mischung, also Monochrom.
+For indices 13, 14 and 16 the code sets the gains to `0xAAA` (≈ ⅓ per
+channel): an equally weighted mix, i.e. monochrome.
 
-### Nachtrag: die vollständige Rechnung (Ghidra, 2026-10-12)
+### Addendum: the complete computation (Ghidra, 2026-10-12)
 
 ```
-M = A[Sättigung] × Look-Matrix × Sensor-CCM          (0x536deddc, 0x536dee50: out = P3 × P4)
-    (× sRGB→Adobe-RGB 0x53dc1430 davor, wenn Farbraum Adobe RGB, setting+0x52)
-Gain: Nebendiagonale skaliert, Diagonale so, dass jede Zeile exakt aufgeht
+M = A[saturation] × look matrix × sensor CCM          (0x536deddc, 0x536dee50: out = P3 × P4)
+    (× sRGB→Adobe RGB 0x53dc1430 in front, if colour space is Adobe RGB, setting+0x52)
+Gain: off-diagonal scaled, diagonal set so that each row sums exactly
 ```
 
-- **A[Sättigung]**: neun Matrizen pro Look (`set+8`), gewählt über den
-  Sättigungsregler −4…+4 (`setting+0x57` → `0x53dc1400`). A[4] ist Identität;
-  alle Farb-Looks teilen dieselbe Tabelle `0x55018fe8`, Monochrom-Looks haben
-  nur Identität, HDR-Variante 24 eine Luma-Matrix.
-- **Farbton (Hue)**: wirkt nicht hier, sondern in YCbCrMatrixTuning
-  (`0x536e4720`): `YCbCr = H[Farbton] × RGB→YCbCr`, H eine Drehung in Cb/Cr
-  um ≈ 2,5° pro Stufe, nach der Tonkurve. Tabelle über `0x55018e4c[Look]`.
-- Zeilensummen von Look × Sensor sind bei allen Looks schon exakt 1; die
-  Normierung ändert dort nichts.
+- **A[saturation]**: nine matrices per look (`set+8`), selected by the
+  saturation slider −4…+4 (`setting+0x57` → `0x53dc1400`). A[4] is the
+  identity; all colour looks share the same table `0x55018fe8`, monochrome
+  looks only have the identity, HDR variant 24 a luma matrix.
+- **Hue**: does not act here but in YCbCrMatrixTuning (`0x536e4720`):
+  `YCbCr = H[hue] × RGB→YCbCr`, H a rotation in Cb/Cr by ≈ 2.5° per step,
+  after the tone curve. Table via `0x55018e4c[look]`.
+- The row sums of look × sensor are already exactly 1 for all looks; the
+  normalisation changes nothing there.
 
-Der Editor rechnet beides mit (Regler „Sättigung" und „Farbton (Hue)",
-vorbelegt aus dem DNG). Messung an `MR021783` (Negative Film, Sättigung +2):
-Sättigungslücke Kamera/Editor 1,39 → 1,25, mittlerer Fehler 5,79 → 5,52.
-Bei Cross Process passt der DNG-Sättigungswert so nicht (Fit wird schlechter);
-der Editor setzt ihn dort auf 0.
+The editor computes both (sliders "Saturation" and "Hue", pre-filled from the
+DNG). Measured on `MR021783` (Negative Film, saturation +2): saturation gap
+camera/editor 1.39 → 1.25, mean error 5.79 → 5.52. For Cross Process the
+DNG saturation value does not fit this way (the fit gets worse); the editor
+sets it to 0 there.
 
-Standard gegen Vivid bei Rot: Am Monitor-Farbkreis (MR024507/08) war Rot in
-Standard viel reiner als vorhergesagt, Vivid passte. An einem echten roten
-Objekt bei Tageslicht (MR024518/19) verschwindet der Unterschied: Kamera
-Standard (129, 22, 14) / Vivid (136, 22, 12), gleicher Farbton, Vivid minimal
-gesättigter und heller. Der Monitor-Effekt kommt von Rot außerhalb des
-Kamera-Farbraums, nicht von einer Look-Stufe.
+Standard against Vivid in red: on a monitor colour wheel (MR024507/08), red
+in Standard was much purer than predicted, Vivid matched. On a real red
+object in daylight (MR024518/19) the difference disappears: camera Standard
+(129, 22, 14) / Vivid (136, 22, 12), same hue, Vivid marginally more
+saturated and brighter. The monitor effect comes from red outside the
+camera's colour space, not from a look stage.
 
-Was bleibt, ist eine **gemeinsame** Abweichung des Editors bei beiden Looks:
-Rot gut 3–4° zu orange und etwas zu wenig gesättigt. Vermutete Ursache: Die
-Kamera wählt oder interpoliert die Sensor-CCM nach Weißabgleich, der Editor
-nutzt eine feste. Nicht untersucht.
+What remains is a **shared** deviation of the editor for both looks: red a
+good 3–4° too orange and slightly undersaturated. Suspected cause: the camera
+selects or interpolates the sensor CCM by white balance, the editor uses a
+fixed one. Not investigated.
 
-## 4. Index → Bildstil
+## 4. Index → image control
 
-`ConvertToCommonPropertyImageControl` (`0x53289058`) ist eine Sprungtabelle
-UI-Wert 1…12 → interner Index:
+`ConvertToCommonPropertyImageControl` (`0x53289058`) is a jump table from UI
+value 1…12 → internal index:
 
-| Bildstil | Index | Look-Matrix | Datei-Offset |
+| Image control | Index | Look matrix | File offset |
 |---|---:|---|---:|
-| Standard | 11 | `0x53dc2754` | 14.495.684 |
-| Vivid | 12 | `0x53dc26dc` | 14.495.564 |
-| MonotoneGR | 13 | `0x53dc2a94` (Identität) | 14.496.516 |
-| SoftMonotone | 14 | `0x53dc27f0` (Identität) | 14.495.840 |
-| HardMonotone | 15 | `0x53dc2698` (Rang 1 = S/W mit Filter) | 14.495.496 |
-| HighContrastBW | 16 | `0x53dc2458` (Identität) | 14.494.920 |
-| PositiveFilm | 17 | `0x53dc272c` | 14.495.644 |
-| BleechBypass_GR | 18 | `0x53dc2474` | 14.494.948 |
-| Retro | 19 | `0x53dc2818` | 14.495.880 |
-| HdrCuisine | 20 | `0x53dc2754` (= Standard) | 14.495.684 |
-| CrossProcess | 21 | `0x53dc2754` (= Standard) | 14.495.684 |
-| NegativeFilm | 22 → 25 | `0x53dc2ad0` | 14.496.576 |
+| Standard | 11 | `0x53dc2754` | 14,495,684 |
+| Vivid | 12 | `0x53dc26dc` | 14,495,564 |
+| MonotoneGR | 13 | `0x53dc2a94` (identity) | 14,496,516 |
+| SoftMonotone | 14 | `0x53dc27f0` (identity) | 14,495,840 |
+| HardMonotone | 15 | `0x53dc2698` (rank 1 = B&W with filter) | 14,495,496 |
+| HighContrastBW | 16 | `0x53dc2458` (identity) | 14,494,920 |
+| PositiveFilm | 17 | `0x53dc272c` | 14,495,644 |
+| BleechBypass_GR | 18 | `0x53dc2474` | 14,494,948 |
+| Retro | 19 | `0x53dc2818` | 14,495,880 |
+| HdrCuisine | 20 | `0x53dc2754` (= Standard) | 14,495,684 |
+| CrossProcess | 21 | `0x53dc2754` (= Standard) | 14,495,684 |
+| NegativeFilm | 22 → 25 | `0x53dc2ad0` | 14,496,576 |
 
-**Belegt:** Index 14 = SoftMonotone und 20 = HdrCuisine (Asserts bei
-`0x531acac8`/`0x531acafc` vergleichen genau diese Werte). Index 13/14/16
-monochrom (Code, siehe oben). **Abgeleitet:** die übrigen Namen aus der
-Reihenfolge des Namens-Pools — konsistent mit allen drei Belegen und mit dem
-Charakter der Matrizen (Vivid sättigt, Bleach Bypass/Retro entsättigen,
-HardMonotone ist eine Rang-1-Matrix).
+**Established:** index 14 = SoftMonotone and 20 = HdrCuisine (asserts at
+`0x531acac8`/`0x531acafc` compare exactly these values). Indices 13/14/16
+are monochrome (code, see above). **Derived:** the remaining names from the
+order of the name pool — consistent with all three pieces of evidence and
+with the character of the matrices (Vivid saturates, Bleach Bypass/Retro
+desaturate, HardMonotone is a rank-1 matrix).
 
-Indizes 0–10 und 23–25 gehören zu anderen Modi (nicht zugeordnet).
+Indices 0–10 and 23–25 belong to other modes (not mapped).
 
-### Gegenprobe an echten Aufnahmen
+### Cross-check against real shots
 
-Jedes DNG der GR III enthält ein von der Kamera gerendertes JPEG und in der
-Makernote den Bildstil. Rendert man das RAW mit Sensor-CCM und jeder der 12
-Look-Matrizen (Tonkurve jeweils aus dem JPEG gefittet) und vergleicht nur die
-Farbe (Abweichung vom Grau, in 8-Bit-Stufen), gewinnt:
+Every GR III DNG contains a JPEG rendered by the camera and, in the
+makernote, the image control. Rendering the RAW with the sensor CCM and each
+of the 12 look matrices (tone curve fitted from the JPEG each time) and
+comparing only the colour (deviation from grey, in 8-bit steps), the winner
+is:
 
-| Aufnahme-Stil | Bestes Ergebnis | Zweitbestes |
+| Shot style | Best result | Second best |
 |---|---|---|
-| Positive Film (2 Fotos) | **PositiveFilm** 5,7 | Standard-Matrix 6,0 |
-| Negative Film | **NegativeFilm** 4,3 | PositiveFilm 6,4 |
-| Negative Film | Standard-Matrix 3,75 | NegativeFilm 3,77 |
-| Standard | **Standard**-Matrix 5,1 | Vivid 5,9 |
-| Bleach Bypass (2 Fotos) | Monochrom 6,4 | BleechBypass_GR 7,1 |
+| Positive Film (2 photos) | **PositiveFilm** 5.7 | Standard matrix 6.0 |
+| Negative Film | **NegativeFilm** 4.3 | PositiveFilm 6.4 |
+| Negative Film | Standard matrix 3.75 | NegativeFilm 3.77 |
+| Standard | **Standard** matrix 5.1 | Vivid 5.9 |
+| Bleach Bypass (2 photos) | monochrome 6.4 | BleechBypass_GR 7.1 |
 
-Die Zuordnung für Positive und Negative Film ist damit auch empirisch
-gestützt. Bei Bleach Bypass entsättigt die Kamera stärker, als die Matrix
-allein erklärt — dort wirken weitere Tabellen (Sättigung/MultiAxial). Ein
-Standard-Foto mit abweichendem Dateischema (`MRI…`) passt besser zu
-PositiveFilm; offen. Werkzeug: [`tools/look-editor/`](editor-de.md).
+The mapping for Positive and Negative Film is thus also supported
+empirically. With Bleach Bypass the camera desaturates more than the matrix
+alone explains — further tables (saturation/MultiAxial) are at work there. A
+Standard photo with a different file naming scheme (`MRI…`) fits PositiveFilm
+better; open. Tool: [`tools/look-editor/`](editor.md).
 
-## 5. Korrektur früherer Annahmen
+## 5. Correction of earlier assumptions
 
-- `CalcTable` bei `0x536e93ac` und die „Auswahlfunktion" `0x536e955c` aus
-  colour-pipeline-data.md gehören zu
-  **ToneControlTuning**. `0x536e955c` baut ein Histogramm und sucht
-  Perzentile — adaptive Schatten-/DR-Korrektur, nicht der Bildstil.
-- Die Matrix `0x53dc272c` („farbverschiebend: Grün wandert in Rot und Blau")
-  ist die von **Positive Film**.
+- `CalcTable` at `0x536e93ac` and the "selection function" `0x536e955c`
+  from colour-pipeline-data.md belong to **ToneControlTuning**. `0x536e955c`
+  builds a histogram and searches for percentiles — adaptive shadow/DR
+  correction, not the image control.
+- The matrix `0x53dc272c` ("colour-shifting: green moves into red and blue")
+  is the one of **Positive Film**.
 
-## 6. Was offen ist
+## 6. What is open
 
-- **Tonkurve:** gelöst, siehe [tone-curves.md](tone-curves.md). Die Kurve
-  wird aus 15 Basiskurven und den Reglern berechnet, nicht pro Look gewählt.
-  Bleach Bypass und HDR haben Varianten mit eigenen Parametersätzen
-  (Tabellenindex 22/23 bzw. 24). Offen bleiben MultiAxial und die
-  Tonungs-Tabellen.
-- **Geteilte Matrizen:** Standard, HdrCuisine und CrossProcess teilen sich
-  eine Matrix. Ein eigener Look für nur einen davon braucht einen freien Slot
-  und einen umgebogenen Zeiger im ColorMatrix-Satz (beides in `.data`).
-- **Wiederverpacken der `.bin`**: gelöst, siehe
-  [firmware-packing.md](firmware-packing.md). Vor jedem Flash bleibt der
-  Recovery-Weg zu klären ([firmware-update-security.md](firmware-update-security.md)).
-- Statische Analyse: Die Matrizen sind belegt *geladen*; wie sichtbar eine
-  Änderung im Bild ist, zeigt erst ein Test.
+- **Tone curve:** solved, see [tone-curves.md](tone-curves.md). The curve is
+  computed from 15 base curves and the sliders, not selected per look. Bleach
+  Bypass and HDR have variants with their own parameter sets (table index
+  22/23 and 24). MultiAxial and the toning tables remain open.
+- **Shared matrices:** Standard, HdrCuisine and CrossProcess share one
+  matrix. A custom look for only one of them needs a free slot and a
+  redirected pointer in the ColorMatrix set (both in `.data`).
+- **Repacking the `.bin`**: solved, see
+  [firmware-packing.md](firmware-packing.md). Before any flash the recovery
+  path still has to be clarified
+  ([firmware-update-security.md](firmware-update-security.md)).
+- Static analysis: the matrices are demonstrably *loaded*; how visible a
+  change is in the image only a test can show.

@@ -1,187 +1,187 @@
-# Die Bildpipeline der GR III — Gesamtkarte
+# The GR III image pipeline — overall map
 
-Firmware `fwdc239b`, statische Analyse (Capstone, eigene Skripte), Stand
-2026-10-12. Ergänzt [look-mapping.md](look-mapping.md),
-[tone-curves.md](tone-curves.md) und multiaxial.md; dort
-stehen die Details zu Matrix, Kurven und MultiAxial.
+Firmware `fwdc239b`, static analysis (Capstone, custom scripts), as of
+2026-10-12. Complements [look-mapping.md](look-mapping.md),
+[tone-curves.md](tone-curves.md) and multiaxial.md; those contain the
+details on matrix, curves and MultiAxial.
 
-Ziel war, jede Stufe zwischen RAW und YCbCr zu kennen und zu prüfen, ob es
-außer MultiAxial eine **farbtonselektive** Stufe gibt (Voraussetzung für
-HSL-Regler).
+The goal was to know every stage between RAW and YCbCr and to check whether,
+apart from MultiAxial, there is a **hue-selective** stage (a prerequisite for
+HSL sliders).
 
-## Kurzfassung
+## Summary
 
-- `ImageTuning` hat 15 Stufen. Jede füllt einen Teil eines Registerabbilds
-  (`out+0x120`, 0x5d24 Byte für den R2Y-Kern, dazu eigene Blöcke für CNR und
-  Resize). `0x537cd218` kopiert das Abbild feldweise in die Hardware.
-- **Pro Bildstil verschieden** sind nur drei Datensätze: Farbmatrix
-  (`setting+0x08`), MultiAxial (`+0x0c`) und YCbCr-Matrix/Farbton (`+0x18`).
-  Alles andere hängt an ISO, Modus oder Reglern.
-- **Farbtonselektiv ist in der Hardware nur MultiAxial.** Alle anderen Stufen
-  sind Matrizen, 1D-Kurven, Offsets oder Filter. Kandidaten, die ich geprüft
-  und verworfen habe: YBCRV/`ColorReferenceTuning` (immer aus, Zweck unklar),
-  CNR-Farbunterdrückung (kann nur entsättigen), IIP-LUT (sechs 1D-Kurven).
-- **`CC0CTL`-Modus 3 schaltet nicht MultiAxial ein.** Bit 1 aktiviert die
-  `CC0YB…`-Stufe (Offset und Verstärkung, laut GoPro-Patent der
-  Schwarzpunktabzug). Gegenprobe an vorhandenen Aufnahmen: Modus 3 mit
-  Grau-Matrizen (MR024532) und mit Einheitsmatrizen (MR024533) ergibt
-  dasselbe Bild (Chroma 20,2 / 20,9, gleiche Helligkeit). Die
-  MultiAxial-Matrizen wirken also nicht.
-- **CCA1 ist eine zweite 3×3-Matrix nach dem Gamma.** In jedem Modus ist sie
-  aus (`CC1CTL = 0`, Matrix null). Das ist eine freie Stufe, aber nicht
-  farbtonselektiv.
+- `ImageTuning` has 15 stages. Each fills part of a register image
+  (`out+0x120`, 0x5d24 bytes for the R2Y core, plus separate blocks for CNR
+  and resize). `0x537cd218` copies the image field by field into the
+  hardware.
+- Only three data sets **differ per image control**: colour matrix
+  (`setting+0x08`), MultiAxial (`+0x0c`) and YCbCr matrix/hue (`+0x18`).
+  Everything else depends on ISO, mode or sliders.
+- **In hardware only MultiAxial is hue-selective.** All other stages are
+  matrices, 1D curves, offsets or filters. Candidates I checked and
+  discarded: YBCRV/`ColorReferenceTuning` (always off, purpose unclear),
+  CNR colour suppression (can only desaturate), IIP LUT (six 1D curves).
+- **`CC0CTL` mode 3 does not switch on MultiAxial.** Bit 1 enables the
+  `CC0YB…` stage (offset and gain, the black point subtraction according to
+  the GoPro patent). Cross-check against existing shots: mode 3 with grey
+  matrices (MR024532) and with identity matrices (MR024533) gives the same
+  image (chroma 20.2 / 20.9, same brightness). So the MultiAxial matrices
+  have no effect.
+- **CCA1 is a second 3×3 matrix after the gamma.** It is off in every mode
+  (`CC1CTL = 0`, matrix zero). It is a free stage, but not hue-selective.
 
-## Reihenfolge in der Hardware (R2Y-Kern)
+## Order in the hardware (R2Y core)
 
-Die Blockadressen stehen im Treiber `R2yCoreUnit` (Konstruktor `0x537d2960`).
-Die Namen kommen aus den Dump-Texten der Firmware. Die Reihenfolge deckt
-sich mit der RGB→YUV-Einheit, die GoPro-Patente für ihre Socionext-basierten
-Chips beschreiben: WB → CC0 → [MCC] → Schwarzpunkt → Tonkurve → Gamma →
-CC1 → [3D-LUT] → [MCC] → YUV.
+The block addresses are in the `R2yCoreUnit` driver (constructor
+`0x537d2960`). The names come from the firmware's dump strings. The order
+matches the RGB→YUV unit that GoPro patents describe for their
+Socionext-based chips: WB → CC0 → [MCC] → black point → tone curve → gamma →
+CC1 → [3D LUT] → [MCC] → YUV.
 
-| HW-Block | Name | Abbild | Gefüllt von | Inhalt |
+| HW block | Name | Image | Filled by | Content |
 |---|---|---|---|---|
-| `+0x0000` | CNTL | – | Treiber | Start/Stopp (Bit 8–9), `+0x10` Bit 0 Kantenfilter. Keine Enables pro Block |
-| `+0x0020` | OFG | – | – | Offset, WB-Gains |
-| `+0x0080` | CCA0 | `0x000–0x056` | ColorMatrix | `CC0CTL` (2 bit), Matrix 9×12 bit (`0x20`), `CC0YBOF` 3×11 bit (`0x40`), `CC0YBGA` 3×9 bit signed (`0x48`), `CC0YBBD` 2×12 bit (`0x50`), `CCYC` 3×8 bit (`0x54`) |
-| `+0x1000` | (kein Dump-Name) | `0x080–0xa34` | MultiAxial | YCbCr-Matrix, Achsen, 60 Matrizen, 360 Bereichswerte, Steuerfelder |
-| `+0x2000` | BTC | `0x1080–0x1086` | ToneControl | Steuerung adaptive Tonkurve |
-| `+0x2040` | TC | `0x10c0–0x10da` | ToneControl | Tonkurve |
-| `+0x2060` | GAM | `0x10e0` | Gamma | Steuerbits; Kurven im LUT-RAM |
-| `+0x2080` | CCA1 | `0x1100–0x114a` | ColorMatrix | `CC1CTL`, Matrix 9×int16, weitere Felder. **Immer aus** |
-| `+0x2100` | (CCA1/CSC) | `0x1180–0x11a1` | YCbCrMatrix | RGB→YCbCr mit Farbtondrehung (Hue-Regler) |
-| `+0x2140` | YNR | `0x11c0–0x11dc` | LumaNr | Luma-Rauschfilter |
-| `+0x2180…0x23c0` | EGHW, EGMW, EGLW, EGDT, EGCMP, EGCRV | `0x1200–0x1412` | EdgeEnhancement, CoordinateScale (`+0x23a0`) | Schärfung |
-| `+0x2400–0x24bf` | YBCRV | `0x1420–0x14a1` | ColorReference | 3 Teilblöcke, siehe unten. **Immer aus** |
-| `+0x2500` | CLPF | `0x14a8–0x14f6` | ColorLpf | Chroma-Tiefpass |
-| `+0x2580` | CSP | `0x1528–0x1556` | YCbCrOperation | Cb/Cr-Offsets (Tonungen), Chroma-Grenzen |
+| `+0x0000` | CNTL | – | driver | start/stop (bits 8–9), `+0x10` bit 0 edge filter. No per-block enables |
+| `+0x0020` | OFG | – | – | offset, WB gains |
+| `+0x0080` | CCA0 | `0x000–0x056` | ColorMatrix | `CC0CTL` (2 bit), matrix 9×12 bit (`0x20`), `CC0YBOF` 3×11 bit (`0x40`), `CC0YBGA` 3×9 bit signed (`0x48`), `CC0YBBD` 2×12 bit (`0x50`), `CCYC` 3×8 bit (`0x54`) |
+| `+0x1000` | (no dump name) | `0x080–0xa34` | MultiAxial | YCbCr matrix, axes, 60 matrices, 360 range values, control fields |
+| `+0x2000` | BTC | `0x1080–0x1086` | ToneControl | adaptive tone curve control |
+| `+0x2040` | TC | `0x10c0–0x10da` | ToneControl | tone curve |
+| `+0x2060` | GAM | `0x10e0` | Gamma | control bits; curves in LUT RAM |
+| `+0x2080` | CCA1 | `0x1100–0x114a` | ColorMatrix | `CC1CTL`, matrix 9×int16, further fields. **Always off** |
+| `+0x2100` | (CCA1/CSC) | `0x1180–0x11a1` | YCbCrMatrix | RGB→YCbCr with hue rotation (hue slider) |
+| `+0x2140` | YNR | `0x11c0–0x11dc` | LumaNr | luma noise filter |
+| `+0x2180…0x23c0` | EGHW, EGMW, EGLW, EGDT, EGCMP, EGCRV | `0x1200–0x1412` | EdgeEnhancement, CoordinateScale (`+0x23a0`) | sharpening |
+| `+0x2400–0x24bf` | YBCRV | `0x1420–0x14a1` | ColorReference | 3 sub-blocks, see below. **Always off** |
+| `+0x2500` | CLPF | `0x14a8–0x14f6` | ColorLpf | chroma low-pass |
+| `+0x2580` | CSP | `0x1528–0x1556` | YCbCrOperation | Cb/Cr offsets (toning), chroma limits |
 
-Außerhalb des R2Y-Abbilds: `out+0x0` Interpolation (Demosaik), `out+0x5e44`
-SuppreFilter (CNR, u. a. `CSPR` = Farbunterdrückung), `out+0x7e44`
-ResizeEdge, `out+0x8244` ReduceFilter. Den RAW-Teil (Bayer → Bayer:
-Schwarzwert, Shading, Defektpixel, ELA-Rauschfilter) übernehmen getrennte
-Klassen (`RawImageTuning`, `PPUTuning`, `PPUNRTuning`, `AFDFTuning`).
+Outside the R2Y image: `out+0x0` interpolation (demosaic), `out+0x5e44`
+SuppreFilter (CNR, including `CSPR` = colour suppression), `out+0x7e44`
+ResizeEdge, `out+0x8244` ReduceFilter. The RAW part (Bayer → Bayer: black
+level, shading, defective pixels, ELA noise filter) is handled by separate
+classes (`RawImageTuning`, `PPUTuning`, `PPUNRTuning`, `AFDFTuning`).
 
-### LUT-RAM
+### LUT RAM
 
-Am Ende von `0x537cd218` landen große Tabellen per `memcpy` im LUT-Speicher
-des Kerns (Basis aus dem Treiberobjekt `+0x18`):
+At the end of `0x537cd218`, large tables are copied via `memcpy` into the
+core's LUT memory (base from the driver object `+0x18`):
 
-| LUT-RAM | Abbild | Größe | Herkunft |
+| LUT RAM | Image | Size | Source |
 |---|---|---|---|
-| `0x0000`, `0x8000` | `0x1568`, `0x1d68` | je 1024 × u16 | vermutlich ToneControl (Gain-Tabelle) |
-| `0x8800` | `0x2568` | 1024 × u16 | Gamma (wahrscheinlich) |
-| `0x9000`, `0x9800`, `0xa000` | `0x2d68`, `0x3568`, `0x3d68` | je 1024 × u16 | Gamma: Kanalkurven R, G, B |
-| `0xa800` | `0x4568` | 256 × u16 | offen |
+| `0x0000`, `0x8000` | `0x1568`, `0x1d68` | 1024 × u16 each | probably ToneControl (gain table) |
+| `0x8800` | `0x2568` | 1024 × u16 | Gamma (probably) |
+| `0x9000`, `0x9800`, `0xa000` | `0x2d68`, `0x3568`, `0x3d68` | 1024 × u16 each | Gamma: channel curves R, G, B |
+| `0xa800` | `0x4568` | 256 × u16 | open |
 | `0xaa00…0xb000` | `0x4768…0x4d68` | 4 × 256 × u16 | Gamma |
-| `0xc000…0xc600` und drei weitere | `0x4f68…0x5b68` | je 256 × u16 | offen |
+| `0xc000…0xc600` and three more | `0x4f68…0x5b68` | 256 × u16 each | open |
 
-## Stufen und ihre Daten
+## Stages and their data
 
-Dispatcher: `0x536dd51c` (Standard), `0x536dd8f4`, `0x536dded0` (umgekehrte
-Reihenfolge, Sonderfall), `0x536ddd14` (virtuell, Klasse
-`ImageTuningAeSensor`; arbeitet auf dem dauerhaften `setting` bei
-`ImageTuning+0x14`). Jede Stufe: `Set(this, setting, abbild)` = Calc +
-Schreiber.
+Dispatchers: `0x536dd51c` (standard), `0x536dd8f4`, `0x536dded0` (reversed
+order, special case), `0x536ddd14` (virtual, class `ImageTuningAeSensor`;
+works on the persistent `setting` at `ImageTuning+0x14`). Each stage:
+`Set(this, setting, image)` = Calc + writer.
 
-| Member | Klasse | Set | Calc | Schreiber | Daten (`setting+`) |
+| Member | Class | Set | Calc | Writer | Data (`setting+`) |
 |---|---|---|---|---|---|
-| +0x154 | Interpolation | `0x536decb4` | – | `0x536de454` | ISO-Tabelle |
-| +0x158 | ColorMatrix | `0x536df3d4` | `0x536deecc` | `0x536df13c` | `+0x08` = `0x55018d94[Look]` |
-| +0x15c | MultiAxial | `0x536e4470` | `0x536df484` | `0x536df55c` | `+0x0c` = `0x55018cf0[Look]` |
+| +0x154 | Interpolation | `0x536decb4` | – | `0x536de454` | ISO table |
+| +0x158 | ColorMatrix | `0x536df3d4` | `0x536deecc` | `0x536df13c` | `+0x08` = `0x55018d94[look]` |
+| +0x15c | MultiAxial | `0x536e4470` | `0x536df484` | `0x536df55c` | `+0x0c` = `0x55018cf0[look]` |
 | +0x160 | LumaNr | `0x536e4634` | `0x536e44d0` | `0x536e4518` | – |
-| +0x164 | YCbCrMatrix | `0x536e4760` | `0x536e4720` | inline | `+0x18` = `0x55018e4c[Look]` |
-| +0x168 | ColorReference | `0x536e4c1c` | – | `0x536e4898` | `+0x28` = `0x53dc5764` (Index 9: `0x53dc5750`) |
+| +0x164 | YCbCrMatrix | `0x536e4760` | `0x536e4720` | inline | `+0x18` = `0x55018e4c[look]` |
+| +0x168 | ColorReference | `0x536e4c1c` | – | `0x536e4898` | `+0x28` = `0x53dc5764` (index 9: `0x53dc5750`) |
 | +0x16c | CoordinateScale | `0x536e4de4` | `0x536e4c80` | `0x536e4cd0` | `+0x24` = `0x53dc59cc` |
-| +0x170 | ColorLpf | `0x536e5070` | `0x536e4e44` | `0x536e4e94` | `+0x20` (Modustabelle) |
-| +0x174 | EdgeEnhancement | `0x536e7348` | `0x536e5864` | `0x536e72ec` | ISO-Tabellen |
+| +0x170 | ColorLpf | `0x536e5070` | `0x536e4e44` | `0x536e4e94` | `+0x20` (mode table) |
+| +0x174 | EdgeEnhancement | `0x536e7348` | `0x536e5864` | `0x536e72ec` | ISO tables |
 | +0x178 | YCbCrOperation | `0x536e77dc` | `0x536e73d0` | `0x536e7610` | `+0x30` = `0x53dce744` / `0x53dcf5ec` |
-| +0x17c | Gamma | `0x536e9000` | `0x536e8fbc` | `0x536e7a24` | Kurven, siehe tone-curves.md |
+| +0x17c | Gamma | `0x536e9000` | `0x536e8fbc` | `0x536e7a24` | curves, see tone-curves.md |
 | +0x180 | ToneControl | `0x536e9d1c` | `0x536e9bd8` | `0x536e91a8` | `+0x34`, `+0x40` |
-| +0x184 | ResizeEdge | `0x536eaf80` | – | – | ISO-Tabelle |
+| +0x184 | ResizeEdge | `0x536eaf80` | – | – | ISO table |
 | +0x188 | SuppreFilter | `0x536ec3e0` | `0x536eb2b0` | `0x536eb344` | – |
 | +0x18c | ReduceFilter | `0x536eb0b0` | `0x536eb000` | `0x536eb074` | – |
 
-Setting-Befüller: `0x536dc0f4`. Im Standard-Dispatcher setzt er den
-MultiAxial-Laufzeitpfad (`setting+0x94`) fest auf 0. Den Pfad nutzen auch
-YCbCrOperation (`+0x94…+0x9a`) und der virtuelle Dispatcher. Ist er aktiv,
-ersetzt MultiAxial die Achsen durch `setting+0x9c` (0x40 Byte) und zwei Bänke
-mit je 5 Matrizen durch `setting+0xdc` bzw. `+0x100`. Gedacht ist das wohl
-für die Werksabstimmung. Wer den Pfad einschaltet, ist offen.
+Setting filler: `0x536dc0f4`. In the standard dispatcher it hard-sets the
+MultiAxial runtime path (`setting+0x94`) to 0. The path is also used by
+YCbCrOperation (`+0x94…+0x9a`) and the virtual dispatcher. When it is
+active, MultiAxial replaces the axes with `setting+0x9c` (0x40 bytes) and two
+banks of 5 matrices each with `setting+0xdc` and `+0x100`. This is probably
+meant for factory tuning. What switches the path on is open.
 
-## Einzelbefunde
+## Individual findings
 
-### CC0CTL und die CC0YB-Stufe
+### CC0CTL and the CC0YB stage
 
-`CC0CTL` hat 2 Bit. Die Firmware schreibt immer 1 (Matrix an,
-`0x536def10`). Bit 1 schaltet `CC0YBOF/GA/BD` zu. Die Werte dafür liefert
-ColorMatrix aus `0x550192f4` (`+0x0c`, `+0x10`, `+0x18`). Wirkung (MR024545
-ff. gegen MR024532/33): Lichter etwa doppelt so hell, Schwarz von 3 auf 18
-angehoben. Das passt zu Offset plus Verstärkung, wie beim
-„Blackpoint-RGB"-Block im Patent. Mit MultiAxial hat das nichts zu tun.
+`CC0CTL` has 2 bits. The firmware always writes 1 (matrix on,
+`0x536def10`). Bit 1 switches in `CC0YBOF/GA/BD`. The values for it come from
+ColorMatrix out of `0x550192f4` (`+0x0c`, `+0x10`, `+0x18`). Effect
+(MR024545 ff. against MR024532/33): highlights about twice as bright, black
+raised from 3 to 18. That fits offset plus gain, like the "blackpoint RGB"
+block in the patent. It has nothing to do with MultiAxial.
 
-### CCA1 (zweite Matrix)
+### CCA1 (second matrix)
 
-Im Konstruktor (`0x536dece8`) wird `CC1CTL` (+0x30) auf 0 gesetzt und die
-Matrix (+0x32…+0x42) auf 0. Calc schreibt dort nie. Die Stufe sitzt hinter
-dem Gamma und arbeitet also auf gamma-kodiertem RGB. Ein Test wäre billig:
-`CC1CTL = 1` und eine Einheitsmatrix (Skala testen), danach eine
-Farbmischung im Gamma-Raum. Für HSL reicht das nicht.
+In the constructor (`0x536dece8`), `CC1CTL` (+0x30) is set to 0 and the
+matrix (+0x32…+0x42) to 0. Calc never writes there. The stage sits after the
+gamma and therefore works on gamma-encoded RGB. A test would be cheap:
+`CC1CTL = 1` and an identity matrix (to test the scale), then a colour mix in
+gamma space. Not enough for HSL.
 
 ### ColorReference → YBCRV
 
-Drei Datensätze: 8 Byte Steuerung (`+0x2400`), dazu zwei gleich gebaute
-Teilblöcke (`+0x2440`, `+0x2480`). Jeder Teilblock besteht aus:
+Three data sets: 8 bytes of control (`+0x2400`), plus two identically built
+sub-blocks (`+0x2440`, `+0x2480`). Each sub-block consists of:
 
-- Enable-Bits (Bit 0 und Bit 4)
-- einem 2-bit-Modus
-- Punkten (2 × 11 bit)
-- einer 7-bit-Breite
-- drei Bytepaaren (Unter-/Obergrenze?)
-- 9-bit-Werten (Standard 0 und 0x100 = 1,0)
+- enable bits (bit 0 and bit 4)
+- a 2-bit mode
+- points (2 × 11 bit)
+- a 7-bit width
+- three byte pairs (lower/upper limit?)
+- 9-bit values (default 0 and 0x100 = 1.0)
 
-In allen Datensätzen stehen die Enables auf 0. Für Index 9 (anderer Modus)
-weicht nur ein 9-bit-Wert ab (0x80 statt 0x100). Nach der Lage im Kern
-(zwischen Kantenkurve und Chroma-Tiefpass) dient die Stufe eher der
-luminanz-/kantenabhängigen Chroma-Steuerung als einer Farbkorrektur. Ohne
-Hardware-Doku bleibt der Zweck unbestätigt.
+In all data sets the enables are 0. For index 9 (a different mode) only one
+9-bit value differs (0x80 instead of 0x100). Judging by its position in the
+core (between the edge curve and the chroma low-pass), the stage is more
+likely used for luminance/edge-dependent chroma control than for colour
+correction. Without hardware documentation the purpose remains unconfirmed.
 
 ### YCbCrOperation → CSP
 
-Calc rechnet aus vier 16-bit-Werten (Tabellen über `setting+0x60`) mit den
-Faktoren 249/−11 Cb/Cr-Offsets aus. Das sind die **Tonungen** der
-Monochrom-Looks (Sepia, Blau …). Kandidat für das offene „+0x797
-Toning"-Feld.
+Calc computes Cb/Cr offsets from four 16-bit values (tables via
+`setting+0x60`) with the factors 249/−11. These are the **tonings** of the
+monochrome looks (sepia, blue …). The fields `+0x795`/`+0x797` are not part
+of it: `+0x795` is the grain, `+0x797` probably the Color Tone choice of
+Cross Process (see [tone-curves.md](tone-curves.md)).
 
-### IIP-LUT
+### IIP LUT
 
-Der IIP-Prozessor (Wiedergabe/Retusche, Mehrbild-HDR) hat eine LUT-Einheit
-mit `LUTCTL_A…F` und je vier `LUTPRECAL`. Das sind sechs 1D-Kurven, keine
-3D-LUT. Für die Aufnahme irrelevant.
+The IIP processor (playback/retouching, multi-shot HDR) has a LUT unit with
+`LUTCTL_A…F` and four `LUTPRECAL` each. These are six 1D curves, not a 3D
+LUT. Irrelevant for capture.
 
-## Was das für HSL heißt
+## What this means for HSL
 
-1. **MultiAxial bleibt der einzige Hardwareweg.** Die Stufe sitzt (wie im
-   Patent) direkt hinter CC0 im linearen RGB. Jede getestete Einstellung
-   blieb wirkungslos. Ihr Enable liegt nicht in `CNTL` und nicht in
-   `CC0CTL`, also vermutlich im Block selbst (Steuerfelder `0xa00…0xa34`,
-   21 Felder, nur eins getestet) oder in einem Taktgating außerhalb des
-   R2Y-Treibers. Der nächste statische Schritt wäre der virtuelle
-   Dispatcher `0x536ddd14` bzw. der Laufzeitpfad (`setting+0x94`): Wenn
-   die Werksabstimmung MultiAxial benutzt, dann über diesen Pfad, und wer
-   ihn befüllt, setzt womöglich auch die übrigen Felder.
-2. **Annäherung ohne MultiAxial:** Nur getrennt nach Helligkeit möglich
-   (Kanalkurven, Farbräder), nicht nach Farbton. Das ist schon im Editor.
-3. **Ungenutzte Stufen** (CCA1, YBCRV, CC0YB) erweitern die
-   Matrix-/Offset-Werkzeuge, ersetzen aber kein HSL.
+1. **MultiAxial remains the only hardware route.** The stage sits (as in the
+   patent) directly after CC0 in linear RGB. Every setting tested had no
+   effect. Its enable is not in `CNTL` and not in `CC0CTL`, so it is probably
+   in the block itself (control fields `0xa00…0xa34`, 21 fields, only one
+   tested) or in clock gating outside the R2Y driver. The next static step
+   would be the virtual dispatcher `0x536ddd14` or the runtime path
+   (`setting+0x94`): if factory tuning uses MultiAxial, it does so via this
+   path, and whatever fills it may also set the remaining fields.
+2. **Approximation without MultiAxial:** only possible separated by
+   brightness (channel curves, colour wheels), not by hue. That is already in
+   the editor.
+3. **Unused stages** (CCA1, YBCRV, CC0YB) extend the matrix/offset tools but
+   do not replace HSL.
 
-## Werkzeuge
+## Tools
 
-Die Analyse-Skripte (Capstone, Branch-Index, symbolische Auswertung von
-`0x537cd218`) lagen im Session-Scratchpad und sind nicht im Repo. Die
-Methode zum Nachbauen:
+The analysis scripts (Capstone, branch index, symbolic evaluation of
+`0x537cd218`) lived in the session scratchpad and are not in the repo. The
+method for reproducing them:
 
-- Setter `0x537d2xxx…0x537dcxxx` lesen `ldr r2,[r0]` und dann
-  `[r2,#reg]`. Der Handle-Offset im Treiberobjekt ergibt den Block.
-- Die Schreiber der Tuning-Klassen bekommen das Abbild in `r1`. Die
-  Feldoffsets sind direkte `strb/strh [r1|r1+0x1000, #off]`.
+- Setters `0x537d2xxx…0x537dcxxx` read `ldr r2,[r0]` and then
+  `[r2,#reg]`. The handle offset in the driver object gives the block.
+- The writers of the tuning classes receive the image in `r1`. The field
+  offsets are direct `strb/strh [r1|r1+0x1000, #off]`.
