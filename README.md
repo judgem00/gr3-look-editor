@@ -1,21 +1,23 @@
-# GR III Look Editor
+# GR III / GR IIIx Look Editor
 
-Build your own image control ("look") for the Ricoh GR III. **Your look
+Build your own image control ("look") for the Ricoh GR III and GR IIIx. **Your look
 replaces the camera's Cross Process slot**, so it shows up in the camera as
 image control *Cross Process*. Every other image control stays as Ricoh
 made it.
 
-The editor shows a live preview on one of your own GR III DNGs. It renders
+The editor shows a live preview on one of your own DNGs. It renders
 the photo the way the camera does: white balance, sensor matrix, look
 matrix, saturation and hue, and the tone curve. The tone curve is computed
 by running the camera's own tone-curve code in an ARM interpreter. When you
 export, the editor patches a copy of the firmware image and repacks it into
-`FWDC239B.BIN`, with all checksums recomputed.
+`FWDC239B.BIN` (GR III) or `FWDC243B.BIN` (GR IIIx), with all checksums
+recomputed.
 
 > **Warning — read before flashing.** Flashing modified firmware may void
 > your warranty and can, in the worst case, leave the camera unusable. There
 > is no known recovery procedure yet. The modified update has been tested on
-> one camera only. You use this at your own risk.
+> one GR III only, and **not yet on any GR IIIx**. You use this at your own
+> risk.
 
 This is an independent project. It is not affiliated with or endorsed by
 Ricoh Imaging. "Ricoh" and "GR" are trademarks of their respective owners.
@@ -50,11 +52,19 @@ stage, but nobody has managed to switch it on yet; see
 
 ## Supported firmware
 
-Only **GR III, firmware 2.10** (`fwdc239b.bin`, SHA-256
-`d6a3c9c2…5354bfd4`). The editor refuses any other file. Every address it
-reads or patches was found in this one build.
+| Camera | Firmware | File | SHA-256 |
+|---|---|---|---|
+| GR III | 2.10 | `fwdc239b.bin` | `d6a3c9c2…5354bfd4` |
+| GR IIIx | 1.60 | `fwdc243b.bin` | `708e79f3…b431c7` |
 
-Download the update file from Ricoh's support page for the GR III. This
+The editor refuses any other file. Every address it reads or patches was
+found in the GR III build. The GR IIIx file is the same build for the other
+model: its image differs only in the model's name, project number, version
+and checksums, none of which the editor touches (see
+[docs/firmware-packing.md](docs/firmware-packing.md#gr-iiix)). The preview has
+not yet been checked against GR IIIx DNGs.
+
+Download the update file from Ricoh's support page for your camera. This
 repository contains no Ricoh firmware or data taken from it. Everything is
 read from the file you provide, on your machine.
 
@@ -63,9 +73,9 @@ read from the file you provide, on your machine.
 ### In the browser
 
 Open [the editor](https://judgem00.github.io/gr3-look-editor/) and drop
-Ricoh's update file `fwdc239b.bin` onto it, then a DNG. Everything runs in your browser as WebAssembly: the
+Ricoh's update file (`fwdc239b.bin` or `fwdc243b.bin`) onto it, then a DNG. Everything runs in your browser as WebAssembly: the
 firmware and your photos are not uploaded anywhere. **Create update file**
-on the Export tab gives you `FWDC239B.BIN` to download.
+on the Export tab gives you `FWDC239B.BIN` or `FWDC243B.BIN` to download.
 
 The page is plain static files (`editor/static`), published with GitHub
 Pages by [`.github/workflows/pages.yml`](.github/workflows/pages.yml). To
@@ -78,7 +88,7 @@ python3 -m http.server 8790 --directory editor/static
 
 ### Flashing
 
-Copy `FWDC239B.BIN` unchanged to the root of the SD card and start the
+Copy the update file unchanged to the root of the SD card and start the
 firmware update from the camera menu. Then select the image control Cross
 Process: that is your look. To go back, flash Ricoh's original file the same
 way.
@@ -111,9 +121,13 @@ photos as LibRaw decoded them. The tests compare against that data, the
 update files byte for byte:
 
 ```sh
-cp fwdc239b.bin work/
+cp fwdc239b.bin fwdc243b.bin work/
 cargo test --release --manifest-path core/Cargo.toml
 ```
+
+`core/tests/models.rs` needs both files: it checks that the GR IIIx gives the
+same answers as the GR III and that an export patches both images at the same
+bytes.
 
 Without that data (as on CI) those tests skip. After an intended change to
 what the editor answers, refresh its answers from the core; the Unicorn
