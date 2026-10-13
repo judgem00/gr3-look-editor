@@ -11,7 +11,7 @@ Nothing is uploaded.
 ## What the preview computes
 
 ```
-camera RGB -> WB (AsShotNeutral) -> sensor CCM -> look matrix -> A[saturation] -> (mono mix)
+camera RGB -> WB (AsShotNeutral or colour temperature) -> sensor CCM -> look matrix -> A[saturation] -> (mono mix)
            -> camera tone curve (per channel for Cross Process) -> hue rotation (YCbCr)
            -> (residual correction)
 ```
@@ -38,7 +38,8 @@ colour and tone curve), **Compare camera**, **Camera JPEG**.
 Layout of the interface: the editor builds a look of your own into the slot
 of **Cross Process**; the other image controls stay unchanged. Tabs:
 **1 Base** (the colours of an existing image control as a starting point,
-copied into a separate matrix for Cross Process), **2 Colour**, **3 Curves**
+copied into a separate matrix for Cross Process, or an extra base, see
+below), **2 Colour**, **3 Curves**
 (Color Tone 1–3, RGB curves linked or per channel, colour wheels; the curves
 always start linear), **4 Export**. Other image controls and the tone curve
 for all image controls are under "advanced". Technically Cross Process gets
@@ -75,8 +76,32 @@ its own ColorMatrix set and its own matrix in the free area `0x53002080…`
   data from …" (e.g. Negative Film) plus "RGB linear" gives a look that
   computes like Negative Film and carries RGB curves
   ([docs/tone-curves.md](tone-curves.md)).
-- **Camera settings** (key, contrast, highlights, shadows, exposure) affect
-  the preview only; pre-filled from the DNG.
+- **Extra bases:** besides the image controls of the camera, the base list
+  offers **Positive Film (GR 1)** (rich red, muted green and yellow, deep
+  blacks). It sets the Cross Process matrix (a fixed matrix times the
+  Standard matrix of the loaded firmware) and one tone curve on R, G and B of
+  Color Tone 1–3; the camera's own settings keep working on top. Choosing
+  another base removes both again as long as the curves are untouched, and a
+  preset made from it is recognised on load. Extra bases are defined in
+  `editor/static/app.js` (`BUILTIN_BASES`); an optional
+  `editor/static/_local/bases.json` (ignored by git) adds bases or replaces
+  one with the same id.
+- **Camera settings** (key, contrast, highlights, shadows, exposure, white
+  balance) affect the preview only; pre-filled from the DNG.
+- **White balance (preview only):** "as shot" uses the DNG's AsShotNeutral.
+  Moving **Colour temperature** (2500–10000 K), **Blue – Amber** or
+  **Green – Magenta** (14 steps each) switches to white balance by colour
+  temperature, computed like the camera's Colour Temperature setting with
+  fine adjustment (`editor/static/wb.js`). Each camera has its own
+  calibration; the editor reads it from the DNG makernote (tag `0x0221`,
+  KelvinWB) and falls back to a typical one if the tag is missing. The
+  controls start from the shot's white balance (the note shows it, e.g.
+  "≈ 5570 K, green – magenta M4"), so switching changes nothing until you
+  move them. The gains act on camera RGB before the colour matrices, where
+  the camera applies white balance too
+  ([docs/look-mapping.md](look-mapping.md)). The sliders show their effect as
+  a colour gradient; a low colour temperature renders the photo blue, a high
+  one warm. Not exported, not stored in presets.
 
 ## Export
 

@@ -60,15 +60,27 @@ by the function at `0x536dc0f4` — **indexed by the image control**.
 
 ## 3. ColorMatrixTuning::Calc (`0x536deecc`)
 
-1. WB gains (`setting+0x7c/7e/80`) × **look matrix** (`set+0x04`)
+1. Only when `setting+0x79` is set (monochrome looks): mix weights
+   (`setting+0x7c/7e/80`) × **look matrix** (`set+0x04`)
 2. optionally × fixed matrix `0x53dc1430` (`setting+0x52`)
 3. × **sensor CCM** (`set+0x00`, `0x53dc2b58`, same for all looks)
 4. Saturation: level `setting+0x58` → factor from `0x53dc140c`
    (17 values, /128: 0.5× … 2.0×) × strength `setting+0x5a`
 5. Row sums corrected (grey stays grey), clamp ±0x7FF → registers
 
-For indices 13, 14 and 16 the code sets the gains to `0xAAA` (≈ ⅓ per
-channel): an equally weighted mix, i.e. monochrome.
+**Correction:** `setting+0x7c/7e/80` are not white balance gains. Step 1
+builds a matrix whose rows are all `[w_R, w_G, w_B]` and multiplies it with
+the look matrix (`0x536deddc`, 3×3 product, 1.0 = 8192); the result has
+three identical rows, i.e. a monochrome mix. For indices 13, 14 and 16 the
+code sets the weights to `0xAAA` (≈ ⅓ per channel), an equally weighted mix;
+other weights are presumably the B&W filter effects (not checked).
+
+White balance does not enter `ColorMatrixTuning` at all: sensor CCM and look
+matrix are fixed pointers, independent of the white balance. The camera
+applies white balance as per-channel gains on camera RGB **before** this
+matrix, presumably in the R2Y block `OFG` ("offset, WB gains"), which
+`ImageTuning` does not fill; the code writing it is not traced. The editor's preview does the same: camera RGB × WB gains → sensor CCM
+→ look matrix → A[saturation].
 
 ### Addendum: the complete computation (Ghidra, 2026-10-12)
 
