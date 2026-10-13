@@ -125,8 +125,6 @@ cargo run --release --example golden --manifest-path core/Cargo.toml
 
 ## Documentation
 
-The research notes are in German:
-
 | | |
 |---|---|
 | [firmware-packing.md](docs/firmware-packing.md) | update file format and checksums |
@@ -134,7 +132,7 @@ The research notes are in German:
 | [look-mapping.md](docs/look-mapping.md) | where the look matrices live and how they are combined |
 | [tone-curves.md](docs/tone-curves.md) | base curves, sliders, Cross Process channel curves |
 | [image-pipeline.md](docs/image-pipeline.md) | the whole RAW→YCbCr pipeline of the image processor |
-| [editor-de.md](docs/editor-de.md) | the editor in detail |
+| [editor.md](docs/editor.md) | the editor in detail |
 
 ## Credits
 
