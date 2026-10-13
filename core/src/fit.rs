@@ -10,6 +10,9 @@
 use crate::gamma::ToneParams;
 
 pub const RESIDUAL_SIZE: usize = 256;
+const RESIDUAL_MIN_COUNT: usize = 12; // samples a bin needs to count
+const RESIDUAL_SIGMA: f64 = 8.0; // smoothing, in bins
+const RESIDUAL_MIN_STEP: f64 = 0.25 / 255.0; // least rise per bin
 const SAMPLES: usize = 30000;
 
 /// the matrix part of the pipeline, as ColorMatrixTuning computes it
@@ -113,31 +116,70 @@ pub fn fit_camera_tone(
     let (_, gain, scale) = best.unwrap();
 
     let lut: Vec<f64> = curve(gain)?.iter().map(|&v| v as f64).collect();
-    let mut bins: Vec<Vec<f64>> = vec![vec![]; RESIDUAL_SIZE];
-    for (x, y) in xs.iter().zip(&ys) {
+    let mut g = Vec::with_capacity(xs.len() * 3);
+    let mut y = Vec::with_capacity(xs.len() * 3);
+    for (xp, yp) in xs.iter().zip(&ys) {
         for c in 0..3 {
-            let g = apply_lut(&lut, x[c] * scale);
-            let b = ((g * (RESIDUAL_SIZE - 1) as f64) as usize).min(RESIDUAL_SIZE - 1);
-            bins[b].push(y[c]);
+            g.push(apply_lut(&lut, xp[c] * scale));
+            y.push(yp[c]);
         }
     }
-    let known: Vec<(f64, f64)> = bins
-        .iter_mut()
-        .enumerate()
-        .filter(|(_, b)| b.len() >= 12)
-        .map(|(i, b)| (i as f64, median(b)))
-        .collect();
-    let residual: Vec<f32> = if known.len() < 8 {
-        crate::tone::linspace(RESIDUAL_SIZE).iter().map(|&v| v as f32).collect()
-    } else {
-        let (kx, ky): (Vec<f64>, Vec<f64>) = known.into_iter().unzip();
-        let mut r: Vec<f64> = (0..RESIDUAL_SIZE).map(|i| crate::tone::interp(i as f64, &kx, &ky)).collect();
-        for i in 1..r.len() {
-            r[i] = r[i].max(r[i - 1]);
+    Ok((gain, scale, residual_curve(&g, &y)))
+}
+
+/// camera value over curve output: the median per bin, as an offset from the
+/// identity that fades to 0 outside the data, smoothed and kept rising. Raw
+/// medians step with the JPEG's 8 bits and jump between sparse bins, which
+/// showed as banding; flat runs posterized highlights.
+pub fn residual_curve(g: &[f64], y: &[f64]) -> Vec<f32> {
+    let n = RESIDUAL_SIZE;
+    let top = (n - 1) as f64;
+    let mut bins: Vec<Vec<f64>> = vec![vec![]; n];
+    for (&gv, &yv) in g.iter().zip(y) {
+        bins[((gv * top) as usize).min(n - 1)].push(yv);
+    }
+    let (mut known, mut med, mut weight) = (vec![], vec![], vec![]);
+    for (i, b) in bins.iter_mut().enumerate() {
+        if b.len() >= RESIDUAL_MIN_COUNT {
+            known.push(i as f64);
+            weight.push((b.len() as f64).sqrt());
+            med.push(median(b));
         }
-        r.iter().map(|&v| v as f32).collect()
-    };
-    Ok((gain, scale, residual))
+    }
+    if known.len() < 8 {
+        return crate::tone::linspace(n).iter().map(|&v| v as f32).collect();
+    }
+    let mut kx = known.clone();
+    let mut ky: Vec<f64> = known.iter().zip(&med).map(|(k, m)| m - k / top).collect();
+    if kx[0] > 0.0 {
+        kx.insert(0, 0.0);
+        ky.insert(0, 0.0);
+    }
+    if kx[kx.len() - 1] < top {
+        kx.push(top);
+        ky.push(0.0);
+    }
+    let (first, last) = (known[0], known[known.len() - 1]);
+    let mean_weight = weight.iter().sum::<f64>() / weight.len() as f64;
+    let d: Vec<f64> = (0..n).map(|i| crate::tone::interp(i as f64, &kx, &ky)).collect();
+    let w: Vec<f64> = (0..n).map(|i| {
+        let x = i as f64;
+        if x < first || x > last { mean_weight } else { crate::tone::interp(x, &known, &weight) }
+    }).collect();
+    let mut r: Vec<f64> = (0..n).map(|i| {
+        let (mut num, mut den) = (0.0, 0.0);
+        for j in 0..n {
+            let t = (i as f64 - j as f64) / RESIDUAL_SIGMA;
+            let k = (-0.5 * t * t).exp() * w[j];
+            num += k * d[j];
+            den += k;
+        }
+        i as f64 / top + num / den
+    }).collect();
+    for i in 1..n {
+        r[i] = r[i].max(r[i - 1] + RESIDUAL_MIN_STEP);
+    }
+    r.iter().map(|&v| v.clamp(0.0, 1.0) as f32).collect()
 }
 
 pub fn tone_params(params: &[(&str, i32)], gain: i32) -> ToneParams {

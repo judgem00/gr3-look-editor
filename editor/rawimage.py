@@ -22,6 +22,9 @@ from firmware import IMAGE_TONE_NAMES
 
 PREVIEW_LONG_EDGE = 1600
 RESIDUAL_SIZE = 256
+RESIDUAL_MIN_COUNT = 12          # samples a bin needs to count
+RESIDUAL_SIGMA = 8.0             # smoothing, in bins
+RESIDUAL_MIN_STEP = 0.25 / 255   # least rise per bin
 # order of the int16 values in makernote tag 0x0247, inferred from the
 # settings layout (+0x77d..) and the parameter order in the firmware's names
 PARAM_ORDER = ["saturation", "hue", "key", "contrast", "highlight", "shadow", "sharpness"]
@@ -140,20 +143,40 @@ def fit_camera_tone(rendered, camera, engine, params, samples=30000):
     _, gain, scale = best
 
     g = apply_lut(np.asarray(engine.curve(gain=gain, **tone), dtype=np.float64), x * scale)
-    g, yv = g.reshape(-1), y.reshape(-1)
-    bins = np.minimum((g * (RESIDUAL_SIZE - 1)).astype(np.int32), RESIDUAL_SIZE - 1)
-    res = np.full(RESIDUAL_SIZE, np.nan)
-    for i in range(RESIDUAL_SIZE):
-        sel = yv[bins == i]
-        if len(sel) >= 12:
-            res[i] = np.median(sel)
-    known = np.flatnonzero(~np.isnan(res))
+    return gain, scale, residual_curve(g.reshape(-1), y.reshape(-1)).astype(np.float32)
+
+
+def residual_curve(g, y):
+    """camera value over curve output: the median per bin, as an offset from
+    the identity that fades to 0 outside the data, smoothed and kept rising.
+    Raw medians step with the JPEG's 8 bits and jump between sparse bins,
+    which showed as banding; flat runs posterized highlights."""
+    n = RESIDUAL_SIZE
+    x = np.arange(n, dtype=np.float64)
+    bins = np.minimum((g * (n - 1)).astype(np.int32), n - 1)
+    known, med, count = [], [], []
+    for i in range(n):
+        sel = y[bins == i]
+        if len(sel) >= RESIDUAL_MIN_COUNT:
+            known.append(i)
+            med.append(np.median(sel))
+            count.append(len(sel))
     if len(known) < 8:
-        residual = np.linspace(0, 1, RESIDUAL_SIZE)
-    else:
-        residual = np.interp(np.arange(RESIDUAL_SIZE), known, res[known])
-        residual = np.maximum.accumulate(residual)
-    return gain, scale, residual.astype(np.float32)
+        return x / (n - 1)
+    known, med, weight = np.asarray(known, float), np.asarray(med), np.sqrt(count)
+    kx, ky = list(known), list(med - known / (n - 1))
+    if kx[0] > 0:
+        kx, ky = [0.0] + kx, [0.0] + ky
+    if kx[-1] < n - 1:
+        kx, ky = kx + [n - 1.0], ky + [0.0]
+    d = np.interp(x, kx, ky)
+    w = np.interp(x, known, weight)
+    w[(x < known[0]) | (x > known[-1])] = weight.mean()
+    k = np.exp(-0.5 * ((x[:, None] - x[None, :]) / RESIDUAL_SIGMA) ** 2) * w[None, :]
+    r = x / (n - 1) + (k @ d) / k.sum(axis=1)
+    for i in range(1, n):
+        r[i] = max(r[i], r[i - 1] + RESIDUAL_MIN_STEP)
+    return np.clip(r, 0, 1)
 
 
 def prepare(path, firmware, engine):
