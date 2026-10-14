@@ -3,16 +3,24 @@
 # photos skip here, since none of that is in the repository.
 # Deploying needs Pages enabled with source "GitHub Actions"; while the
 # repository is private the deploy job is skipped.
+#
+# Beta: the branch in BETA_BRANCH is published under /beta/ next to master.
+# Only master may deploy (environment github-pages), so the site is always
+# built from a master run, which also checks out the beta branch; a push to
+# the beta branch runs its tests and then starts that master run.
 name: Pages
 
 on:
   push:
-    branches: [master]
+    branches: [master, multiaxial-hsl]
   pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
+
+env:
+  BETA_BRANCH: multiaxial-hsl   # empty: no beta
 
 concurrency:
   group: pages-${{ github.ref }}
@@ -35,9 +43,22 @@ jobs:
         run: |
           wasm-pack build core --release --target web --out-dir ../editor/static/pkg --no-typescript --no-pack
           rm -f editor/static/pkg/.gitignore
+          mkdir site && cp -r editor/static/. site/
+      - name: Build the beta under /beta/
+        if: github.ref == 'refs/heads/master' && env.BETA_BRANCH != ''
+        run: |
+          if git ls-remote --exit-code --heads origin "$BETA_BRANCH" > /dev/null; then
+            git fetch --depth 1 origin "$BETA_BRANCH"
+            git worktree add beta FETCH_HEAD
+            wasm-pack build beta/core --release --target web --out-dir ../editor/static/pkg --no-typescript --no-pack
+            rm -f beta/editor/static/pkg/.gitignore
+            mkdir site/beta && cp -r beta/editor/static/. site/beta/
+          else
+            echo "no branch $BETA_BRANCH: no beta"
+          fi
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: editor/static
+          path: site
 
   deploy:
     needs: build
@@ -52,3 +73,15 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@v4
+
+  # a push to the beta branch: after its tests, rebuild the site from master
+  beta:
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/multiaxial-hsl'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - run: gh workflow run pages.yml --ref master --repo "$GITHUB_REPOSITORY"
+        env:
+          GH_TOKEN: ${{ github.token }}
