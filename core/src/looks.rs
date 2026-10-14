@@ -61,14 +61,21 @@ pub fn inherit(img: &mut [u8], target: u32, source: u32) {
     }
 }
 
-// Cross Process is the slot for the user's own look. To edit it alone it gets
-// a private copy of its ColorMatrix set and matrix, placed in zero padding of
-// the read-only image section (0x53002080..0x53004000). A set is 21 words
-// (0x54 bytes, the spacing of the sets in .data); words 8..16 are pointers too.
-// Copying only the first 8 put matrix bytes where those pointers belong, and
-// the camera did not start.
-// HDR shares its set with Standard; with its effects off it can be a look of
-// its own and gets a private set in the selector's reserved block (space.rs).
+/// as inherit, with the source's entries read from `stock`, so that a source
+/// that is a target itself passes on its stock data
+pub fn inherit_from(img: &mut [u8], stock: &[u8], target: u32, source: u32) {
+    for t in LOOK_TABLES {
+        put_u32(img, file_offset(t + 4 * target), word(stock, t + 4 * source));
+    }
+}
+
+// A look edited on its own gets a private copy of its ColorMatrix set and
+// matrix (private_set_at), placed in zero padding of the read-only image
+// section. A set is 21 words (0x54 bytes, the spacing of the sets in .data);
+// words 8..16 are pointers too. Copying only the first 8 put matrix bytes
+// where those pointers belong, and the camera did not start.
+// Cross Process (the earlier editor's slot for the user's look) and HDR with
+// its effects off have fixed places; other targets get theirs from space.rs.
 const CROSS_TABLE: u32 = 21;
 pub const HDR_TABLE: u32 = 20;
 /// (table, set, matrix)
@@ -78,32 +85,132 @@ const PRIVATE: [(u32, u32, u32); 2] = [
 ];
 const SET_WORDS: u32 = 21;
 
-/// give the look `table` a ColorMatrix set and matrix of its own
-pub fn private_set(img: &mut [u8], table: u32) -> Result<(), String> {
-    let &(_, set, mat) = PRIVATE.iter().find(|p| p.0 == table).ok_or(format!("no private set for table {table}"))?;
-    let entry = file_offset(CM_TABLE + 4 * table);
-    let cur = crate::addr::u32_at(img, entry);
-    if cur != set {
-        let (lo, hi) = (file_offset(set), file_offset(mat) + 18);
-        if img[lo..hi].iter().any(|&b| b != 0) {
-            return Err(format!("free area for the private colour set of table {table} is not empty"));
+// Toning (docs/plan-gui-redesign.md, Phase 0). Words 11..14 of a ColorMatrix
+// set point at tables of i16 offsets that 0x536e73d0 indexes with the look's
+// toning: Bleach Bypass's variant setting SI+0x786 (1..3), Retro's toning
+// SI+0x787 (0..8, 4 neutral), 0 for every other colour look. Only Bleach
+// Bypass and Retro have tables that are not all zero.
+const TONING_WORDS: [u32; 4] = [11, 12, 13, 14];
+/// a table of zeros, long enough for any toning index (0..8)
+pub const ZERO_TONING: u32 = 0x53dc_2430;
+/// one toning table as the editor writes it: 10 x i16
+pub const TONING_TABLE: u32 = 20;
+/// a set (21 words) followed by its matrix, rounded up
+pub const SET_SIZE: u32 = 0x68;
+pub const BLEACH_TABLES: [u32; 3] = [18, 22, 23];
+const RETRO_TABLE: u32 = 19;
+
+/// toning index a look's own image control uses at its default setting
+pub fn toning_index(table: u32) -> u32 {
+    match table {
+        18 => 1,
+        22 => 2,
+        23 => 3,
+        RETRO_TABLE => 4,
+        _ => 0,
+    }
+}
+
+/// does the look's own menu move its toning index (Bleach Bypass, Retro)?
+pub fn varying_toning(table: u32) -> bool {
+    BLEACH_TABLES.contains(&table) || table == RETRO_TABLE
+}
+
+/// the source's toning offsets at its default index, words 13 and 14
+/// (words 11 and 12 are zero tables for every colour look)
+fn toning_entry(img: &[u8], source: u32) -> [i16; 2] {
+    let set = cm_set(img, source);
+    let k = toning_index(source);
+    [13, 14].map(|w| i16_at(img, file_offset(word(img, set + 4 * w) + 2 * k)))
+}
+
+/// How a private set reads the source's toning.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Toning {
+    /// as copied (the target is its own source)
+    Keep,
+    /// the target reads index 0: pointers moved by 2 x the source's index
+    Shift(u32),
+    /// the target's own menu moves the index: words 13 and 14 point at two
+    /// tables that repeat the source's entry (zeros when it is 0, 0)
+    Repeat([i16; 2]),
+}
+
+impl Toning {
+    /// what a target needs to look like its source (tables)
+    pub fn of(img: &[u8], target: u32, source: u32) -> Toning {
+        if target == source {
+            Toning::Keep
+        } else if varying_toning(target) {
+            Toning::Repeat(toning_entry(img, source))
+        } else {
+            Toning::Shift(toning_index(source))
         }
-        let mut words: Vec<u32> = (0..SET_WORDS).map(|k| word(img, cur + 4 * k)).collect();
-        let m = file_offset(words[1]);
-        let matrix: Vec<u8> = img[m..m + 18].to_vec();
-        let pm = file_offset(mat);
-        img[pm..pm + 18].copy_from_slice(&matrix);
-        words[1] = mat;
-        for (k, w) in words.iter().enumerate() {
-            put_u32(img, file_offset(set) + 4 * k, *w);
+    }
+
+    /// does it need two toning tables (2 x TONING_TABLE bytes) of its own?
+    pub fn needs_tables(&self) -> bool {
+        matches!(self, Toning::Repeat(e) if *e != [0, 0])
+    }
+}
+
+/// Give the looks `tables` one ColorMatrix set of their own at `set`
+/// (SET_SIZE bytes, matrix at +0x54): a copy of the set the first of them
+/// points at now, with its matrix; all of them point there afterwards.
+/// `tables_at`: where Repeat writes its two toning tables.
+pub fn private_set_at(img: &mut [u8], tables: &[u32], set: u32, toning: Toning,
+                      tables_at: Option<u32>) -> Result<(), String> {
+    let mat = set + 0x54;
+    let (lo, hi) = (file_offset(set), file_offset(mat) + 18);
+    if img[lo..hi].iter().any(|&b| b != 0) {
+        return Err(format!("free area {set:#x} for a private colour set is not empty"));
+    }
+    let cur = cm_set(img, tables[0]);
+    let mut words: Vec<u32> = (0..SET_WORDS).map(|k| word(img, cur + 4 * k)).collect();
+    let m = file_offset(words[1]);
+    let matrix: Vec<u8> = img[m..m + 18].to_vec();
+    let pm = file_offset(mat);
+    img[pm..pm + 18].copy_from_slice(&matrix);
+    words[1] = mat;
+    match toning {
+        Toning::Keep => {}
+        Toning::Shift(k) => {
+            for w in TONING_WORDS {
+                words[w as usize] += 2 * k;
+            }
         }
-        put_u32(img, entry, set);
+        Toning::Repeat(e) => {
+            for w in TONING_WORDS {
+                words[w as usize] = ZERO_TONING;
+            }
+            if e != [0, 0] {
+                let at = tables_at.ok_or("no place for the toning tables")?;
+                for (n, &v) in e.iter().enumerate() {
+                    let t = at + n as u32 * TONING_TABLE;
+                    let o = file_offset(t);
+                    if img[o..o + TONING_TABLE as usize].iter().any(|&b| b != 0) {
+                        return Err(format!("free area {t:#x} for a toning table is not empty"));
+                    }
+                    for k in 0..TONING_TABLE as usize / 2 {
+                        put_u16(img, o + 2 * k, v as u16);
+                    }
+                    words[13 + n] = t;
+                }
+            }
+        }
+    }
+    for (k, w) in words.iter().enumerate() {
+        put_u32(img, file_offset(set) + 4 * k, *w);
+    }
+    for &t in tables {
+        put_u32(img, file_offset(CM_TABLE + 4 * t), set);
     }
     Ok(())
 }
 
-pub fn private_cross(img: &mut [u8]) -> Result<(), String> {
-    private_set(img, CROSS_TABLE)
+/// fixed private sets: Cross Process always, HDR with its effects off
+pub fn fixed_set(table: u32) -> Option<u32> {
+    PRIVATE.iter().find(|p| p.0 == table).map(|p| p.1)
 }
 
 fn matrix(img: &[u8], va: u32) -> Vec<f64> {

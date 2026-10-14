@@ -90,7 +90,7 @@ curves linked or per channel, colour wheels; the curves always start
 linear), **4 Export**. Other image controls and the tone curve
 for all image controls are under "advanced". Technically Cross Process gets
 its own ColorMatrix set and its own matrix in the free area `0x53002080…`
-(`core/src/looks.rs`, `private_cross`; the set is 21 words long).
+(`core/src/looks.rs`, `private_set_at`; the set is 21 words long).
 
 - **Colour matrix** per image control, directly or via saturation/hue.
 - **Calibration** as in Lightroom: hue and saturation of the primaries red,

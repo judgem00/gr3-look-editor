@@ -3,6 +3,13 @@
 target, checked in Unicorn before the core writes it.
 
     .venv/bin/python tools/verify-targets.py
+    .venv/bin/python tools/verify-targets.py --patched IMAGE --preset PRESET
+
+--patched checks an image the core exported (TARGETS_DUMP=1 cargo test
+--test targets every_target writes one to work/targets-test/) against its
+v2 preset: every look that is not a target is bit-identical to stock, and
+every target to its source in a stock image where the source's matrix is the
+target's (targets with HSL or curves are only checked for not touching others).
 
 A target takes its source's data by pointing its entries in the three
 per-look tables at the source's (looks::inherit). The first table holds the
@@ -22,6 +29,8 @@ Bleach Bypass selects table 18, 22 or 23 by SI+0x786 (1, 2, 3) and HDR table
 24 when SI+0x788 is 1 or 2 (the setting filler, 0x536dc26c ff.); the cases
 cover both.
 """
+import argparse
+import json
 import struct
 import sys
 
@@ -119,12 +128,72 @@ def runs(img, cases, settings_extra):
     return out
 
 
+def same_but_gamma(a, b):
+    """Cross Process always runs its channel curves (even linear ones), so its
+    gamma LUTs never match another look's; everything else must"""
+    lo, hi = VT.GAMMA_INFO
+    return not [r for r in VT.diff_runs(a[0], b[0]) if not (lo <= r[0] and r[0] + r[1] <= hi)]
+
+
 def same(a, b):
     # info+0x82af follows the look history (verify-tuning.py, TRANSITION)
     return not VT.diff_runs(a[0], b[0]) and a[1] == b[1]
 
 
+# firmware name -> (table, cases) for --patched; Retro also at toning -4 and +4
+FW = {
+    "Standard": (11, ["Standard"]), "Vivid": (12, ["Vivid"]), "PositiveFilm": (17, ["Positive Film"]),
+    "BleechBypass_GR": (18, ["Bleach Bypass", "Bleach Bypass v2", "Bleach Bypass v3"]),
+    "BleechBypass_GR \u00b7 Var. 2": (22, ["Bleach Bypass v2"]),
+    "BleechBypass_GR \u00b7 Var. 3": (23, ["Bleach Bypass v3"]),
+    "Retro": (19, ["Retro", "Retro toning -4", "Retro toning +4"]),
+    "HdrCuisine": (20, ["HDR", "HDR v1", "HDR v2"]),
+    "CrossProcess": (21, ["Cross Process"]), "NegativeFilm": (25, ["Negative Film"]),
+}
+PATCHED_CASES = CASES + [("Retro toning -4", 19, {0x787: 0}), ("Retro toning +4", 19, {0x787: 8})]
+
+
+def check_patched(image, preset, rep):
+    stock = bytearray(emu.load_rtos())
+    img = bytearray(emu.load_rtos(image))
+    targets = json.load(open(preset))["targets"]
+    sats = (4, 8)
+    pairs = ", ".join(f"{n} <- {t['source']}" for n, t in targets.items())
+    print(f"\n[patched] {image}: {pairs}")
+    got = runs(img, PATCHED_CASES, sats)
+    base = runs(stock, PATCHED_CASES, sats)
+    covered = {c for n in targets for c in FW[n][1]}
+    for (name, live, sat), out in got.items():
+        if name not in covered:
+            rep.check(same(out, base[(name, live, sat)]), f"{'live ' if live else 'still'} {name} sat {sat - 4:+d} = stock")
+    for n, t in targets.items():
+        if t.get("hsl") or t.get("curves") or t.get("channels"):
+            print(f"  {n}: HSL or curves, only checked for leaving the others alone")
+            continue
+        table, cases = FW[n]
+        src_table, src_cases = FW[t["source"]]
+        ref_img = bytearray(stock)
+        _, m = matrix_of(img, table)
+        set_matrix(ref_img, src_table, lambda _: m)
+        src_case = [c for c in PATCHED_CASES if c[0] == src_cases[0]]
+        ref = runs(ref_img, src_case, sats)
+        eq, what = (same_but_gamma, " (but the gamma LUTs)") if n == "CrossProcess" else (same, "")
+        for (name, live, sat), out in got.items():
+            if name in cases:
+                rep.check(eq(out, ref[(src_cases[0], live, sat)]),
+                          f"{'live ' if live else 'still'} {name} sat {sat - 4:+d} = {t['source']} with {n}'s matrix{what}")
+
+
 def main():
+    ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    ap.add_argument("--patched", help="unpacked image exported by the core")
+    ap.add_argument("--preset", help="its v2 preset (targets and sources)")
+    args = ap.parse_args()
+    if args.patched:
+        rep = VT.Report()
+        check_patched(args.patched, args.preset, rep)
+        print(f"\n{rep.failed} failed" if rep.failed else "\nall checks passed")
+        return 1 if rep.failed else 0
     rep = VT.Report()
     stock = bytearray(emu.load_rtos())
     sats = (4, 8)                                   # neutral and +4

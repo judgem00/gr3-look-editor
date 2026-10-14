@@ -91,6 +91,7 @@ const api = (() => {
       if (path === "api/tone" && method === "POST") return json(await call("tone", { body }));
       if (path === "api/hsl" && method === "POST") return json(await call("hsl", { body }));
       if (path === "api/effects" && method === "POST") return json(await call("effects", { body }));
+      if (path === "api/target" && method === "POST") return json(await call("target", { body }));
       if (path === "api/space" && method === "POST") return json(await call("space", { body }));
       if (path === "api/dng" && method === "POST") {
         const file = opts.body.get("file");
