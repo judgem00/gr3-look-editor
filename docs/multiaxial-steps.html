@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MultiAxial steps</title>
+<style>
+:root {
+  --bg: #ffffff; --surface: #f4f3ef; --text: #1f1e1c; --muted: #6b6a65;
+  --border: #d6d4cc; --accent: #2f6fd0;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121315; --surface: #1d1e21; --text: #e8e6e1; --muted: #9c9a92;
+    --border: #3a3b3f; --accent: #6aa3f0;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #121315; --surface: #1d1e21; --text: #e8e6e1; --muted: #9c9a92;
+  --border: #3a3b3f; --accent: #6aa3f0;
+}
+body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.6 system-ui, -apple-system, sans-serif; }
+main { max-width: 720px; margin: 0 auto; padding: 24px 16px 40px; }
+h1 { font-size: 22px; font-weight: 500; margin: 0 0 8px; }
+p { color: var(--muted); margin: 0 0 16px; }
+.bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 12px; font-size: 13px; color: var(--muted); }
+.bar .gap { flex: 1; }
+button { font: inherit; font-size: 13px; color: var(--text); background: transparent; border: 1px solid var(--border); border-radius: 8px; padding: 5px 12px; cursor: pointer; }
+button:hover { background: var(--surface); }
+button.on { border-color: var(--accent); color: var(--accent); }
+svg { display: block; width: 100%; height: auto; touch-action: none; }
+svg text { font-size: 12px; fill: var(--muted); }
+.hd { cursor: grab; }
+.legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 13px; color: var(--muted); margin-top: 8px; }
+.legend i { display: inline-block; width: 14px; vertical-align: middle; margin-right: 4px; }
+#stat { margin-left: auto; color: var(--text); }
+</style>
+</head>
+<body>
+<main>
+<h1>MultiAxial steps</h1>
+<p>The camera's hue-selective stage splits the Cb/Cr plane into four quadrants at fixed axes. Within each quadrant,
+up to five steps have bounds that can move freely; each step applies one fixed correction. Drag the bounds, or let
+the fit place them. The curves are examples, and the fit is simplified: unlike the editor, it neither merges steps
+down to 11 corrections nor snaps bounds onto the axes. See <a href="multiaxial.md">multiaxial.md</a>.</p>
+<div class="bar">
+  <span>Curve</span>
+  <button id="b-broad" class="on">Broad, gentle</button>
+  <button id="b-steep">Steep, narrow</button>
+  <span class="gap"></span>
+  <button id="b-fit">Fit bounds again</button>
+</div>
+<svg id="wheel" viewBox="0 0 680 500" role="img" aria-label="Colour wheel with quadrants and steps">
+  <g id="hue"></g><g id="steps"></g><g id="curve"></g><g id="axes"></g><g id="bounds"></g>
+</svg>
+<svg id="strip" viewBox="0 0 680 190" role="img" aria-label="The curve unrolled over hue"></svg>
+<div class="legend">
+  <span><i style="height:2px;background:var(--text)"></i>your curve</span>
+  <span><i style="height:10px;background:var(--accent);opacity:.35"></i>steps in the camera</span>
+  <span><i style="height:3px;background:var(--text)"></i>fixed axis</span>
+  <span>drag a dot to move a bound</span>
+  <span id="stat"></span>
+</div>
+</main>
+<script>
+// hue coordinate 0..8192 in the editor's order: four quadrants of 2048, each
+// running from one chroma axis to the next; within a quadrant the coordinate
+// is 2048 * b / (a + b), a and b the components along the two axes
+const NS = "http://www.w3.org/2000/svg";
+const CX = 340, CY = 250, RH0 = 72, RH1 = 100, RB = 158, SC = 1.0, RA = 208, RL = 228;
+const Q = 2048, C = 8192, BINS = 512;
+const AX = [[0, 1], [1, 0], [0, -1], [-1, 0]];          // (Cb, Cr): +Cr, +Cb, -Cr, -Cb
+const AXN = ["Red (+Cr)", "Blue (+Cb)", "Green (−Cr)", "Yellow (−Cb)"];
+let mode = "broad", bounds = [[], [], [], []], curveV = [];
+
+const $ = (id) => document.getElementById(id);
+const el = (t, a, p) => {
+  const e = document.createElementNS(NS, t);
+  for (const k in a) e.setAttribute(k, a[k]);
+  if (p) p.appendChild(e);
+  return e;
+};
+
+function dirOf(h) {
+  h = ((h % C) + C) % C;
+  const q = Math.min(3, Math.floor(h / Q)), t = (h - q * Q) / Q, A = AX[q], B = AX[(q + 1) % 4];
+  return [(1 - t) * A[0] + t * B[0], (1 - t) * A[1] + t * B[1]];
+}
+function pt(h, r) {
+  const d = dirOf(h), a = Math.atan2(-d[1], d[0]);
+  return [CX + r * Math.cos(a), CY + r * Math.sin(a)];
+}
+// BT.601 YCbCr -> RGB at mid grey, for the colour ring only
+function rgb(h) {
+  const d = dirOf(h), n = Math.hypot(d[0], d[1]), cb = d[0] / n * 0.3, cr = d[1] / n * 0.3, Y = 0.55;
+  const c = (v) => Math.round(255 * Math.max(0, Math.min(1, v)));
+  return `rgb(${c(Y + 1.402 * cr)},${c(Y - 0.344 * cb - 0.714 * cr)},${c(Y + 1.772 * cb)})`;
+}
+function gauss(h, c, w) { let d = Math.abs(h - c); d = Math.min(d, C - d); return Math.exp(-0.5 * (d / w) ** 2); }
+function curve(h) {
+  return mode === "broad"
+    ? 32 * gauss(h, 7300, 900) - 26 * gauss(h, 4300, 1100) + 12 * gauss(h, 2200, 700)
+    : 40 * gauss(h, 7600, 160) - 35 * gauss(h, 4500, 200) + 30 * gauss(h, 1500, 140) - 20 * gauss(h, 5600, 120);
+}
+function sample() { curveV = []; for (let i = 0; i < BINS; i++) curveV.push(curve((i + 0.5) * C / BINS)); }
+
+// least squares split of one quadrant into at most 5 steps; every edge pays a cost
+function fitQuadrant(q) {
+  const n = BINS / 4, v = curveV.slice(q * n, q * n + n), S = [0], S2 = [0];
+  v.forEach((x) => { S.push(S[S.length - 1] + x); S2.push(S2[S2.length - 1] + x * x); });
+  const cost = (i, j) => { const m = (S[j] - S[i]) / (j - i); return S2[j] - S2[i] - m * m * (j - i); };
+  const lam = mode === "broad" ? 600 : 200;
+  const dp = [Array(n + 1).fill(1e18)], par = [[]];
+  dp[0][0] = 0;
+  let best = { c: 1e18 };
+  for (let k = 1; k <= 5; k++) {
+    dp[k] = Array(n + 1).fill(1e18); par[k] = Array(n + 1).fill(0);
+    for (let j = 1; j <= n; j++)
+      for (let i = k - 1; i < j; i++) {
+        const c = dp[k - 1][i] + cost(i, j);
+        if (c < dp[k][j]) { dp[k][j] = c; par[k][j] = i; }
+      }
+    const total = dp[k][n] + lam * (k - 1);
+    if (total < best.c) best = { c: total, k };
+  }
+  const cuts = [];
+  let j = n;
+  for (let k = best.k; k > 1; k--) { j = par[k][j]; cuts.unshift(j * Q / n); }
+  while (cuts.length < 4) cuts.push(Q);    // unused bounds collapse onto the quadrant's end
+  return cuts;
+}
+function fit() { bounds = [0, 1, 2, 3].map(fitQuadrant); draw(); }
+
+// each step's value is the mean of the curve over its range
+function steps() {
+  const out = [];
+  for (let q = 0; q < 4; q++) {
+    const b = [0, ...bounds[q], Q];
+    for (let s = 0; s < 5; s++) {
+      const lo = q * Q + b[s], hi = q * Q + b[s + 1];
+      if (hi - lo < 1) continue;
+      const i0 = Math.round(lo / 16), i1 = Math.round(hi / 16);
+      let m = 0;
+      for (let i = i0; i < i1; i++) m += curveV[i];
+      out.push({ lo, hi, v: i1 > i0 ? m / (i1 - i0) : curve((lo + hi) / 2) });
+    }
+  }
+  return out;
+}
+
+const path = (pts) => "M" + pts.map((p) => p.map((x) => x.toFixed(1)).join(",")).join("L");
+function arc(lo, hi, r0, r1, parent, attrs) {
+  const n = Math.max(2, Math.ceil((hi - lo) / 32)), a = [], b = [];
+  for (let i = 0; i <= n; i++) { const h = lo + (hi - lo) * i / n; a.push(pt(h, r1)); b.unshift(pt(h, r0)); }
+  return el("path", Object.assign({ d: path(a.concat(b)) + "Z" }, attrs), parent);
+}
+
+function drawStatic() {
+  for (let i = 0; i < 256; i++) arc(i * 32, i * 32 + 33, RH0, RH1, $("hue"), { fill: rgb(i * 32 + 16) });
+  const ax = $("axes");
+  for (let q = 0; q < 4; q++) {
+    const h = q * Q, [x0, y0] = pt(h, RH0 - 6), [x1, y1] = pt(h, RA + 6), [lx, ly] = pt(h, RL);
+    el("line", { x1: x0, y1: y0, x2: x1, y2: y1, stroke: "var(--text)", "stroke-width": 2.5 }, ax);
+    const t = el("text", { x: lx, y: ly, "text-anchor": lx > CX + 5 ? "start" : lx < CX - 5 ? "end" : "middle",
+                           "dominant-baseline": "central" }, ax);
+    t.textContent = AXN[q];
+  }
+  el("circle", { cx: CX, cy: CY, r: RB, fill: "none", stroke: "var(--border)", "stroke-dasharray": "3 3" }, ax);
+}
+
+function draw() {
+  const sg = $("steps"), cg = $("curve"), bg = $("bounds");
+  sg.innerHTML = cg.innerHTML = bg.innerHTML = "";
+  const S = steps();
+  for (const s of S) {
+    const r = RB + s.v * SC;
+    arc(s.lo, s.hi, Math.min(RB, r), Math.max(RB, r) + 0.01, sg,
+        { fill: "var(--accent)", "fill-opacity": 0.3, stroke: "var(--accent)", "stroke-width": 0.5 });
+  }
+  const P = [];
+  for (let i = 0; i <= BINS; i++) { const h = i * C / BINS; P.push(pt(h, RB + curve(h) * SC)); }
+  el("path", { d: path(P), fill: "none", stroke: "var(--text)", "stroke-width": 1.5 }, cg);
+  for (let q = 0; q < 4; q++)
+    bounds[q].forEach((u, k) => {
+      if (u <= 0 || u >= Q) return;
+      const h = q * Q + u, [x0, y0] = pt(h, RH1 + 2), [x1, y1] = pt(h, RA - 8), [hx, hy] = pt(h, RA - 2);
+      el("line", { x1: x0, y1: y0, x2: x1, y2: y1, stroke: "var(--accent)", "stroke-dasharray": "2 2" }, bg);
+      const c = el("circle", { cx: hx, cy: hy, r: 6, fill: "var(--bg)", stroke: "var(--accent)", "stroke-width": 1.5, class: "hd" }, bg);
+      c.onpointerdown = (e) => startDrag(e, q, k);
+    });
+  drawStrip(S);
+  const corrections = new Set(S.filter((s) => Math.abs(s.v) > 1).map((s) => Math.round(s.v)));
+  $("stat").textContent = `${S.length} of 20 steps · ${corrections.size} of 11 corrections`;
+}
+
+function drawStrip(S) {
+  const sv = $("strip"), X0 = 40, W = 600, Y0 = 80, K = 1.3, x = (h) => X0 + h / C * W;
+  sv.innerHTML = "";
+  for (let i = 0; i < 128; i++) el("rect", { x: x(i * 64), y: 160, width: W / 128 + 0.5, height: 10, fill: rgb(i * 64 + 32) }, sv);
+  el("line", { x1: X0, y1: Y0, x2: X0 + W, y2: Y0, stroke: "var(--border)" }, sv);
+  for (const s of S)
+    el("rect", { x: x(s.lo), y: Math.min(Y0, Y0 - s.v * K), width: x(s.hi) - x(s.lo), height: Math.abs(s.v * K) + 0.01,
+                 fill: "var(--accent)", "fill-opacity": 0.3, stroke: "var(--accent)", "stroke-width": 0.5 }, sv);
+  const P = [];
+  for (let i = 0; i <= BINS; i++) { const h = i * C / BINS; P.push([x(h), Y0 - curve(h) * K]); }
+  el("path", { d: path(P), fill: "none", stroke: "var(--text)", "stroke-width": 1.5 }, sv);
+  for (let q = 0; q <= 4; q++) {
+    el("line", { x1: x(q * Q), y1: 10, x2: x(q * Q), y2: 172, stroke: "var(--text)", "stroke-width": q % 4 ? 2 : 1 }, sv);
+    if (q < 4) {
+      const t = el("text", { x: x(q * Q + Q / 2), y: 184, "text-anchor": "middle" }, sv);
+      t.textContent = AXN[q].split(" ")[0] + " → " + AXN[(q + 1) % 4].split(" ")[0];
+    }
+  }
+}
+
+let drag = null;
+function startDrag(e, q, k) {
+  e.preventDefault();
+  drag = { q, k };
+  window.onpointermove = moveDrag;
+  window.onpointerup = () => { drag = null; window.onpointermove = null; };
+}
+// a bound stays inside its quadrant and between its neighbours
+function moveDrag(e) {
+  if (!drag) return;
+  const r = $("wheel").getBoundingClientRect(), s = 680 / r.width;
+  const cb = (e.clientX - r.left) * s - CX, cr = -((e.clientY - r.top) * s - CY);
+  const { q, k } = drag, A = AX[q], B = AX[(q + 1) % 4];
+  let a = cb * A[0] + cr * A[1], b = cb * B[0] + cr * B[1];
+  if (a < 0 && b < 0) return;
+  a = Math.max(0, a); b = Math.max(0, b);
+  const lo = k ? bounds[q][k - 1] : 0, hi = k < 3 ? bounds[q][k + 1] : Q;
+  const u = Math.max(lo + 16, Math.min(hi - 16, Q * b / (a + b || 1)));
+  bounds[q][k] = Math.round(u / 16) * 16;
+  draw();
+}
+
+function setCurve(m) {
+  mode = m;
+  $("b-broad").classList.toggle("on", m === "broad");
+  $("b-steep").classList.toggle("on", m === "steep");
+  sample(); fit();
+}
+$("b-broad").onclick = () => setCurve("broad");
+$("b-steep").onclick = () => setCurve("steep");
+$("b-fit").onclick = fit;
+drawStatic(); sample(); fit();
+</script>
+</body>
+</html>
