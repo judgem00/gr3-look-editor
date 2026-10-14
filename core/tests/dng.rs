@@ -31,7 +31,8 @@ fn dngs_match_reference() {
             .chunks_exact(3).flat_map(|p| [p[0], p[1], p[2], 255]).collect();
         let t = std::time::Instant::now();
         let name = std::path::Path::new(case["path"].as_str().unwrap()).file_name().unwrap().to_str().unwrap();
-        let p = s.prepare_shot(&shot, Some(&cam), name).unwrap();
+        // the reference fit knows no lens shading correction
+        let p = s.prepare_shot_with(&shot, Some(&cam), name, false).unwrap();
         let fit_ms = t.elapsed().as_millis();
         let want = &case["meta"];
         let m = &p.meta;

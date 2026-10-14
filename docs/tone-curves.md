@@ -191,9 +191,8 @@ terms sum to zero, so a tint leaves the channel mean unchanged. The result is
 clamped to 0…0x3fff. Monotonicity is not enforced, because several original
 channel curves already have small dips.
 
-Selective colour changes (HSL per hue) are not possible this way. That needs
-a hue-dependent stage in the firmware; the candidate is MultiAxial (not yet
-investigated).
+Selective colour changes (HSL per hue) are not possible this way. They go
+through the hue-dependent stage MultiAxial ([multiaxial.md](multiaxial.md)).
 
 ## What is open
 

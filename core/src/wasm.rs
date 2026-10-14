@@ -84,6 +84,10 @@ impl Editor {
         Ok(self.session.tone(&parse(body)?).map_err(js)?.to_string())
     }
 
+    pub fn hsl(&self, body: &str) -> Result<String, JsError> {
+        Ok(self.session.hsl(&parse(body)?).map_err(js)?.to_string())
+    }
+
     pub fn export(&self, body: &str) -> Result<Export, JsError> {
         let (r, update, preset) = self.session.export(&parse(body)?).map_err(js)?;
         Ok(Export { result: r.to_string(), update, preset })

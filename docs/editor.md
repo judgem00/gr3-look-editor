@@ -12,9 +12,9 @@ Nothing is uploaded.
 ## What the preview computes
 
 ```
-camera RGB -> WB (AsShotNeutral or colour temperature) -> sensor CCM -> look matrix -> A[saturation] -> (mono mix)
-           -> camera tone curve (per channel for Cross Process) -> hue rotation (YCbCr)
-           -> (residual correction)
+camera RGB -> WB (AsShotNeutral or colour temperature), clipped at the smallest gain -> lens shading correction -> sensor CCM -> look matrix -> A[saturation] -> (mono mix)
+           -> MultiAxial (colour ranges) -> shadow correction -> camera tone curve (per channel for Cross Process)
+           -> hue rotation (YCbCr) -> (residual correction, highlight chroma roll-off)
 ```
 
 Saturation and hue are the camera's image control settings; their matrices
@@ -27,9 +27,53 @@ come from the firmware ([docs/look-mapping.md](look-mapping.md)).
   (`core/src/arm.rs`) on the (edited) base curves, with
   key/contrast/highlights/shadows
   ([docs/tone-curves.md](tone-curves.md)).
-- Input scaling and gain are fitted per DNG against the embedded camera JPEG;
-  the **residual correction** (can be switched off, "Fine-match to camera
-  JPEG") absorbs the camera's image-dependent shadow correction.
+- **Lens shading (vignetting) correction:** the camera brightens the edges
+  of the linear image to correct the lens. At f/2.8 that is ×1.14 at half
+  the radius and ×1.43 at 80 % towards the corners, the same in every image
+  control. The DNG carries no data for it, so it is fitted per DNG against the
+  embedded camera JPEG (`fit::fit_vignette`: the JPEG goes back through the
+  inverted tone curve, then a radial polynomial is fitted). That covers every
+  aperture. Retro darkens the edges itself and HDR Tone changes them through
+  its local tone mapping. Shots with these image controls get the typical
+  f/2.8 correction (`DEFAULT_VIGNETTE`). The preview applies the correction
+  before everything else; it can be switched off.
+- Input scaling and gain are fitted per DNG against the embedded camera JPEG,
+  after the lens shading correction. The **residual correction** (can be
+  switched off, "Fine-match to camera JPEG") absorbs the camera's
+  image-dependent shadow correction. Without the shading correction it
+  absorbed the brighter edges too and fitted worse. On MR024685 the mean
+  difference to the camera JPEG drops from 6.9 to 1.4 levels (8 bit). The
+  residual is fitted on all pixels. Leaving out the ones the camera clipped
+  kept only the darker ones near white, and white came out at 247 instead of
+  255.
+- **Shadow correction:** the camera's own, from its firmware
+  (`core/src/tonecontrol.rs`; analysis in gr3x-fw-hack
+  `docs/tone-curves.md`). Each pixel on linear RGB is multiplied by a gain
+  from a 1024-entry table, indexed by its 12-bit value / 4. The table is
+  1 + S · (base − 1), with the base at `0x53dc1f5c` (2.0 at black, 1.0 from
+  about 15 %) and S = 0.25 / 0.5 / 1 for Low / Medium / Strong. The DNG
+  stores the level in makernote tag `0x0079`; "Auto" there is level 4, which
+  the firmware treats as off. The fit against the camera JPEG uses the shot's
+  level. In the preview it is one of the camera settings ("Shadow
+  correction"), loaded from the DNG with the others. On MR022009 (Strong)
+  the difference to the camera JPEG drops from 7.2 to 4.0 levels without the
+  fine match (shadows 17.5 → 3.7). Which value of a pixel indexes the table
+  is done in hardware; the largest channel fitted best. The camera's
+  highlight correction is not modelled. Its table variant (`0x53dc1488`) did
+  not fit MR022009, so it probably works through exposure and the tone
+  curve's gain, which the fit covers.
+- **Clipped highlights:** where the sensor clipped, white balance would turn
+  "very bright" into a strong colour (red gain ~3: yellow or pink lights).
+  As in the camera, all channels are cut at the level of the channel with the
+  smallest gain, so such lights stay white (`fit::highlight_clip`).
+- **Chroma roll-off in the highlights:** the camera takes saturation out of
+  bright colours. From about Y 180 of 255, chroma falls to ×0.55 near white,
+  measured on three shots in Standard and Negative Film. It is fitted per
+  shot against the camera JPEG, one factor per 16 levels of Y
+  (`fit::fit_highlight_chroma`, typical table `DEFAULT_HIGHLIGHT_CHROMA`).
+  It is part of "Fine-match to camera JPEG". Error above Y 176: MR024685
+  5.1 → 3.0, MR024661 7.6 → 4.8, MR022009 5.9 → 4.4 levels. Where the
+  camera does it is not known; the CSP block's chroma limits are a candidate.
 
 Views: **Edited**, **Before / After** (firmware original against the edit,
 colour and tone curve), **Compare camera**, **Camera JPEG**.
@@ -55,6 +99,21 @@ its own ColorMatrix set and its own matrix in the free area `0x53002080…`
   white. The other primaries keep their hue (< 1° crosstalk).
   Presets store the sliders (`matrix_edits`).
   Bleach Bypass and HDR have variants with their own matrix.
+- **Colour curves (HSL)** per image control: Hue vs Hue, Hue vs Sat and Hue
+  vs Lum, as in DaVinci Resolve. They act in the camera's hue-selective stage
+  ([docs/multiaxial.md](multiaxial.md)). The x axis runs red → yellow →
+  green → cyan → blue → magenta over the stage's hue coordinate. The
+  background shows each hue after the camera's tone curve, with the curve's
+  effect from bottom to top. A new curve has neutral points at the six hues,
+  so that moving one point bends the curve only up to its neighbours. The
+  stage cannot follow a smooth curve. The core (`/api/hsl`) therefore splits
+  the curves into the steps that come closest: at most 5 per quarter of the
+  circle (dotted lines) and 11 different adjustments. The editor draws these
+  steps dashed over the curve, and the preview runs exactly them on the GPU.
+  At most 5 image controls can have HSL. "Protect shadows and highlights"
+  sets the stage's weight curve over brightness. Presets store the curve
+  points (`hsl`). Presets with the earlier ranges (bands) are converted to
+  points.
 - **Tone curve:** click to add points, drag them, double-click to remove.
   The curve is applied to the 15 base curves (optionally only to individual
   contrast families); the camera then blends as usual. It **applies to all

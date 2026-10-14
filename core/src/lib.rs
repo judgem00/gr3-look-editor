@@ -12,6 +12,8 @@ pub mod fit;
 pub mod gamma;
 pub mod grfw;
 pub mod looks;
+pub mod multiaxial;
 pub mod session;
 pub mod tone;
+pub mod tonecontrol;
 pub mod wasm;
