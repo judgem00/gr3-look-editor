@@ -63,7 +63,7 @@ off. Without them the code is byte-identical to Ricoh's (checked in
 | What | Where | Safeguard |
 |---|---|---|
 | Look matrix (`looks::patch`) | the look's own 3×3 matrix | 9 values per matrix; each must fit into a signed 16-bit value (about −4.0 … +4.0), otherwise an error. Two looks that share one matrix may not get different values. |
-| Private Cross Process set (`looks::private_cross`) | read-only padding at `0x53002080` | Written only if the area is all zero, otherwise an error. Cross Process gets its own copy, so the matrices of the other image controls stay untouched. |
+| Private Cross Process set (`looks::private_set_at`) | read-only padding at `0x53002080` | Written only if the area is all zero, otherwise an error. Cross Process gets its own copy, so the matrices of the other image controls stay untouched. |
 | HSL sets (`multiaxial::patch`) | read-only padding no pointer leads into | Each slot is checked to be all zero before writing. The number of slots is fixed, and asking for more is an error. All slider values are clamped to the ranges the stage supports. |
 | Channel curves (`chan::write`) | the 12 existing 256-entry tables | Index must be 0–11, exactly 256 values, each clamped to 0…65535. |
 | Base tone curves (`gamma::with_curves`) | the existing base curves | Values clamped to 0…65535. This is an advanced option, and the UI warns that it changes every image control. |

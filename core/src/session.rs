@@ -3,6 +3,7 @@
 //! Requests and answers are JSON, routed by editor/static/bridge.js.
 
 use crate::{chan, curvesel, gamma, grfw, looks, multiaxial, space, tone};
+use crate::targets::{self, Target, CROSS};
 use crate::gamma::{Engine, ToneParams};
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
@@ -48,11 +49,11 @@ pub struct Session {
     container: grfw::Container,
     /// the decoded stock image, needed to repack
     stock: Vec<u8>,
-    /// stock + linear channel curves + inheritance + private Cross Process set
+    /// the preview's image: stock + linear Cross Process curves + the targets
     fw: Vec<u8>,
-    inherit: Vec<(String, String)>,
-    /// looks whose own effects are off (only "HdrCuisine"); they get a private colour set
-    effects_off: Vec<String>,
+    /// targets of the preview, in targets::TARGETS order; Cross Process is
+    /// always one (it is the slot of the earlier editor's own look)
+    targets: Vec<Target>,
     pub build: &'static Build,
     /// the dropped file's name, and the name the camera expects (FWDC239B.BIN)
     pub filename: String,
@@ -110,7 +111,7 @@ impl Session {
         let name = filename.to_uppercase();
         let base_curves = gamma::base_curves(&stock);
         let mut s = Session {
-            container, fw: vec![], stock, inherit: vec![], effects_off: vec![], build, filename,
+            container, fw: vec![], stock, targets: vec![Target::new(CROSS, None, false)?], build, filename,
             update_name: if name.is_empty() { format!("{}.BIN", build.name.to_uppercase()) } else { name },
             base_curves,
         };
@@ -118,21 +119,42 @@ impl Session {
         Ok(s)
     }
 
-    /// fw from the stock image: Cross Process is the user's look -- its channel
-    /// curves start linear and it gets a colour matrix of its own
-    fn rebuild(&mut self) -> Result<(), String> {
+    /// the stock image with `targets` at `places` (targets::item_sizes, placed
+    /// by space::plan_with); Cross Process as a target starts with linear curves
+    fn build(&self, targets: &[Target], places: &[u32]) -> Result<Vec<u8>, String> {
         let mut img = self.stock.clone();
-        let lin: Vec<f64> = chan::linear().iter().map(|&v| v as f64).collect();
-        chan::write(&mut img, &(0..chan::COUNT).map(|i| (i, lin.clone())).collect::<Vec<_>>())?;
-        for (target, source) in &self.inherit {
-            looks::inherit(&mut img, looks::table_of(target).unwrap(), looks::table_of(source).unwrap());
+        if targets.iter().any(|t| t.name == CROSS) {
+            let lin: Vec<f64> = chan::linear().iter().map(|&v| v as f64).collect();
+            chan::write(&mut img, &(0..chan::COUNT).map(|i| (i, lin.clone())).collect::<Vec<_>>())?;
         }
-        looks::private_cross(&mut img)?;
-        if self.hdr_off() {
-            looks::private_set(&mut img, looks::HDR_TABLE)?;
-        }
-        self.fw = img;
+        targets::apply(&mut img, &self.stock, targets, places)?;
+        Ok(img)
+    }
+
+    /// `targets` placed next to `hsl` HSL sets and `curves` channel curves
+    fn build_for(&self, targets: &[Target], hsl: usize, curves: usize) -> Result<(Vec<u8>, space::Plan), String> {
+        let plan = space::plan_with(&self.stock, hsl, curves, &targets::item_sizes(&self.stock, targets))?;
+        Ok((self.build(targets, &plan.items)?, plan))
+    }
+
+    /// fw for the preview: where the targets' sets lie does not matter there
+    fn rebuild(&mut self) -> Result<(), String> {
+        self.fw = self.build_for(&self.targets.clone(), 0, 0)?.0;
         Ok(())
+    }
+
+    fn set_targets(&mut self, targets: Vec<Target>) -> Result<(), String> {
+        let old = std::mem::replace(&mut self.targets, targets::sorted(targets)?);
+        if let Err(e) = self.rebuild() {
+            self.targets = old;
+            self.rebuild()?;
+            return Err(e);
+        }
+        Ok(())
+    }
+
+    fn target(&self, name: &str) -> Option<&Target> {
+        self.targets.iter().find(|t| t.name == name)
     }
 
     pub fn image(&self) -> &[u8] {
@@ -140,11 +162,16 @@ impl Session {
     }
 
     fn hdr_off(&self) -> bool {
-        self.effects_off.iter().any(|n| n == HDR)
+        self.target(HDR).is_some_and(|t| t.effects_off)
     }
 
+    fn effects_off(&self) -> Vec<String> {
+        if self.hdr_off() { vec![HDR.to_string()] } else { vec![] }
+    }
+
+    /// {target: source} for targets built from another look
     fn inherit_json(&self) -> Value {
-        Value::Object(self.inherit.iter().map(|(t, s)| (t.clone(), json!(s))).collect())
+        Value::Object(self.targets.iter().filter(|t| t.foreign()).map(|t| (t.name.clone(), json!(t.source))).collect())
     }
 
     /// GET /api/firmware
@@ -165,7 +192,10 @@ impl Session {
             "channel_sets": sets,
             "channel_linear": chan::linear(),
             "inherit": self.inherit_json(),
-            "effects_off": self.effects_off,
+            "effects_off": self.effects_off(),
+            "targets": self.targets.iter().map(Target::to_json).collect::<Vec<_>>(),
+            "target_names": targets::TARGETS,
+            "sources": targets::sources().collect::<Vec<_>>(),
             "curve_looks": CURVE_LOOKS,
             "look_channel_sets": Value::Object(look_sets().map(|(n, i)| (n.to_string(), json!(i))).collect()),
             "multiaxial": { "ycc": multiaxial::ycc(img, 11), "circle": multiaxial::CIRCLE },
@@ -185,24 +215,43 @@ impl Session {
         Ok(out)
     }
 
-    /// POST /api/inherit {target, source}; source null undoes it
+    /// POST /api/target {target, source, effects_off}: make `target` a look of
+    /// the user's built from `source` (default: itself); `remove: true` gives it
+    /// back to stock (Cross Process goes back to its own data)
+    pub fn set_target(&mut self, body: &Value) -> Result<Value, String> {
+        let name = body.get("target").and_then(|v| v.as_str()).unwrap_or("");
+        let mut list: Vec<Target> = self.targets.iter().filter(|t| t.name != name).cloned().collect();
+        if body.get("remove").and_then(|v| v.as_bool()) == Some(true) {
+            if name == CROSS {
+                list.push(Target::new(CROSS, None, false)?);
+            } else if !targets::TARGETS.contains(&name) {
+                return Err(format!("{name:?} cannot be a target"));
+            }
+        } else {
+            let source = body.get("source").and_then(|v| v.as_str());
+            let off = body.get("effects_off").and_then(|v| v.as_bool()).unwrap_or(false);
+            list.push(Target::new(name, source, off)?);
+        }
+        self.set_targets(list)?;
+        Ok(self.firmware())
+    }
+
+    /// POST /api/inherit {target, source}; source null undoes it (the earlier
+    /// editor's call, on top of set_target)
     pub fn set_inherit(&mut self, body: &Value) -> Result<Value, String> {
-        let target = body.get("target").and_then(|v| v.as_str()).unwrap_or("");
+        let name = body.get("target").and_then(|v| v.as_str()).unwrap_or("");
         let source = body.get("source").and_then(|v| v.as_str());
-        let known = |n: &str| looks::table_of(n).is_some();
-        if !known(target) || source.is_some_and(|s| !known(s) || s == target) {
+        if source == Some(name) {
             return Err("unknown look".into());
         }
-        let mut inherit = self.inherit.clone();
-        match source {
-            Some(s) => match inherit.iter_mut().find(|(t, _)| t == target) {
-                Some(e) => e.1 = s.to_string(),
-                None => inherit.push((target.to_string(), s.to_string())),
-            },
-            None => inherit.retain(|(t, _)| t != target),
+        let off = self.target(name).is_some_and(|t| t.effects_off);
+        let mut list: Vec<Target> = self.targets.iter().filter(|t| t.name != name).cloned().collect();
+        if source.is_some() || off || name == CROSS {
+            list.push(Target::new(name, source, off)?);
+        } else if !targets::TARGETS.contains(&name) {
+            return Err("unknown look".into());
         }
-        self.inherit = inherit;
-        self.rebuild()?;
+        self.set_targets(list)?;
         Ok(self.firmware())
     }
 
@@ -213,13 +262,19 @@ impl Session {
         if let Some(n) = names.iter().find(|n| *n != HDR) {
             return Err(format!("effects can only be switched off for {HDR}, not {n:?}"));
         }
-        self.effects_off = if names.is_empty() { vec![] } else { vec![HDR.to_string()] };
-        self.rebuild()?;
+        let off = !names.is_empty();
+        let source = self.target(HDR).map(|t| t.source.clone());
+        let mut list: Vec<Target> = self.targets.iter().filter(|t| t.name != HDR).cloned().collect();
+        if off || source.as_deref().is_some_and(|s| s != HDR) {
+            list.push(Target::new(HDR, source.as_deref(), off)?);
+        }
+        self.set_targets(list)?;
         Ok(self.firmware())
     }
 
     /// POST /api/space {hsl, look_curves}: the shared free space for the
-    /// editor's meter, counted as export would place it
+    /// editor's meter, counted as export would place it, with the colour
+    /// sets of the session's targets
     pub fn space(&self, body: &Value) -> Result<Value, String> {
         let hsl = body.get("hsl").and_then(|v| v.as_object()).map_or(0, |h| {
             h.values().filter(|v| !multiaxial::Hsl::from_json(v).is_neutral()).count()
@@ -234,7 +289,7 @@ impl Session {
             }
             rgb += names.len();
         }
-        Ok(space::report(&self.fw, hsl, rgb))
+        Ok(space::report_with(&self.stock, hsl, rgb, &targets::item_sizes(&self.stock, &self.targets)))
     }
 
     fn engine_for(&self, pts: &[[f64; 2]], fams: &[usize]) -> Engine {
@@ -298,12 +353,18 @@ impl Session {
 
     /// POST /api/export: the patched image packed into an update file, and
     /// the preset. Returns (result JSON, update file, preset JSON text).
+    /// A body with "targets" is the target-first format (export_targets);
+    /// otherwise the earlier editor's, with the session's targets.
     pub fn export(&self, body: &Value) -> Result<(Value, Vec<u8>, String), String> {
+        if body.get("targets").is_some() { self.export_targets(body) } else { self.export_v1(body) }
+    }
+
+    fn export_v1(&self, body: &Value) -> Result<(Value, Vec<u8>, String), String> {
         let empty = Map::new();
         let matrices = body.get("matrices").and_then(|v| v.as_object()).unwrap_or(&empty);
+        // the tone curve for all image controls is gone (plan-gui-redesign.md)
         let tone_req = body.get("tone").cloned().unwrap_or(Value::Null);
-        let pts = points(tone_req.get("points").unwrap_or(&Value::Null));
-        let tone_changed = !tone::is_identity(&pts);
+        let tone_ignored = !tone::is_identity(&points(tone_req.get("points").unwrap_or(&Value::Null)));
         let mut channels: Vec<(usize, Vec<f64>)> = vec![];
         if let Some(ch) = body.get("channels").and_then(|v| v.as_object()) {
             for (k, v) in ch {
@@ -341,52 +402,18 @@ impl Session {
         if !look_curves.is_empty() && channels.iter().any(|(i, _)| *i < 3) {
             return Err("the Random curves of Cross Process cannot be combined with curves for other looks".into());
         }
+        let hsl_in: Vec<(String, Value)> = body.get("hsl").and_then(|v| v.as_object())
+            .map(|h| h.iter().map(|(k, v)| (k.clone(), v.clone())).collect()).unwrap_or_default();
         // even without edits the export is a new look: Cross Process with
         // linear curves and its own matrix
-        let mut img = self.fw.clone();
+        let (mut img, plan) = self.build_for(&self.targets, count_hsl(&hsl_in), 3 * look_curves.len())?;
         looks::patch(&mut img, matrices)?;
-        // HSL: a MultiAxial set of its own for each look that has one
-        let mut hsl_out = Map::new();
-        let mut sets = vec![];
-        if let Some(h) = body.get("hsl").and_then(|v| v.as_object()) {
-            for (name, v) in h {
-                let table = looks::table_of(name).ok_or(format!("HSL for unknown look {name:?}"))?;
-                let parsed = multiaxial::Hsl::from_json(v);
-                if parsed.is_neutral() {
-                    continue;
-                }
-                let e = multiaxial::encode(&parsed, &multiaxial::ycc(&img, table)).map_err(|e| format!("HSL {name}: {e}"))?;
-                sets.push((table, e));
-                hsl_out.insert(name.clone(), v.clone());
-            }
-        }
-        // one pool for HSL sets and curves (space.rs)
-        let plan = space::plan(&img, sets.len(), 3 * look_curves.len())?;
+        let (sets, hsl_out) = encode_hsl(&img, &hsl_in)?;
         multiaxial::patch(&mut img, &sets, &plan.hsl)?;
-        if tone_changed {
-            let fams = families(tone_req.get("families").unwrap_or(&Value::Null));
-            let edit: Vec<(usize, Vec<u16>)> = tone::apply(&gamma::base_curves(&img), &pts, &fams)
-                .into_iter()
-                .map(|(i, v)| (i, v.into_iter().map(|x| x.clamp(0, 0xFFFF) as u16).collect()))
-                .collect();
-            gamma::with_curves(&mut img, &edit);
-        }
         if !channels.is_empty() {
             chan::write(&mut img, &channels)?;
         }
-        // curves for other looks: written after Cross Process's, into the pool,
-        // and the selector that picks them
-        if !look_curves.is_empty() {
-            let mut entries = vec![];
-            for ((look, curves), at) in look_curves.iter().zip(plan.curves.chunks(3)) {
-                for (c, &va) in curves.iter().zip(at) {
-                    crate::addr::put_curve(&mut img, va, c);
-                }
-                let e = curvesel::entry(*look, 0).unwrap();
-                entries.push((e, [at[0], at[1], at[2]]));
-            }
-            curvesel::install(&mut img, &entries)?;
-        }
+        install_look_curves(&mut img, &look_curves, &plan.curves)?;
         if self.hdr_off() {
             curvesel::hdr_effects_off(&mut img)?;
         }
@@ -398,10 +425,11 @@ impl Session {
             Some(c) if c.as_object().is_some_and(|o| !o.is_empty()) => c.clone(),
             _ => Value::Null,
         };
+        let inherit = self.inherit_json();
         let preset = json!({
             "source": format!("{}/unpackedFW", self.build.name),
             "matrices": matrices,
-            "tone": if tone_changed { tone_req.clone() } else { Value::Null },
+            "tone": Value::Null,
             "channel_curves": channel_json,
             // the points behind them, to edit the curves again
             "channel_edits": or_null("channel_edits"),
@@ -412,7 +440,7 @@ impl Session {
             "matrix_edits": or_null("matrix_edits"),
             // per-hue adjustments (MultiAxial) per look
             "hsl": if hsl_out.is_empty() { Value::Null } else { Value::Object(hsl_out) },
-            "inherit": if self.inherit.is_empty() { Value::Null } else { self.inherit_json() },
+            "inherit": if inherit == json!({}) { Value::Null } else { inherit },
             // channel curves of looks other than Cross Process {look: [R, G, B]}
             "look_curves": if look_curves.is_empty() { Value::Null } else {
                 Value::Object(look_curves.iter().map(|(l, c)| {
@@ -420,14 +448,110 @@ impl Session {
                     (name.to_string(), json!(c))
                 }).collect())
             },
-            "effects_off": if self.effects_off.is_empty() { Value::Null } else { json!(self.effects_off) },
+            "effects_off": if self.hdr_off() { json!(self.effects_off()) } else { Value::Null },
         });
-        let preset_text = serde_json::to_string_pretty(&preset).unwrap();
+        let space = space::report_with(&self.stock, sets.len(), look_curves.len(), &targets::item_sizes(&self.stock, &self.targets));
+        let (mut result, packed) = self.pack(img, space)?;
+        if tone_ignored {
+            result["tone_ignored"] = json!(true);
+        }
+        Ok((result, packed, serde_json::to_string_pretty(&preset).unwrap()))
+    }
 
+    /// The target-first export (plan-gui-redesign.md):
+    ///
+    ///     {"targets": {"Vivid": {"source": "NegativeFilm", "matrices": {"Vivid": [9]},
+    ///                            "hsl": {..}, "curves": [R, G, B], "edit": any},
+    ///                  "CrossProcess": {"channels": {"3": [256], ..}, ..},
+    ///                  "HdrCuisine": {"effects_off": true, ..}}}
+    ///
+    /// Only the targets change; every other look stays byte-identical to
+    /// stock. `edit` is the editor's own state, kept in the preset as it is.
+    fn export_targets(&self, body: &Value) -> Result<(Value, Vec<u8>, String), String> {
+        let specs = body["targets"].as_object().ok_or("targets: need an object")?;
+        let mut list = vec![];
+        for (name, spec) in specs {
+            let source = spec.get("source").and_then(|v| v.as_str());
+            let off = spec.get("effects_off").and_then(|v| v.as_bool()).unwrap_or(false);
+            list.push(Target::new(name, source, off)?);
+        }
+        let list = targets::sorted(list)?;
+        let mut matrices = Map::new();
+        let mut hsl_in = vec![];
+        let mut look_curves: Vec<LookCurves> = vec![];
+        let mut channels: Vec<(usize, Vec<f64>)> = vec![];
+        for t in &list {
+            let spec = &specs[&t.name];
+            if let Some(m) = spec.get("matrices").and_then(|v| v.as_object()) {
+                for (look, v) in m {
+                    if !t.owns_matrix(look) {
+                        return Err(if t.name == HDR {
+                            format!("{HDR} gets a matrix of its own only with its effects off")
+                        } else {
+                            format!("target {} cannot write the matrix of {look:?}", t.name)
+                        });
+                    }
+                    matrices.insert(look.clone(), v.clone());
+                }
+            }
+            if let Some(h) = spec.get("hsl").filter(|v| !v.is_null()) {
+                hsl_in.push((t.name.clone(), h.clone()));
+            }
+            if let Some(c) = spec.get("curves").filter(|v| !v.is_null()) {
+                if t.name == CROSS {
+                    return Err("Cross Process keeps its Color Tone curves (channels)".into());
+                }
+                let curves = curve_triplet(c).map_err(|e| format!("curves for {}: {e}", t.name))?;
+                look_curves.push((look_index(&t.name), curves));
+            }
+            if let Some(ch) = spec.get("channels").and_then(|v| v.as_object()) {
+                if t.name != CROSS {
+                    return Err(format!("{}: channels are Cross Process's Color Tone curves; use curves", t.name));
+                }
+                for (k, v) in ch {
+                    let i: usize = k.parse().ok().filter(|&i| i < chan::COUNT).ok_or(format!("channel curve {k}: bad index"))?;
+                    let vals: Vec<f64> = v.as_array().map(|a| a.iter().filter_map(|x| x.as_f64()).collect()).unwrap_or_default();
+                    channels.push((i, vals));
+                }
+            }
+        }
+        if !look_curves.is_empty() && channels.iter().any(|(i, _)| *i < 3) {
+            return Err("the Random curves of Cross Process cannot be combined with curves for other looks".into());
+        }
+        let (mut img, plan) = self.build_for(&list, count_hsl(&hsl_in), 3 * look_curves.len())?;
+        looks::patch(&mut img, &matrices)?;
+        let (sets, _) = encode_hsl(&img, &hsl_in)?;
+        multiaxial::patch(&mut img, &sets, &plan.hsl)?;
+        if !channels.is_empty() {
+            chan::write(&mut img, &channels)?;
+        }
+        install_look_curves(&mut img, &look_curves, &plan.curves)?;
+        if list.iter().any(|t| t.effects_off) {
+            curvesel::hdr_effects_off(&mut img)?;
+        }
+        // the preset: the request as it was accepted, sources filled in
+        let mut out = Map::new();
+        for t in &list {
+            let mut spec = specs[&t.name].clone();
+            spec["source"] = json!(t.source);
+            spec["effects_off"] = json!(t.effects_off);
+            out.insert(t.name.clone(), spec);
+        }
+        let preset = json!({
+            "version": 2,
+            "firmware": format!("{}/unpackedFW", self.build.name),
+            "targets": out,
+        });
+        let space = space::report_with(&self.stock, sets.len(), look_curves.len(), &targets::item_sizes(&self.stock, &list));
+        let (result, packed) = self.pack(img, space)?;
+        Ok((result, packed, serde_json::to_string_pretty(&preset).unwrap()))
+    }
+
+    /// checksum, repack and verify the patched image the way the camera's
+    /// decoder does; the file must decode to exactly `img`
+    fn pack(&self, mut img: Vec<u8>, space: Value) -> Result<(Value, Vec<u8>), String> {
         grfw::fix_image_checksum(&mut img);
         let (packed, redo) = grfw::repack(&self.container, &self.stock, &img)?;
-        // verify before handing it out: every check of the camera's decoder,
-        // and the file must decode to exactly the patched image
         let mut rebuilt = grfw::Container::parse(packed)?;
         let problems = rebuilt.check(Some(self.container.project), Some(self.container.fw_type()));
         if !problems.is_empty() || rebuilt.decode()? != img {
@@ -440,13 +564,55 @@ impl Session {
             "update_file": self.update_name,
             "frames_reencoded": redo,
             "update_sha256": sha256_hex(&packed),
-            "space": space::report(&self.fw, sets.len(), look_curves.len()),
+            "space": space,
         });
-        Ok((result, packed, preset_text))
+        Ok((result, packed))
     }
 }
 
-const HDR: &str = "HdrCuisine";
+fn count_hsl(hsl: &[(String, Value)]) -> usize {
+    hsl.iter().filter(|(_, v)| !multiaxial::Hsl::from_json(v).is_neutral()).count()
+}
+
+/// (table, encoded HSL) per look, and the HSL settings that made them
+type HslSets = (Vec<(u32, multiaxial::Encoded)>, Map<String, Value>);
+
+/// a MultiAxial set of its own for each look with HSL that is not neutral
+fn encode_hsl(img: &[u8], hsl: &[(String, Value)]) -> Result<HslSets, String> {
+    let mut sets = vec![];
+    let mut out = Map::new();
+    for (name, v) in hsl {
+        let table = looks::table_of(name).ok_or(format!("HSL for unknown look {name:?}"))?;
+        let parsed = multiaxial::Hsl::from_json(v);
+        if parsed.is_neutral() {
+            continue;
+        }
+        let e = multiaxial::encode(&parsed, &multiaxial::ycc(img, table)).map_err(|e| format!("HSL {name}: {e}"))?;
+        sets.push((table, e));
+        out.insert(name.clone(), v.clone());
+    }
+    Ok((sets, out))
+}
+
+/// curves for looks other than Cross Process: into the pool at `places`, and
+/// the selector that picks them
+fn install_look_curves(img: &mut [u8], look_curves: &[LookCurves], places: &[u32]) -> Result<(), String> {
+    if look_curves.is_empty() {
+        return Ok(());
+    }
+    let mut entries = vec![];
+    for ((look, curves), at) in look_curves.iter().zip(places.chunks(3)) {
+        for (c, &va) in curves.iter().zip(at) {
+            crate::addr::put_curve(img, va, c);
+        }
+        let e = curvesel::entry(*look, 0).unwrap();
+        entries.push((e, [at[0], at[1], at[2]]));
+    }
+    curvesel::install(img, &entries)
+}
+
+
+use crate::targets::HDR;
 
 /// looks that can get channel curves of their own (Cross Process has its
 /// Color Tone sets; monochrome looks have no colour to curve)

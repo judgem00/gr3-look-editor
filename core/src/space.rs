@@ -7,14 +7,17 @@
 //!     library curves 0..2      the Random set of Cross Process (3 x 512 B);
 //!                              unreachable once the selector is in
 //!     0x53003d00..0x53004000   reserved: selector stub, its table and the
-//!                              private HDR colour set (curvesel.rs)
+//!                              private HDR colour set (curvesel.rs); its
+//!                              tail from 0x53003ea8 is part of the pool
 //!
 //! (0x53002000..0x53002100 holds the model header and the private Cross
 //! Process set of looks.rs.)
 //!
 //! HSL sets keep their fixed slots, in the order above, so an export without
-//! curves places them where it always has. Channel curves go first into the
-//! Random library storage, then into what the HSL sets leave of the padding.
+//! curves places them where it always has. Small items -- the private colour
+//! sets of targets and their toning tables (looks.rs) -- go into the tail of
+//! the reserved block, then to the end of what the HSL sets leave. Channel
+//! curves go first into the Random library storage, then into the rest.
 
 use crate::addr::file_offset;
 use crate::chan;
@@ -22,6 +25,8 @@ use serde_json::{json, Value};
 
 pub const PADDING: [(u32, u32); 2] = [(0x5300_2100, 0x5300_3d00), (0x5300_0d50, 0x5300_2000)];
 pub const RESERVED: (u32, u32) = (0x5300_3d00, 0x5300_4000);
+/// the part of RESERVED after the private HDR set: small items only
+pub const TAIL: (u32, u32) = (0x5300_3ea8, 0x5300_4000);
 /// one MultiAxial set: pointers, axes, nibbles, control, matrix header and 60 matrices
 pub const HSL_SIZE: u32 = 0x20 + 0x20 + 0x20 + 0x30 + 0x890;
 /// one channel curve, 256 x u16
@@ -56,6 +61,26 @@ pub fn is_zero(img: &[u8], lo: u32, hi: u32) -> bool {
 pub struct Plan {
     pub hsl: Vec<u32>,
     pub curves: Vec<u32>,
+    /// small items, in the order asked for
+    pub items: Vec<u32>,
+}
+
+/// place `sizes` (multiples of 4) first-fit in TAIL, then from the top of
+/// `runs` down; the runs shrink by what they give
+fn place_items(sizes: &[u32], runs: &mut [(u32, u32)]) -> Option<Vec<u32>> {
+    let mut tail = TAIL.0;
+    let mut out = vec![];
+    for &n in sizes {
+        if tail + n <= TAIL.1 {
+            out.push(tail);
+            tail += n;
+            continue;
+        }
+        let r = runs.iter_mut().rev().find(|(lo, hi)| hi - lo >= n)?;
+        r.1 -= n;
+        out.push(r.1);
+    }
+    Some(out)
 }
 
 /// padding left over after `hsl` sets, as (lo, hi) runs
@@ -77,9 +102,9 @@ fn leftovers(hsl: usize) -> Vec<(u32, u32)> {
     out
 }
 
-fn curve_places(img: &[u8], hsl: usize) -> Vec<u32> {
+fn curve_places(img: &[u8], runs: &[(u32, u32)]) -> Vec<u32> {
     let mut places = library_spare(img);
-    for (lo, hi) in leftovers(hsl) {
+    for &(lo, hi) in runs {
         let mut at = lo;
         while at + CURVE_SIZE <= hi {
             places.push(at);
@@ -91,18 +116,32 @@ fn curve_places(img: &[u8], hsl: usize) -> Vec<u32> {
 
 /// addresses for `hsl` HSL sets and `curves` channel curves, or why they do not fit
 pub fn plan(img: &[u8], hsl: usize, curves: usize) -> Result<Plan, String> {
+    plan_with(img, hsl, curves, &[])
+}
+
+/// as plan, and small items of the given sizes
+pub fn plan_with(img: &[u8], hsl: usize, curves: usize, items: &[u32]) -> Result<Plan, String> {
     let slots = hsl_slots();
     if hsl > slots.len() {
         return Err(format!("HSL fits into at most {} image controls", slots.len()));
     }
-    let places = curve_places(img, hsl);
+    let mut runs = leftovers(hsl);
+    let items_at = place_items(items, &mut runs).ok_or_else(|| format!(
+        "not enough free space for {} private colour sets and toning tables ({} bytes) next to {hsl} HSL sets",
+        items.len(), items.iter().sum::<u32>()))?;
+    for (&at, &n) in items_at.iter().zip(items) {
+        if !is_zero(img, at, at + n) {
+            return Err(format!("free area at {at:#x} for a colour set is not empty"));
+        }
+    }
+    let places = curve_places(img, &runs);
     if curves > places.len() {
         return Err(format!(
             "not enough free space: {} RGB sets need {} KB, {} KB are left next to {hsl} HSL sets",
             curves.div_ceil(3), kb(curves as u32 * CURVE_SIZE), kb(places.len() as u32 * CURVE_SIZE)
         ));
     }
-    let p = Plan { hsl: slots[..hsl].to_vec(), curves: places[..curves].to_vec() };
+    let p = Plan { hsl: slots[..hsl].to_vec(), curves: places[..curves].to_vec(), items: items_at };
     for &at in &p.hsl {
         if !is_zero(img, at, at + HSL_SIZE) {
             return Err(format!("free area at {at:#x} for the HSL data is not empty"));
@@ -122,17 +161,23 @@ fn kb(bytes: u32) -> f64 {
 }
 
 fn total() -> u32 {
-    PADDING.iter().map(|(lo, hi)| hi - lo).sum::<u32>() + 3 * CURVE_SIZE
+    PADDING.iter().map(|(lo, hi)| hi - lo).sum::<u32>() + 3 * CURVE_SIZE + (TAIL.1 - TAIL.0)
 }
 
 /// the meter: how full the pool is with `hsl` HSL sets and `rgb` RGB sets
 /// (Cross Process excluded, it keeps its own storage), and what still fits
 pub fn report(img: &[u8], hsl: usize, rgb: usize) -> Value {
-    let fits = plan(img, hsl, 3 * rgb).is_ok();
-    let used = hsl as u32 * HSL_SIZE + 3 * rgb as u32 * CURVE_SIZE;
+    report_with(img, hsl, rgb, &[])
+}
+
+/// as report, with small items (private colour sets, toning tables)
+pub fn report_with(img: &[u8], hsl: usize, rgb: usize, items: &[u32]) -> Value {
+    let p = |h: usize, c: usize| plan_with(img, h, c, items).is_ok();
+    let fits = p(hsl, 3 * rgb);
+    let used = hsl as u32 * HSL_SIZE + 3 * rgb as u32 * CURVE_SIZE + items.iter().sum::<u32>();
     let more = |f: &dyn Fn(usize) -> bool| (1..).take_while(|&k| f(k)).count();
-    let more_rgb = if fits { more(&|k| rgb + k <= CURVE_LOOKS && plan(img, hsl, 3 * (rgb + k)).is_ok()) } else { 0 };
-    let more_hsl = if fits { more(&|k| plan(img, hsl + k, 3 * rgb).is_ok()) } else { 0 };
+    let more_rgb = if fits { more(&|k| rgb + k <= CURVE_LOOKS && p(hsl, 3 * (rgb + k))) } else { 0 };
+    let more_hsl = if fits { more(&|k| p(hsl + k, 3 * rgb)) } else { 0 };
     json!({
         "fits": fits,
         "total": total(),
@@ -140,6 +185,7 @@ pub fn report(img: &[u8], hsl: usize, rgb: usize) -> Value {
         "free": total().saturating_sub(used),
         "hsl": hsl,
         "rgb": rgb,
+        "items": items.len(),
         "more_rgb": more_rgb,
         "more_hsl": more_hsl,
     })

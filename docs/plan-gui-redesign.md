@@ -1,6 +1,6 @@
 # Plan: target-first editor
 
-Status: Phase 0 done (2026-10-14), Phase 1 next.
+Status: Phases 0 and 1 done (2026-10-14), Phase 2 next.
 
 ## Goal
 
@@ -120,19 +120,23 @@ downloads (update file + preset). Also reachable when nothing is changed
 
 ### Preset format (v2)
 
-One object per target:
+One object per target, the export request as the core accepted it
+(Phase 1):
 
 ```json
-{ "version": 2,
+{ "version": 2, "firmware": "fwdc239b/unpackedFW",
   "targets": {
-    "Vivid": { "source": "NegativeFilm", "matrix_edits": {…}, "curves": {…},
-               "wheels": {…}, "hsl": {…} },
-    "HdrCuisine": { "source": "HdrCuisine", "effects_off": true, "curves": {…} } } }
+    "Vivid": { "source": "NegativeFilm", "effects_off": false,
+               "matrices": { "Vivid": [9] }, "hsl": {…}, "curves": [R, G, B],
+               "edit": {…} },
+    "CrossProcess": { "source": "Retro", "channels": { "3": [256], … } },
+    "HdrCuisine": { "source": "Standard", "effects_off": true } } }
 ```
 
-v1 presets (`matrices`, `matrix_edits`, `inherit`, `look_curves`, `hsl`,
-`effects_off`, …) are converted on load. A v1 `tone` curve is ignored with a
-note, since the editor no longer writes one.
+`edit` is the editor's own state (sliders, curve points, wheels) and is kept
+as it is. v1 presets (`matrices`, `matrix_edits`, `inherit`, `look_curves`,
+`hsl`, `effects_off`, …) are converted on load in the editor. A v1 `tone`
+curve is ignored with a note, since the editor no longer writes one.
 
 ## Phases
 
@@ -177,9 +181,11 @@ live view, saturation 0 and +4: 385 checks pass.
 
 Rules for Phase 1 from this:
 
-1. **Bleach Bypass as a target** is one look: tables 18, 22 and 23 all point
-   at its one private set. The camera's Bleach Bypass variant setting then
-   only picks a toning entry of that set.
+1. **Bleach Bypass as a target** built from another source is one look:
+   tables 18, 22 and 23 all point at its one private set. The camera's
+   Bleach Bypass variant setting then only picks a toning entry of that
+   set. (Phase 1: with Bleach Bypass as its own source the variants keep
+   their sets.)
 2. **A source with toning** (Bleach Bypass 1/2/3, Retro) shifts the private
    set's toning pointers by its index (1/2/3, 4). Bleach Bypass 1, 2 and 3
    stay separate sources.
@@ -207,6 +213,53 @@ vignette. To be confirmed on the camera in Phase 4.
 - Tests: every target independent (editing one leaves every other table's
   set, matrix and curves byte-identical), v1 → v2 round trip, space with
   everything used.
+
+**Result (2026-10-14): done.** `core/src/targets.rs` holds the model;
+`looks::private_set_at` replaces `private_set`/`private_cross`.
+
+- *Targets:* the eight colour image controls; sources are every colour look
+  and table variant except HDR's monochrome table 24. A target that is its
+  own source keeps its stock structure (Bleach Bypass its variants, Retro
+  its toning) and is edited in place where its matrix is its own. A private
+  set is written for Cross Process (always, fixed), HDR with effects off
+  (fixed), Standard (it shares its set with HDR in stock) and every target
+  built from another source. Sources are read from the stock image, so
+  targets never chain.
+- *Toning*, refined from Phase 0 after reading the tables: only Bleach
+  Bypass (index = SI+0x786) and Retro (index = its toning SI+0x787, 0..8,
+  4 neutral) have tables that are not zero; every other colour look reads
+  index 0. A target that reads index 0 gets the pointers moved by 2 × the
+  source's index. Bleach Bypass and Retro as targets move their index with
+  their own menu, so their set points at two 10-entry tables (40 bytes)
+  that repeat the source's entry, or at a zero table when the source has
+  none. Side effect: Cross Process built from Retro used to read Retro's
+  index 0, toning −4; it now reads Retro's neutral toning.
+- *Space:* the small items (sets 0x68, toning tables 0x28) go into the tail
+  of the reserved block, then below the end of what the HSL sets leave.
+  Phase 0's count was off: an HSL set is 0x920 bytes, so even with all five
+  HSL sets five private sets fit (tail 3, the two gaps after the slots one
+  each). The meter (`/api/space`, export result) counts them.
+- *API:* `POST /api/target {target, source, effects_off, remove}`;
+  `/api/firmware` lists `targets`, `target_names`, `sources`. The export
+  takes `{"targets": {...}}` (format above); without it, the earlier
+  editor's request still works on the session's targets, so the current
+  editor keeps working until Phase 2. The core does not convert v1 presets;
+  that stays with the editor.
+- *Tone curve:* not written any more; a v1 request with one gets
+  `tone_ignored: true` in the result.
+- *Tests:* `tests/targets.rs` (an export without targets is Ricoh's file
+  byte for byte; seven targets at once with every source rule, each with a
+  set of its own, the source untouched, toning words, round trip through
+  the preset; own source keeps the structure; refusals; pool with 5 HSL
+  sets). The reference exports (`tests/session.rs`) stay byte-identical
+  except Cross Process from Retro, which differs only in the four toning
+  pointers (+8), and the two with a tone curve. `TARGETS_DUMP=1 cargo test
+  --test targets every_target` writes that image to `work/targets-test/`;
+  `tools/verify-targets.py --patched` runs it in Unicorn: all 56 checks pass
+  (non-targets stock; each target equals its source with the target's
+  matrix, Retro at toning −4/0/+4; Cross Process outside its gamma LUTs,
+  which its curve path always changes). The current editor still loads,
+  edits and exports in the browser with the new core.
 
 ### Phase 2: editor
 

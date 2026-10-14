@@ -80,6 +80,10 @@ impl Editor {
         Ok(self.session.set_inherit(&parse(body)?).map_err(js)?.to_string())
     }
 
+    pub fn target(&mut self, body: &str) -> Result<String, JsError> {
+        Ok(self.session.set_target(&parse(body)?).map_err(js)?.to_string())
+    }
+
     pub fn effects(&mut self, body: &str) -> Result<String, JsError> {
         Ok(self.session.set_effects(&parse(body)?).map_err(js)?.to_string())
     }

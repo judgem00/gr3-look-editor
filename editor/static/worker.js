@@ -42,6 +42,7 @@ const ops = {
   tone: ({ body }) => JSON.parse(editor.tone(body)),
   hsl: ({ body }) => JSON.parse(editor.hsl(body)),
   effects: ({ body }) => JSON.parse(editor.effects(body)),
+  target: ({ body }) => JSON.parse(editor.target(body)),
   space: ({ body }) => JSON.parse(editor.space(body)),
   export({ body }) {
     const e = editor.export(body);
