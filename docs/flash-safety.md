@@ -6,8 +6,8 @@ camera, and what it cannot rule out.
 > **Disclaimer.** These safeguards lower the risk. They do not remove it.
 > Flashing modified firmware may void your warranty and can, in the worst
 > case, leave the camera unusable. There is no confirmed recovery procedure
-> yet. The modified update has been tested on one GR III only, and not yet on
-> any GR IIIx. The software is provided "as is", without warranty of any kind
+> yet. The modified update has been tested on one GR III and one GR IIIx
+> only. The software is provided "as is", without warranty of any kind
 > (see [LICENSE](../LICENSE)). The authors accept no liability for damage to
 > cameras, data or anything else. **You flash at your own risk.**
 
@@ -150,7 +150,8 @@ before it writes. They do not prove what happens after that.
   within the allowed ranges can still produce settings the camera's image
   pipeline has never seen.
 - **Little hardware testing.** The modified update has been flashed on one GR
-  III. It has not been flashed on any GR IIIx.
+  III and one GR IIIx. Other units, or other settings, may behave
+  differently.
 - **Recovery unconfirmed.** The firmware contains signs of a recovery path
   (an SD boot mode of the M0 supervisor, a service dump/restore, a factory
   full update). None of them has been confirmed on a real camera

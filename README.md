@@ -16,8 +16,8 @@ recomputed.
 > **Warning — read before flashing.** Flashing modified firmware may void
 > your warranty and can, in the worst case, leave the camera unusable. There
 > is no known recovery procedure yet. The modified update has been tested on
-> one GR III only, and **not yet on any GR IIIx**. You use this at your own
-> risk. What the editor does to lower that risk, and what remains open, is in
+> one GR III and one GR IIIx only. You use this at your own risk. What the
+> editor does to lower that risk, and what remains open, is in
 > [docs/flash-safety.md](docs/flash-safety.md).
 
 This is an independent project. It is not affiliated with or endorsed by
