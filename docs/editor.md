@@ -85,8 +85,9 @@ of **Cross Process**; the other image controls stay unchanged. Tabs:
 **1 Base** (the colours of an existing image control as a starting point,
 copied into a separate matrix for Cross Process, or an extra base, see
 below), **2 Colour**, **3 Curves**
-(Color Tone 1–3, RGB curves linked or per channel, colour wheels; the curves
-always start linear), **4 Export**. Other image controls and the tone curve
+(Cross Process with Color Tone 1–3, or another colour image control; RGB
+curves linked or per channel, colour wheels; the curves always start
+linear), **4 Export**. Other image controls and the tone curve
 for all image controls are under "advanced". Technically Cross Process gets
 its own ColorMatrix set and its own matrix in the free area `0x53002080…`
 (`core/src/looks.rs`, `private_cross`; the set is 21 words long).
@@ -123,12 +124,28 @@ its own ColorMatrix set and its own matrix in the free area `0x53002080…`
   1–3** (the Color Tone setting in the camera menu; internally preset 1–3)
   and Random (not reachable from the menu). When a Cross Process DNG is
   loaded, the editor selects the shot's set. Edited like the tone curve; a
-  click copies a single channel or a whole set from another variant. They only
-  take effect with Cross Process — the preview applies them when that image
-  control is selected.
+  click copies a single channel or a whole set from another variant.
+- **Channel curves of other image controls:** the "Image control" selector on
+  the curves tab also offers Standard, Vivid, Positive Film, Bleach Bypass,
+  Retro, HDR Tone and Negative Film, with one set each (the Bleach Bypass and
+  HDR variants use their look's). They are edited exactly like Cross
+  Process's. In the firmware a small code patch picks each look's curves
+  ([tone-curves.md](tone-curves.md#channel-curves-for-every-colour-look-selector));
+  it is only written when at least one of these looks has curves. In the
+  editor their channels are indices 12–32 (three per look, in the order
+  above); the export turns them into `look_curves`. The preview applies the
+  curves of the image control it shows.
+- **Free space:** the curves of other image controls and the HSL sets share
+  about 13 KB in the firmware. A meter on the curves and export tabs shows
+  what is left; an export that does not fit is refused with the numbers.
+- **HDR effects off:** with HDR Tone selected on the curves tab, this switch
+  turns off its local tone mapping and strength, so HDR becomes a plain
+  image control with a colour matrix of its own (no longer shared with
+  Standard). Key, contrast, highlight and shadow then stay at 0 in the
+  camera ([look-mapping.md](look-mapping.md#hdr-without-its-effects)).
 - **Colour wheels** (shadows, midtones, highlights, global, with luminance
   and balance) as in Lightroom Color Grading. They are converted into the
-  R/G/B channel curves of the selected Cross Process set and therefore act
+  R/G/B channel curves of the selected set and therefore act
   like RGB curves, not in a perceptual colour space. With "Random" the camera
   redistributes the curves per shot, so a tint changes colour. The preset
   stores the wheels; they stay editable after loading.
@@ -183,9 +200,11 @@ sort out the recovery path.
 via "Load preset" in the title bar or by drag & drop onto the preview; "Load
 example preset" loads the bundled `editor/static/presets/example.looks.json`.
 A preset replaces all current changes: sliders, tone curve, contrast
-families, channel curve points, colour wheels and look takeover. The base
+families, channel curve points (also of other image controls, `look_curves`),
+colour wheels, look takeover and HDR effects off (`effects_off`). The base
 matrix is only stored if it was entered by hand; otherwise it comes from the
 firmware on load. From there you can keep working and export again.
 
-Standard and HdrCuisine share a matrix: a change applies to both. Cross
-Process has its own copy.
+Standard and HdrCuisine share a matrix: a change applies to both, unless
+HDR's effects are off, which gives HDR its own copy. Cross Process always has
+its own copy.

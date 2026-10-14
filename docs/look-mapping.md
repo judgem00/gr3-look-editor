@@ -134,7 +134,7 @@ value 1…12 → internal index:
 | PositiveFilm | 17 | `0x53dc272c` | 14,495,644 |
 | BleechBypass_GR | 18 | `0x53dc2474` | 14,494,948 |
 | Retro | 19 | `0x53dc2818` | 14,495,880 |
-| HdrCuisine | 20 | `0x53dc2754` (= Standard) | 14,495,684 |
+| HdrCuisine | 20 | `0x53dc2754` (= Standard; own copy with effects off) | 14,495,684 |
 | CrossProcess | 21 | `0x53dc2754` (= Standard) | 14,495,684 |
 | NegativeFilm | 22 → 25 | `0x53dc2ad0` | 14,496,576 |
 
@@ -169,6 +169,36 @@ alone explains — further tables (saturation/MultiAxial) are at work there. A
 Standard photo with a different file naming scheme (`MRI…`) fits PositiveFilm
 better; open. Tool: [`tools/look-editor/`](editor.md).
 
+### HDR without its effects
+
+HDR Tone shares Standard's colour data; what makes it HDR are three effects
+outside the colour data. With "HDR effects off" the editor patches one word
+each (`curvesel::HDR_OFF`, stock word checked first). SI+0x796 is HDR Tone's
+level (0 = off, 1–3); only the HDR branches read it:
+
+| Effect | Site | Stock | Patched |
+|---|---|---|---|
+| local tone mapping | `0x535131fc` | `beq 0x53513274` | `beq 0x53513218` (the Standard path) |
+| HDR strength to the pipeline | `0x536dbeb4` | `ldrb sb, [r3, #0x788]` | `mov sb, #0` |
+| monochrome variant (table 24) | `0x536dc27c` | `beq 0x536dc818` | `nop` (always table 20) |
+| HDR level to the look context (`ctx+0x1fa`) | `0x536dbebc` | `ldrb r2, [r3, #0x796]` | `mov r2, #0` |
+| HDR level to the local processing | `0x53503188` | `ldrb r3, [r5, #0x796]` | `mov r3, #0` |
+
+In Unicorn the patched HDR equals Standard bit for bit in ImageTuning Make
+(still and live view, all three strengths), and the tone sliders key,
+contrast, highlight and shadow stay at neutral, as the HDR branch of the
+setting filler (`0x536dbec0` ff.) fixes them. Saturation and hue still act.
+The local processing fill `0x5350304c` passes SI+0x796 into its parameter
+`+6` for any look; patched it is always 0 (checked in Unicorn). The first
+three patches alone were not enough on the camera: shots were right, but
+in-camera RAW development of an HDR shot brought the tone mapping back
+(2026-10-14). That path fills the local processing parameters without the
+gate at `0x535131c0`; HDR files store no clarity/shading values. With all
+five patches HDR stays without tone mapping in RAW development too (GR III,
+second test flash, 2026-10-14). The first four patches come from
+[gr3-film-mods](https://github.com/idontknownihil/gr3-film-mods) (camera-tested
+for shots there).
+
 ## 5. Correction of earlier assumptions
 
 - `CalcTable` at `0x536e93ac` and the "selection function" `0x536e955c`
@@ -184,9 +214,11 @@ better; open. Tool: [`tools/look-editor/`](editor.md).
   computed from 15 base curves and the sliders, not selected per look. Bleach
   Bypass and HDR have variants with their own parameter sets (table index
   22/23 and 24). MultiAxial and the toning tables remain open.
-- **Shared matrices:** Standard, HdrCuisine and CrossProcess share one
-  matrix. A custom look for only one of them needs a free slot and a
-  redirected pointer in the ColorMatrix set (both in `.data`).
+- **Shared matrices:** solved for the editor. Standard, HdrCuisine and
+  CrossProcess share one ColorMatrix set. `looks::private_set` copies the set
+  (21 words) and its matrix into free space and redirects the look's entry in
+  `0x55018d94`: Cross Process always (`0x53002080`), HDR when its effects are
+  off (`0x53003e40`, next to the curve selector).
 - **Repacking the `.bin`**: solved, see
   [firmware-packing.md](firmware-packing.md). Before any flash the recovery
   path still has to be clarified

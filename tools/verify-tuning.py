@@ -55,7 +55,10 @@ HDR_OFF = [
     (0x535131FC, None, "b_to:0x53513218"),   # local tone mapping: beq -> as Standard
     (0x536DBEB4, None, 0xE3A09000),          # ldrb sb,[r3,#0x788] -> mov sb,#0
     (0x536DC27C, None, 0xE320F000),          # beq 0x536dc818 -> nop
+    (0x536DBEBC, None, 0xE3A02000),          # ldrb r2,[r3,#0x796] -> mov r2,#0 (ctx+0x1fa)
+    (0x53503188, None, 0xE3A03000),          # ldrb r3,[r5,#0x796] -> mov r3,#0 (local processing)
 ]
+LOCAL_FILL = 0x5350304C                      # local processing parameters (clarity, shading, HDR level)
 
 
 def linear():
@@ -359,6 +362,16 @@ def q4_hdr(rtos, r):
         hdr = Run(patched).make(20, {0x788: 1, off: 7})
         r.check(not diff_runs(neutral[0], hdr[0]) and neutral[1] == hdr[1],
                 f"patched HDR ignores slider {off:#x} (= neutral Standard)")
+    # the local processing fill (also used by in-camera RAW development) gets no HDR level
+    def fill(img, level):
+        e = emu.Emu(img)
+        obj, par, si = e.alloc(0x40), e.alloc(0x40), e.alloc(0x1000)
+        e.w32(obj + 0x10, par)
+        e.w8(si + 0x793, 4); e.w8(si + 0x794, 4); e.w8(si + 0x796, level)
+        e.call(LOCAL_FILL, obj, si, 0)
+        return struct.unpack("<4H", e.read(par, 8))
+    r.check([fill(rtos, v)[3] for v in range(4)] == [0, 1, 2, 3], "stock fill passes the HDR level (param +6)")
+    r.check([fill(patched, v)[3] for v in range(4)] == [0, 0, 0, 0], "patched fill: HDR level always 0")
     # the patches must not touch any other look
     for name, look, st in CASES:
         if look == 20:
