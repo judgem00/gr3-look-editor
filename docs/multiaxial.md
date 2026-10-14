@@ -75,8 +75,9 @@ that adds the least error, or merges a step into "unchanged". The answer to
 `/api/hsl` contains the smooth curves and the steps, and the editor draws
 both.
 
-[multiaxial-steps.html](multiaxial-steps.html) shows the quadrants and the
-steps interactively (open the file in a browser).
+[An interactive page](https://judgem00.github.io/gr3-look-editor/multiaxial-steps.html)
+([source](../editor/static/multiaxial-steps.html)) shows the quadrants and the
+steps.
 
 ## What a step or band becomes
 
