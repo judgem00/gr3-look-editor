@@ -177,10 +177,19 @@
 
     <!-- ===== 3 Curves ===== -->
     <section class="tab" data-tab="curves" hidden>
-      <p class="lead" data-i18n-html="curves_lead"></p>
+      <label class="field-label" for="curve-look" data-i18n="curve_look">Image control</label>
+      <select id="curve-look"></select>
+      <p class="lead" id="curves-lead"></p>
 
-      <label class="field-label" for="chan-sets" data-i18n="variant">Variant</label>
-      <div class="seg small" id="chan-sets"></div>
+      <div id="chan-variant">
+        <label class="field-label" for="chan-sets" data-i18n="variant">Variant</label>
+        <div class="seg small" id="chan-sets"></div>
+      </div>
+
+      <div id="hdr-box" hidden>
+        <label class="check"><input type="checkbox" id="hdr-off"> <span data-i18n="hdr_off">HDR effects off</span></label>
+        <p class="note muted" data-i18n="hdr_off_note"></p>
+      </div>
 
       <div id="chan-panel">
         <h3 data-i18n="curves">Curves</h3>
@@ -192,6 +201,7 @@
           <button class="btn" id="chan-reset-set" data-i18n="reset_variant">Reset variant</button>
         </div>
         <p class="note" id="chan-note"></p>
+        <p class="note muted" id="space-note"></p>
       </div>
 
       <div id="grade-panel">
@@ -242,6 +252,7 @@
     <section class="tab" data-tab="export" hidden>
       <h3 data-i18n="your_look">Your look</h3>
       <ul class="changes" id="changes"></ul>
+      <p class="note muted" id="space-export"></p>
       <p class="note warn" data-i18n="risk"></p>
       <label class="check"><input type="checkbox" id="risk-ok">
         <span data-i18n="risk_ok">I understand the risk and flash the file at my own responsibility.</span></label>
