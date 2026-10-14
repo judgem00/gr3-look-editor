@@ -21,12 +21,17 @@
       <span data-i18n="load_preset">Load preset</span>
       <input type="file" id="head-preset-file" accept=".json,application/json" hidden>
     </label>
-    <label class="btn primary">
+    <label class="btn">
       <span data-i18n="open_photo">Open photo</span>
       <input type="file" id="file" accept=".dng,.DNG,.json" hidden>
     </label>
+    <button class="btn primary" id="export-open" type="button">Export</button>
   </div>
 </header>
+<div class="notice" id="notice" hidden>
+  <span id="notice-text"></span>
+  <button class="btn ghost" id="notice-close" type="button" aria-label="Close">×</button>
+</div>
 
 <main>
   <section class="stage">
@@ -95,191 +100,132 @@
     </details>
   </section>
 
-  <aside data-tab="base">
-    <div class="look-head">
-      <div class="hero">
-        <div class="hero-title" data-i18n="hero_title">Your own image control</div>
-        <p data-i18n-html="hero_text"></p>
+  <aside>
+    <!-- pinned: what gets the look, and what it starts from -->
+    <div class="pick">
+      <div class="pick-row">
+        <label for="target"><span class="num">1</span><span data-i18n="target">Target</span></label>
+        <select id="target"></select>
       </div>
-      <p class="note warn" id="other-look" hidden></p>
+      <div class="pick-row">
+        <label for="source"><span class="num">2</span><span data-i18n="source">Source</span></label>
+        <select id="source" disabled></select>
+      </div>
+      <p class="note" id="pick-note" hidden></p>
     </div>
 
-    <nav class="tabs" id="tabs">
-      <button data-tab="base" class="on"><span class="num">1</span><span data-i18n="tab_base">Base</span><i></i></button>
-      <button data-tab="color"><span class="num">2</span><span data-i18n="tab_color">Colour</span><i></i></button>
-      <button data-tab="curves"><span class="num">3</span><span data-i18n="tab_curves">Curves</span><i></i></button>
-      <button data-tab="export"><span class="num">4</span><span data-i18n="tab_export">Export</span><i></i></button>
-    </nav>
+    <!-- one scrolling column of the target's edits -->
+    <div class="sections" id="sections">
+      <p class="note none" id="no-target" data-i18n="no_target"></p>
 
-    <!-- ===== 1 Base ===== -->
-    <section class="tab" data-tab="base">
-      <p class="lead" data-i18n="base_lead"></p>
-      <ul class="base-list" id="base-list"></ul>
-      <p class="note muted" id="inherit-note"></p>
-      <h3 data-i18n="in_camera">In the camera</h3>
-      <ol class="howto">
-        <li data-i18n-html="cam_1"></li>
-        <li data-i18n-html="cam_2"></li>
-        <li data-i18n-html="cam_3"></li>
-      </ol>
-    </section>
-
-    <!-- ===== 2 Colour ===== -->
-    <section class="tab" data-tab="color" id="editor" hidden>
-      <p class="lead" data-i18n="color_lead"></p>
-      <div class="slider">
-        <label for="sat"><span data-i18n="saturation">Saturation</span> <output id="sat-out">1.00</output></label>
-        <input type="range" id="sat" min="0" max="2" step="0.01" value="1">
-      </div>
-      <div class="slider">
-        <label for="hue"><span data-i18n="hue">Hue</span> <output id="hue-out">0°</output></label>
-        <input type="range" id="hue" min="-45" max="45" step="0.5" value="0">
-      </div>
-      <h3><span data-i18n="calibration">Calibration</span> <span class="muted" data-i18n="calibration_hint">· like Lightroom</span></h3>
-      <div class="calib" id="calib"></div>
-      <p class="note muted" data-i18n="calib_note"></p>
-      <div class="row"><button class="btn" id="reset" data-i18n="reset_colors">Reset colours</button></div>
-
-      <h3><span data-i18n="hsl">Colour curves</span> <span class="muted" data-i18n="hsl_hint">· HSL</span></h3>
-      <div class="seg small" id="hsl-channels">
-        <button data-ch="hue" data-i18n="hsl_hh">Hue vs Hue</button><button data-ch="sat" data-i18n="hsl_hs">Hue vs Sat</button><button data-ch="lum" data-i18n="hsl_hl">Hue vs Lum</button>
-      </div>
-      <canvas id="hsl-curve" width="560" height="260"></canvas>
-      <div class="hsl-foot"><span class="note muted" data-i18n="hsl_curve_help"></span><output id="hsl-readout"></output></div>
-      <div class="row"><button class="btn" id="hsl-reset-curve" data-i18n="hsl_reset_curve">Reset curve</button>
-        <button class="btn" id="hsl-reset" data-i18n="hsl_reset">Reset all curves</button></div>
-      <details class="adv">
-        <summary data-i18n="hsl_protect">Protect shadows and highlights</summary>
-        <div class="slider"><label for="hsl-shadows"><span data-i18n="hsl_shadows">Shadows up to</span> <output id="hsl-shadows-out"></output></label>
-          <input type="range" id="hsl-shadows" min="0" max="2048" step="16" value="0"></div>
-        <div class="slider"><label for="hsl-hi"><span data-i18n="hsl_highlights">Highlights from</span> <output id="hsl-hi-out"></output></label>
-          <input type="range" id="hsl-hi" min="2048" max="4096" step="16" value="4096"></div>
-        <div class="slider"><label for="hsl-hi-w"><span data-i18n="hsl_hi_weight">Effect at white</span> <output id="hsl-hi-w-out"></output></label>
-          <input type="range" id="hsl-hi-w" min="0" max="100" step="1" value="100"></div>
-        <p class="note muted" data-i18n="hsl_protect_note"></p>
-      </details>
-      <p class="note muted" id="hsl-status"></p>
-      <p class="note muted" data-i18n="hsl_note"></p>
-
-      <details class="adv">
-        <summary data-i18n="matrix_adv">Matrix values (advanced)</summary>
-        <p class="note muted"><span data-i18n="matrix_note"></span> <span class="addr" id="addr"></span></p>
-        <div class="matrix" id="matrix"></div>
-        <div class="sums" id="sums"></div>
-      </details>
-      <details class="adv" id="other-looks">
-        <summary data-i18n="other_looks">Change other image controls of the camera (advanced)</summary>
-        <p class="note muted" data-i18n="other_looks_note"></p>
-        <select id="look-select"></select>
-        <p class="note warn" id="shared-note" hidden></p>
-      </details>
-    </section>
-
-    <!-- ===== 3 Curves ===== -->
-    <section class="tab" data-tab="curves" hidden>
-      <label class="field-label" for="curve-look" data-i18n="curve_look">Image control</label>
-      <select id="curve-look"></select>
-      <p class="lead" id="curves-lead"></p>
-
-      <div id="chan-variant">
-        <label class="field-label" for="chan-sets" data-i18n="variant">Variant</label>
-        <div class="seg small" id="chan-sets"></div>
-      </div>
-
-      <div id="hdr-box" hidden>
-        <label class="check"><input type="checkbox" id="hdr-off"> <span data-i18n="hdr_off">HDR effects off</span></label>
-        <p class="note muted" data-i18n="hdr_off_note"></p>
-      </div>
-
-      <div id="chan-panel">
-        <h3 data-i18n="curves">Curves</h3>
-        <div class="seg small rgb" id="chan-channels"><button>RGB</button><button>R</button><button>G</button><button>B</button></div>
-        <p class="note muted" id="chan-title"></p>
-        <canvas id="chan-curve" width="560" height="560"></canvas>
-        <div class="row">
-          <button class="btn" id="chan-reset" data-i18n="reset_curve">Reset curve</button>
-          <button class="btn" id="chan-reset-set" data-i18n="reset_variant">Reset variant</button>
-        </div>
-        <p class="note" id="chan-note"></p>
-        <p class="note muted" id="space-note"></p>
-      </div>
-
-      <div id="grade-panel">
-        <h3><span data-i18n="wheels">Colour wheels</span> <span class="muted">· <span id="grade-set"></span></span></h3>
-        <div class="wheels" id="wheels"></div>
-        <div class="slider"><label for="grade-balance"><span data-i18n="balance">Balance shadows ↔ highlights</span> <output id="grade-balance-out">0</output></label>
-          <input type="range" id="grade-balance" min="-100" max="100" step="1" value="0"></div>
-        <p class="note muted" data-i18n="wheels_note"></p>
-        <div class="row"><button class="btn" id="grade-reset" data-i18n="reset_wheels">Reset colour wheels</button></div>
-        <p class="note" id="grade-note"></p>
-      </div>
-
-      <details class="adv">
-        <summary data-i18n="copy_adv">Copy curves (advanced)</summary>
-        <h3 data-i18n="all_three">All three curves of the variant</h3>
-        <canvas id="chan-effective" width="560" height="300"></canvas>
-        <p class="note muted" data-i18n="dashed_neutral"></p>
-        <div class="copy">
-          <label for="chan-source" data-i18n="copy_one">Copy a single curve from</label>
-          <select id="chan-source"></select>
-          <button class="btn" id="chan-copy" data-i18n="copy_btn">Copy</button>
-        </div>
-        <div class="copy">
-          <label for="chan-source-set" data-i18n="copy_set">Copy a whole variant from</label>
-          <select id="chan-source-set"></select>
-          <button class="btn" id="chan-copy-set" data-i18n="copy_btn">Copy</button>
+      <details class="sec" id="sec-base" data-sec="base">
+        <summary><span data-i18n="sec_base">Base colour</span><i class="dot"></i>
+          <button class="reset" type="button" data-i18n="reset" data-i18n-title="reset_t">Reset</button></summary>
+        <div class="body">
+          <p class="note warn" id="base-hdr" data-i18n="base_hdr_on" hidden></p>
+          <div id="base-edit">
+            <div class="slider">
+              <label for="sat"><span data-i18n="saturation">Saturation</span> <output id="sat-out">1.00</output></label>
+              <input type="range" id="sat" min="0" max="2" step="0.01" value="1">
+            </div>
+            <div class="slider">
+              <label for="hue"><span data-i18n="hue">Hue</span> <output id="hue-out">0°</output></label>
+              <input type="range" id="hue" min="-45" max="45" step="0.5" value="0">
+            </div>
+            <h3 data-i18n-title="calib_note"><span data-i18n="calibration">Calibration</span> <span class="muted" data-i18n="calibration_hint">· like Lightroom</span></h3>
+            <div class="calib" id="calib"></div>
+          </div>
         </div>
       </details>
 
-      <details class="adv" id="tone-panel">
-        <summary data-i18n="tone_adv">Tone curve for all image controls (advanced)</summary>
-        <p class="note warn" data-i18n="tone_warn"></p>
-        <canvas id="curve" width="560" height="560"></canvas>
-        <div class="row"><button class="btn" id="tone-reset" data-i18n="reset_tone">Reset tone curve</button></div>
-        <div class="fams">
-          <span class="muted" data-i18n="families">Apply to contrast levels:</span>
-          <label><input type="checkbox" class="fam" value="2" checked> <span data-i18n="fam_low">low</span></label>
-          <label><input type="checkbox" class="fam" value="1" checked> <span data-i18n="fam_normal">normal</span></label>
-          <label><input type="checkbox" class="fam" value="0" checked> <span data-i18n="fam_high">high</span></label>
+      <details class="sec" id="sec-curves" data-sec="curves">
+        <summary><span data-i18n="sec_curves">RGB curves</span><i class="dot"></i>
+          <button class="reset" type="button" data-i18n="reset" data-i18n-title="reset_t">Reset</button></summary>
+        <div class="body">
+          <div id="chan-variant">
+            <div class="seg small" id="chan-sets" data-i18n-title="variant_t"></div>
+          </div>
+          <div class="seg small rgb" id="chan-channels"><button>RGB</button><button>R</button><button>G</button><button>B</button></div>
+          <canvas id="chan-curve" width="560" height="560"></canvas>
+          <p class="note muted" id="chan-title"></p>
+          <div class="row">
+            <button class="btn" id="chan-reset" data-i18n="reset_curve">Reset curve</button>
+          </div>
         </div>
-        <h3 data-i18n="tone_camera">Curve as the camera computes it</h3>
-        <canvas id="effective" width="560" height="240"></canvas>
-        <p class="note muted" id="effective-note" data-i18n="tone_legend"></p>
       </details>
-    </section>
 
-    <!-- ===== 4 Export ===== -->
-    <section class="tab" data-tab="export" hidden>
-      <h3 data-i18n="your_look">Your look</h3>
-      <ul class="changes" id="changes"></ul>
-      <p class="note muted" id="space-export"></p>
-      <p class="note warn" data-i18n="risk"></p>
-      <label class="check"><input type="checkbox" id="risk-ok">
-        <span data-i18n="risk_ok">I understand the risk and flash the file at my own responsibility.</span></label>
-      <button class="btn primary wide" id="export" data-i18n="create_update" disabled>Create update file</button>
-      <p class="note" id="export-msg"></p>
+      <details class="sec" id="sec-wheels" data-sec="wheels">
+        <summary><span data-i18n="sec_wheels">Colour wheels</span><i class="dot"></i>
+          <button class="reset" type="button" data-i18n="reset" data-i18n-title="reset_t">Reset</button></summary>
+        <div class="body">
+          <p class="note muted" id="grade-set"></p>
+          <div class="wheels" id="wheels" data-i18n-title="wheels_note"></div>
+          <div class="slider"><label for="grade-balance"><span data-i18n="balance">Balance shadows ↔ highlights</span> <output id="grade-balance-out">0</output></label>
+            <input type="range" id="grade-balance" min="-100" max="100" step="1" value="0"></div>
+        </div>
+      </details>
 
-      <div class="downloads" id="downloads" hidden>
-        <a class="btn primary wide" id="dl-update" download data-i18n="dl_update">Download update file</a>
-        <a class="btn wide" id="dl-preset" download data-i18n="dl_preset">Save preset</a>
-      </div>
+      <details class="sec" id="sec-hsl" data-sec="hsl">
+        <summary><span data-i18n="sec_hsl">HSL curves</span><i class="dot"></i>
+          <button class="reset" type="button" data-i18n="reset" data-i18n-title="reset_t">Reset</button></summary>
+        <div class="body">
+          <div class="seg small" id="hsl-channels">
+            <button data-ch="hue" data-i18n="hsl_hh">Hue vs Hue</button><button data-ch="sat" data-i18n="hsl_hs">Hue vs Sat</button><button data-ch="lum" data-i18n="hsl_hl">Hue vs Lum</button>
+          </div>
+          <canvas id="hsl-curve" width="560" height="260" data-i18n-title="hsl_curve_help"></canvas>
+          <div class="hsl-foot"><span class="note muted" id="hsl-status"></span><output id="hsl-readout"></output></div>
+          <div class="row"><button class="btn" id="hsl-reset-curve" data-i18n="hsl_reset_curve">Reset curve</button></div>
+          <details class="adv">
+            <summary data-i18n="hsl_protect" data-i18n-title="hsl_protect_note">Protect shadows and highlights</summary>
+            <div class="slider"><label for="hsl-shadows"><span data-i18n="hsl_shadows">Shadows up to</span> <output id="hsl-shadows-out"></output></label>
+              <input type="range" id="hsl-shadows" min="0" max="2048" step="16" value="0"></div>
+            <div class="slider"><label for="hsl-hi"><span data-i18n="hsl_highlights">Highlights from</span> <output id="hsl-hi-out"></output></label>
+              <input type="range" id="hsl-hi" min="2048" max="4096" step="16" value="4096"></div>
+            <div class="slider"><label for="hsl-hi-w"><span data-i18n="hsl_hi_weight">Effect at white</span> <output id="hsl-hi-w-out"></output></label>
+              <input type="range" id="hsl-hi-w" min="0" max="100" step="1" value="100"></div>
+          </details>
+        </div>
+      </details>
 
-      <h3 data-i18n="flash">Put it on the camera</h3>
-      <ol class="howto">
-        <li data-i18n-html="flash_1"></li>
-        <li data-i18n-html="flash_2"></li>
-        <li data-i18n-html="flash_3"></li>
-        <li data-i18n-html="flash_4"></li>
-        <li data-i18n-html="flash_5"></li>
-      </ol>
+      <details class="sec" id="sec-hdr" data-sec="hdr">
+        <summary><span data-i18n="sec_hdr">HDR effects off</span><i class="dot"></i>
+          <button class="reset" type="button" data-i18n="reset" data-i18n-title="reset_t">Reset</button></summary>
+        <div class="body">
+          <label class="check"><input type="checkbox" id="hdr-off"> <span data-i18n="hdr_off">HDR effects off</span></label>
+          <p class="note muted" id="hdr-note"></p>
+        </div>
+      </details>
 
-      <h3 data-i18n="load_preset">Load preset</h3>
-      <label class="btn">
-        <span data-i18n="open_preset">Open preset …</span>
-        <input type="file" id="preset-file" accept=".json,application/json" hidden>
-      </label>
-      <p class="note muted" id="preset-msg" data-i18n-html="preset_note"></p>
-    </section>
+      <details class="sec" id="sec-adv" data-sec="adv">
+        <summary><span data-i18n="sec_adv">Advanced</span><i class="dot"></i>
+          <button class="reset" type="button" data-i18n="reset" data-i18n-title="reset_t">Reset</button></summary>
+        <div class="body">
+          <div id="adv-matrix">
+            <h3 data-i18n-title="matrix_note"><span data-i18n="matrix_adv">Matrix values</span> <span class="addr" id="addr"></span></h3>
+            <div class="matrix" id="matrix"></div>
+            <div class="sums" id="sums"></div>
+          </div>
+          <h3 data-i18n="copy_adv">Copy curves</h3>
+          <canvas id="chan-effective" width="560" height="300" data-i18n-title="dashed_neutral"></canvas>
+          <div class="copy">
+            <label for="chan-source" data-i18n="copy_one">Copy a single curve from</label>
+            <select id="chan-source"></select>
+            <button class="btn" id="chan-copy" data-i18n="copy_btn">Copy</button>
+          </div>
+          <div class="copy">
+            <label for="chan-source-set" data-i18n="copy_set">Copy a whole variant from</label>
+            <select id="chan-source-set"></select>
+            <button class="btn" id="chan-copy-set" data-i18n="copy_btn">Copy</button>
+          </div>
+        </div>
+      </details>
+    </div>
+
+    <!-- pinned: the shared free space of all targets together -->
+    <div class="space" id="space">
+      <div class="bar"><i id="space-bar"></i></div>
+      <span id="space-text"></span>
+    </div>
   </aside>
 </main>
 
@@ -298,6 +244,33 @@
   </div>
 </section>
 
+<dialog id="export-dlg">
+  <h2 data-i18n="export_title">Export</h2>
+  <p class="note" id="export-none" data-i18n="export_none" hidden></p>
+  <ul class="changes" id="changes"></ul>
+  <p class="note muted" id="space-export"></p>
+  <p class="note warn" data-i18n="risk"></p>
+  <label class="check"><input type="checkbox" id="risk-ok">
+    <span data-i18n="risk_ok">I understand the risk and flash the file at my own responsibility.</span></label>
+  <button class="btn primary wide" id="export" data-i18n="create_update" disabled>Create update file</button>
+  <p class="note" id="export-msg"></p>
+  <div class="downloads" id="downloads" hidden>
+    <a class="btn primary wide" id="dl-update" download data-i18n="dl_update">Download update file</a>
+    <a class="btn wide" id="dl-preset" download data-i18n="dl_preset">Save preset</a>
+  </div>
+  <details class="adv">
+    <summary data-i18n="flash">Put it on the camera</summary>
+    <ol class="howto">
+      <li data-i18n-html="flash_1"></li>
+      <li data-i18n-html="flash_2"></li>
+      <li data-i18n-html="flash_3"></li>
+      <li id="flash-4"></li>
+      <li data-i18n-html="flash_5"></li>
+    </ol>
+  </details>
+  <form method="dialog"><button class="btn" data-i18n="close">Close</button></form>
+</dialog>
+
 <dialog id="help">
   <h2 data-i18n="help_open">How it works</h2>
   <p class="note" data-i18n-html="help_intro"></p>
@@ -306,7 +279,22 @@
     <li data-i18n-html="help_2"></li>
     <li data-i18n-html="help_3"></li>
     <li data-i18n-html="help_4"></li>
+    <li data-i18n-html="help_5"></li>
   </ol>
+  <details class="adv">
+    <summary data-i18n="help_more">Details</summary>
+    <ul class="howto">
+      <li data-i18n-html="help_cross"></li>
+      <li data-i18n-html="help_hdr"></li>
+      <li data-i18n-html="help_bleach"></li>
+      <li data-i18n-html="help_retro"></li>
+      <li data-i18n-html="help_curves"></li>
+      <li data-i18n-html="help_wheels"></li>
+      <li data-i18n-html="help_hsl"></li>
+      <li data-i18n-html="help_space"></li>
+      <li data-i18n-html="help_presets"></li>
+    </ul>
+  </details>
   <p class="note warn" data-i18n="help_risk"></p>
   <form method="dialog"><button class="btn primary" data-i18n="help_go">Let's go</button></form>
 </dialog>
@@ -315,6 +303,8 @@
 <script src="bridge.js"></script>
 <script src="wb.js"></script>
 <script src="hsl.js"></script>
+<script src="targets.js"></script>
 <script src="app.js"></script>
+<script src="presets.js"></script>
 </body>
 </html>
