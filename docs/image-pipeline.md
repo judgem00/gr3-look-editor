@@ -2,7 +2,7 @@
 
 Firmware `fwdc239b`, static analysis (Capstone, custom scripts), as of
 2026-10-12. Complements [look-mapping.md](look-mapping.md),
-[tone-curves.md](tone-curves.md) and multiaxial.md; those contain the
+[tone-curves.md](tone-curves.md) and [multiaxial.md](multiaxial.md); those contain the
 details on matrix, curves and MultiAxial.
 
 The goal was to know every stage between RAW and YCbCr and to check whether,
@@ -161,14 +161,12 @@ LUT. Irrelevant for capture.
 
 ## What this means for HSL
 
-1. **MultiAxial remains the only hardware route.** The stage sits (as in the
-   patent) directly after CC0 in linear RGB. Every setting tested had no
-   effect. Its enable is not in `CNTL` and not in `CC0CTL`, so it is probably
-   in the block itself (control fields `0xa00…0xa34`, 21 fields, only one
-   tested) or in clock gating outside the R2Y driver. The next static step
-   would be the virtual dispatcher `0x536ddd14` or the runtime path
-   (`setting+0x94`): if factory tuning uses MultiAxial, it does so via this
-   path, and whatever fills it may also set the remaining fields.
+1. **MultiAxial is the hardware route, and it works.** The stage sits (as in
+   the patent) directly after CC0 in linear RGB. Earlier tests showed no
+   effect because the axes and nibbles were zero and the stock control
+   fields weight it at almost nothing. The layout came from the PENTAX K-3
+   Mark III's Extract Color filter; the editor uses it for its colour ranges
+   ([multiaxial.md](multiaxial.md)).
 2. **Approximation without MultiAxial:** only possible separated by
    brightness (channel curves, colour wheels), not by hue. That is already in
    the editor.

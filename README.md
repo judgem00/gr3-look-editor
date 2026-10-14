@@ -29,8 +29,8 @@ Ricoh Imaging. "Ricoh" and "GR" are trademarks of their respective owners.
    Positive Film, Negative Film, Retro or Bleach Bypass. The base is copied
    into a colour matrix of the look's own, so the original image controls
    are never touched.
-2. **Colour.** Saturation, hue, and Lightroom-style calibration (hue and
-   saturation of the red, green and blue primaries).
+2. **Colour.** Saturation, hue, Lightroom-style calibration (hue and
+   saturation of the red, green and blue primaries) and colour ranges (HSL).
 3. **Curves.** Three variants, which you select in the camera with
    Cross Process → *Color Tone 1, 2, 3*. Each variant has RGB curves (one combined
    curve or per channel) and colour wheels for shadows, midtones and
@@ -47,9 +47,13 @@ Advanced options:
 - editing the other image controls
 - a tone curve that applies to all image controls
 
-Not possible: per-hue adjustments (HSL). The camera's hardware has such a
-stage, but nobody has managed to switch it on yet; see
-[docs/image-pipeline.md](docs/image-pipeline.md).
+Colour curves (Hue vs Hue, Hue vs Sat and Hue vs Lum, as in DaVinci Resolve)
+change single colours. They use the camera's hue-selective stage
+(MultiAxial). The stage turns each curve into at most 5 hard-edged steps per
+quarter of the colour circle, and the editor shows those steps. The stage was
+measured on the GR III; the first HSL test file (built with the earlier
+ranges) behaved as the preview predicted. See
+[docs/multiaxial.md](docs/multiaxial.md).
 
 ## Supported firmware
 

@@ -9,7 +9,7 @@
 </head>
 <body>
 <header>
-  <div class="brand">GR III / IIIx <span>Look Editor</span></div>
+  <div class="brand">GR III / IIIx <span>Look Editor</span> <b class="beta" id="beta-badge" hidden>Beta</b></div>
   <div class="fw" id="fw-info">Loading firmware …</div>
   <div class="seg lang" id="lang" role="group" aria-label="Language">
     <button data-lang="en" type="button">EN</button><button data-lang="de" type="button">DE</button>
@@ -67,6 +67,11 @@
           <input type="range" id="p-contrast" min="-4" max="4" step="1" value="0"></div>
         <div class="slider"><label for="p-highlight"><span data-i18n="p_highlight">Highlight contrast</span> <output id="p-highlight-out">0</output></label>
           <input type="range" id="p-highlight" min="-4" max="4" step="1" value="0"></div>
+        <div class="slider"><label for="p-shadowcorr" data-i18n-title="p_shadowcorr_t"><span data-i18n="p_shadowcorr">Shadow correction</span></label>
+          <select id="p-shadowcorr">
+            <option value="0" data-i18n="sc_off">Off</option><option value="1" data-i18n="sc_low">Low</option>
+            <option value="2" data-i18n="sc_medium">Medium</option><option value="3" data-i18n="sc_strong">Strong</option>
+          </select></div>
         <div class="slider"><label for="p-shadow"><span data-i18n="p_shadow">Shadow contrast</span> <output id="p-shadow-out">0</output></label>
           <input type="range" id="p-shadow" min="-4" max="4" step="1" value="0"></div>
         <div class="slider"><label for="ev"><span data-i18n="p_ev">Exposure</span> <output id="ev-out">0.0 EV</output></label>
@@ -79,8 +84,11 @@
           <input type="range" class="grad" id="wb-gm" min="-14" max="14" step="1" value="0"></div>
         <button class="btn" id="wb-reset" data-i18n="wb_reset">White balance as shot</button>
         <button class="btn" id="load-shot" data-i18n="load_shot" disabled>Load preview settings from DNG</button>
+        <label class="check"><input type="checkbox" id="vignette" checked>
+          <span data-i18n="vignette">Lens shading correction like the camera</span></label>
         <label class="check"><input type="checkbox" id="residual" checked>
           <span data-i18n="residual">Fine-match to camera JPEG</span></label>
+        <p class="note muted" id="vignette-note"></p>
       </div>
       <p class="note" id="tone-note">No photo loaded yet.</p>
       <p class="note muted" id="wb-note"></p>
@@ -131,6 +139,27 @@
       <div class="calib" id="calib"></div>
       <p class="note muted" data-i18n="calib_note"></p>
       <div class="row"><button class="btn" id="reset" data-i18n="reset_colors">Reset colours</button></div>
+
+      <h3><span data-i18n="hsl">Colour curves</span> <span class="muted" data-i18n="hsl_hint">· HSL</span></h3>
+      <div class="seg small" id="hsl-channels">
+        <button data-ch="hue" data-i18n="hsl_hh">Hue vs Hue</button><button data-ch="sat" data-i18n="hsl_hs">Hue vs Sat</button><button data-ch="lum" data-i18n="hsl_hl">Hue vs Lum</button>
+      </div>
+      <canvas id="hsl-curve" width="560" height="260"></canvas>
+      <div class="hsl-foot"><span class="note muted" data-i18n="hsl_curve_help"></span><output id="hsl-readout"></output></div>
+      <div class="row"><button class="btn" id="hsl-reset-curve" data-i18n="hsl_reset_curve">Reset curve</button>
+        <button class="btn" id="hsl-reset" data-i18n="hsl_reset">Reset all curves</button></div>
+      <details class="adv">
+        <summary data-i18n="hsl_protect">Protect shadows and highlights</summary>
+        <div class="slider"><label for="hsl-shadows"><span data-i18n="hsl_shadows">Shadows up to</span> <output id="hsl-shadows-out"></output></label>
+          <input type="range" id="hsl-shadows" min="0" max="2048" step="16" value="0"></div>
+        <div class="slider"><label for="hsl-hi"><span data-i18n="hsl_highlights">Highlights from</span> <output id="hsl-hi-out"></output></label>
+          <input type="range" id="hsl-hi" min="2048" max="4096" step="16" value="4096"></div>
+        <div class="slider"><label for="hsl-hi-w"><span data-i18n="hsl_hi_weight">Effect at white</span> <output id="hsl-hi-w-out"></output></label>
+          <input type="range" id="hsl-hi-w" min="0" max="100" step="1" value="100"></div>
+        <p class="note muted" data-i18n="hsl_protect_note"></p>
+      </details>
+      <p class="note muted" id="hsl-status"></p>
+      <p class="note muted" data-i18n="hsl_note"></p>
 
       <details class="adv">
         <summary data-i18n="matrix_adv">Matrix values (advanced)</summary>
@@ -274,6 +303,7 @@
 <script src="i18n.js"></script>
 <script src="bridge.js"></script>
 <script src="wb.js"></script>
+<script src="hsl.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

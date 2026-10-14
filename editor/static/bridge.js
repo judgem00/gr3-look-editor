@@ -89,6 +89,7 @@ const api = (() => {
       }
       if (path === "api/inherit" && method === "POST") return json(await call("inherit", { body }));
       if (path === "api/tone" && method === "POST") return json(await call("tone", { body }));
+      if (path === "api/hsl" && method === "POST") return json(await call("hsl", { body }));
       if (path === "api/dng" && method === "POST") {
         const file = opts.body.get("file");
         const bytes = await file.arrayBuffer();
