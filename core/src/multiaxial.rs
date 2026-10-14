@@ -45,12 +45,6 @@ const SNAP: f64 = 24.0;
 /// quadrant index at each quarter of the hue coordinate
 const QUADRANT_AT: [usize; 4] = [0, 3, 2, 1];
 
-/// Read-only padding no pointer leads into (1 MB section 0x53000000; the
-/// private Cross Process colour set of looks.rs sits at 0x53002080..0x530020e6).
-const FREE: [(u32, u32); 2] = [(0x5300_2100, 0x5300_4000), (0x5300_0d50, 0x5300_2000)];
-/// one set: pointers, axes, nibbles, control, matrix header and 60 matrices
-const SET_SIZE: u32 = 0x20 + 0x20 + 0x20 + 0x30 + 0x890;
-
 /// one hue range with its adjustment
 #[derive(Clone, Debug, Default)]
 pub struct Band {
@@ -737,29 +731,15 @@ pub fn ycc(img: &[u8], table: u32) -> M3 {
     m
 }
 
-fn is_free(img: &[u8], at: u32, size: u32) -> bool {
-    img[file_offset(at)..file_offset(at + size)].iter().all(|&b| b == 0)
-}
-
 /// image with a parameter set of its own for each look in `looks`
-/// ((table index, encoded HSL)). Returns the set addresses.
-pub fn patch(img: &mut [u8], looks: &[(u32, Encoded)]) -> Result<Vec<u32>, String> {
-    let mut slots = vec![];
-    for &(lo, hi) in &FREE {
-        let mut at = lo;
-        while at + SET_SIZE <= hi {
-            slots.push(at);
-            at += SET_SIZE;
-        }
-    }
+/// ((table index, encoded HSL)) at the addresses `slots` (space::plan).
+/// Returns the set addresses.
+pub fn patch(img: &mut [u8], looks: &[(u32, Encoded)], slots: &[u32]) -> Result<Vec<u32>, String> {
     if looks.len() > slots.len() {
-        return Err(format!("HSL fits into at most {} image controls", slots.len()));
+        return Err("no free slot for an HSL set".into());
     }
     let mut out = vec![];
-    for (&(table, ref e), &at) in looks.iter().zip(&slots) {
-        if !is_free(img, at, SET_SIZE) {
-            return Err(format!("free area at {at:#x} for the HSL data is not empty"));
-        }
+    for (&(table, ref e), &at) in looks.iter().zip(slots) {
         let old = param_set(img, table);
         let mut ptrs: Vec<u32> = (0..6).map(|k| word(img, old + 4 * k)).collect();
         let (axes, nib, ctl, hdr) = (at + 0x20, at + 0x40, at + 0x60, at + 0x90);

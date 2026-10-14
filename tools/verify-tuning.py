@@ -5,6 +5,7 @@ as ARM code.
 
     .venv/bin/python tools/verify-tuning.py            # all checks and questions
     .venv/bin/python tools/verify-tuning.py --only q2
+    .venv/bin/python tools/verify-tuning.py --patched IMAGE   # an exported image
 
 The selector is modelled in Python: a hook at 0x536dd450 (the site the stub
 will branch from) does what the stub will do -- for an assigned look it
@@ -98,7 +99,7 @@ def u16s(b):
 class Run:
     """one emulated ImageTuning with an optional modelled selector"""
 
-    def __init__(self, rtos, table=None):
+    def __init__(self, rtos, table=None, pointers=None):
         self.t = emu.Tuning(rtos)
         e = self.e = self.t.e
         self.stock_ptrs = [e.r32(LIBRARY + 4 * i) for i in range(12)]
@@ -107,6 +108,9 @@ class Run:
         self.table = None
         if table is not None:
             self.set_table(table)
+        if pointers is not None:            # {key: [R, G, B] addresses} as they are
+            self.table = pointers
+            e.watch[SITE] = self._selector
 
     def _chan_fill(self, e):
         self.gamma_obj = e.reg("r0")
@@ -362,6 +366,56 @@ def q4_hdr(rtos, r):
         r.check(Run(rtos).make(look, st) == Run(patched).make(look, st), f"patch leaves {name} alone")
 
 
+# the selector as exported (core/src/curvesel.rs)
+STUB, STUB_TABLE, ENTRIES = 0x53003D00, 0x53003D80, 15
+SITE_STOCK = 0x159632D0
+
+
+def stub_pointers(rtos):
+    """{(look, tone|None): [R, G, B]} from the exported stub table"""
+    out = {}
+    for e in range(ENTRIES):
+        ptrs = list(struct.unpack_from("<3I", rtos, STUB_TABLE + 12 * e - emu.BASE))
+        key = (CROSS, e - 12) if e >= 12 else (11 + e, None)
+        out[key] = ptrs if ptrs[0] else None
+    return out
+
+
+def check_patched(path, r):
+    print(f"\n[patched] {path}: the real stub vs the model of it")
+    rtos = emu.load_rtos(path)
+    site = struct.unpack_from("<I", rtos, SITE - emu.BASE)[0]
+    if site == SITE_STOCK:
+        print("  selector not installed")
+        r.check(False, "selector installed")
+        return
+    ptrs = stub_pointers(rtos)
+    for k, v in sorted(ptrs.items(), key=lambda kv: (kv[0][0], kv[0][1] or 0)):
+        if v:
+            print(f"    look {k[0]}{'' if k[1] is None else ' tone ' + str(k[1])}: {', '.join(hex(p) for p in v)}")
+    base = bytearray(rtos)
+    struct.pack_into("<I", base, SITE - emu.BASE, SITE_STOCK)
+    base = bytes(base)
+    for live in (False, True):
+        real, model = Run(rtos), Run(base, pointers=ptrs)
+        for name, look, st in CASES + CASES[::-1]:       # in one history
+            a, b = real.make(look, st, live), model.make(look, st, live)
+            runs = diff_runs(a[0], b[0], ignore=())
+            r.check(not runs and a[1] == b[1], f"{'live ' if live else 'still'} {name}", fmt_runs(runs))
+    # assigned looks: the channel tables are the curves composed onto the computed one
+    bare = Run(base, pointers={})
+    for name, look, st in CASES:
+        p = ptrs.get(key_of(look, st))
+        if not p:
+            continue
+        _, tb = Run(rtos).make(look, st)
+        base_curve = bare.make(look, st)[1][3]
+        curves = [u16s(rtos[a - emu.BASE:a - emu.BASE + 512]) if a < emu.DATA_VMA
+                  else u16s(Run(rtos).e.read(a, 512)) for a in p]
+        want = [compose(base_curve, c) for c in curves]
+        r.check(tb[:3] == want, f"{name}: R, G, B = compose(tone curve, its curves)")
+
+
 STEPS = {"stock": check_stock, "assigned": check_assigned, "q1": q1_order,
          "q2": q2_sequences, "q3": q3_select, "q4": q4_hdr}
 
@@ -370,11 +424,15 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--image", default=emu.IMAGE, help="unpacked firmware image")
     ap.add_argument("--only", choices=STEPS, action="append")
+    ap.add_argument("--patched", help="exported image with the selector: check it against the model")
     args = ap.parse_args()
-    rtos = emu.load_rtos(args.image)
     r = Report()
-    for name in args.only or STEPS:
-        STEPS[name](rtos, r)
+    if args.patched:
+        check_patched(args.patched, r)
+    else:
+        rtos = emu.load_rtos(args.image)
+        for name in args.only or STEPS:
+            STEPS[name](rtos, r)
     print(f"\n{'all passed' if not r.failed else f'{r.failed} failed'}")
     sys.exit(1 if r.failed else 0)
 

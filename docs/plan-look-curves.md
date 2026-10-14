@@ -1,6 +1,6 @@
 # Plan: RGB curves and HSL for every colour look
 
-Status: Phase 0 done (2026-10-14), Phase 1 next. Firmware `fwdc239b` (GR III
+Status: Phases 0 and 1 done (2026-10-14), Phase 2 (editor) next. Firmware `fwdc239b` (GR III
 2.10); the GR IIIx 1.60 image uses the same addresses.
 
 ## Goal
@@ -176,6 +176,33 @@ still path (`0x536e9bd8`, `0x536e91a8`, a device singleton at obj+0x180).
 - Tests (`core/tests`, GR III and GR IIIx): no assignment → code and table
   stock; assigned looks get exactly their pointers; full pool refused; HSL and
   curves never overlap; old presets still load.
+
+**Result (2026-10-14): done.** `core/src/space.rs`, `core/src/curvesel.rs`,
+session requests `effects` and `space`, `core/tests/look_curves.rs` (GR III
+and GR IIIx). Without `look_curves` the export is byte-identical to before
+(golden tests). The real stub in an exported image passes
+`tools/verify-tuning.py --patched` (70 checks: still and live, all looks in
+one history, against the Phase 0 model; R/G/B = `compose`). Changes against
+the plan above:
+
+- An HSL set is 0x920 B (2336), not 0x950; its five slots stay where they
+  were.
+- Reserved block `0x53003d00–0x53004000`: stub (26 words), table at
+  `0x53003d80` (15 entries: looks 11..22, then Cross Process Color Tone
+  1..3) and the private HDR colour set at `0x53003e40`. `0x53002000–0x53002080`
+  is not free (model header), so it could not take that set.
+- Cross Process keeps its curves in library storage 3..11 (the `channels`
+  edits as before); its three entries point there. The pool for other looks
+  is the Random storage 0..2 first, then whatever the HSL sets leave of the
+  padding. Capacity (RGB sets besides Cross Process, at most 7):
+
+  | HSL | 0 | 1 | 2 | 3 | 4 | 5 |
+  |---|---|---|---|---|---|---|
+  | RGB | 7 | 7 | 5 | 4 | 2 | 1 |
+
+- `effects_off` is session state like `inherit` (`effects` request), so the
+  editor can show HDR's own matrix before export; the preset records it.
+- Preview: `tone` takes `chan.curves` ([R, G, B]) for any look.
 
 ### Phase 2: editor
 
