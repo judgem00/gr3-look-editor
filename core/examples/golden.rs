@@ -28,12 +28,20 @@ fn main() {
     let mut s = Session::open(raw.clone(), "fwdc239b.bin").unwrap();
     let mut fw = s.firmware();
     fw["path"] = json!("work/fwdc239b/unpackedFW");
+    // which camera the file is for: newer than the reference answers
+    for k in ["camera", "version", "update_file"] {
+        fw.as_object_mut().unwrap().remove(k);
+    }
     g["firmware"] = fw;
     for t in g["tone"].as_array_mut().unwrap() {
         t["response"] = s.tone(&t["request"]).unwrap();
     }
     let mut inh = s.set_inherit(&json!({"target": "CrossProcess", "source": "NegativeFilm"})).unwrap();
     inh["path"] = json!("work/fwdc239b/unpackedFW");
+    // which camera the file is for: newer than the reference answers
+    for k in ["camera", "version", "update_file"] {
+        inh.as_object_mut().unwrap().remove(k);
+    }
     g["inherit"]["NegativeFilm"] = inh;
     g["tone_inherited"] = s.tone(&g["tone"][1]["request"]).unwrap();
     for e in g["export"].as_array_mut().unwrap() {

@@ -1,4 +1,4 @@
-// GR III look editor — preview, matrix and tone curve editing.
+// GR III / GR IIIx look editor — preview, matrix and tone curve editing.
 //
 // The preview runs the colour part of ColorMatrixTuning on the GPU:
 //   camera RGB -> white balance -> sensor CCM -> look matrix -> (mono mix)
@@ -466,7 +466,7 @@ async function setBase(source) {
 }
 
 // ---- extra bases ----------------------------------------------------------------
-// Bases that are not image controls of the GR III firmware.
+// Bases that are not image controls of the GR III / GR IIIx firmware.
 // Each: { id, label, hint, tip: {en, de}, matrix_from: look name, matrix_mul: [9],
 //         channel_curve: [256] }. The matrix is matrix_mul x the look's matrix of the
 // loaded firmware; the curve goes on R, G and B of Color Tone 1-3. An optional
@@ -1553,8 +1553,8 @@ wrap.addEventListener("drop", (e) => {
     for (const l of state.fw.looks) state.looks[l.name] = l;
     state.current = INHERIT_TARGET;
     const build = state.fw.path.split("/").slice(-2, -1)[0] || "";
-    const VERSIONS = { fwdc239b: "2.10" };
-    state.build = { version: VERSIONS[build] || "?", build };
+    state.build = { camera: state.fw.camera, version: state.fw.version, build };
+    Object.assign(I18N_VARS, { camera: state.fw.camera, update: state.fw.update_file });
     $("fw-info").textContent = t("firmware", state.build);
     if (!store.get("helpSeen")) { $("help").showModal(); store.set("helpSeen", "1"); }
     state.extBases = await loadExtBases();

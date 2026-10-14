@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Check and rebuild GR III firmware update files (FWDC*.BIN).
+"""Check and rebuild GR III and GR IIIx firmware update files (FWDC*.BIN).
 
-    ./fw-pack.py check fwdc239b.bin
+    ./fw-pack.py check fwdc239b.bin      (GR III; fwdc243b.bin for the GR IIIx)
     ./fw-pack.py pack fwdc239b.bin work/fwdc239b/unpackedFW-looks \\
         -o work/fwdc239b/FWDC239B.BIN
 
@@ -26,16 +26,26 @@ import argparse, os, sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "fwpack"))
 import grfw  # noqa: E402
 
-GR3_PROJECT, USER_FW_TYPE = 0x24C, 2
+# the project number in header and footer names the camera; each camera only
+# takes its own
+PROJECTS = {0x24C: "GR III", 0x261: "GR IIIx"}
+USER_FW_TYPE = 2
+
+
+def container_problems(fw):
+    if fw.project not in PROJECTS:
+        known = ", ".join(f"{p:#x} ({n})" for p, n in PROJECTS.items())
+        return [f"project number {fw.project:#x} is not a known camera ({known})"]
+    return fw.check_container(fw.project, USER_FW_TYPE)
 
 
 def check(path):
     fw = grfw.Firmware.load(path)
     print(f"{path}: {len(fw.data)} bytes, {len(fw.frames)} frames "
           f"({sum(f.literal for f in fw.frames)} literal)")
-    print(f"  project {fw.project:#x}, type {fw.fw_type}, "
+    print(f"  project {fw.project:#x} ({PROJECTS.get(fw.project, 'unknown camera')}), type {fw.fw_type}, "
           f"build {fw.header[0x58:0x70].split(b'\0')[0].decode(errors='replace')}")
-    problems = fw.check_container(GR3_PROJECT, USER_FW_TYPE)
+    problems = container_problems(fw)
     image = fw.decode()
     if len(image) != fw.decoded_len:
         problems.append(f"decodes to {len(image)} bytes, footer says {fw.decoded_len}")
@@ -51,14 +61,14 @@ def check(path):
 
 def pack(original_path, image_path, out_path):
     original = grfw.Firmware.load(original_path)
-    if problems := original.check_container(GR3_PROJECT, USER_FW_TYPE):
+    if problems := container_problems(original):
         sys.exit(f"the original does not pass its own checks: {problems}")
     with open(image_path, "rb") as f:
         image = grfw.fix_image_checksum(f.read())
     data, redo = grfw.repack(original, image)
 
     rebuilt = grfw.Firmware(data)
-    if rebuilt.check_container(GR3_PROJECT, USER_FW_TYPE) or rebuilt.decode() != image:
+    if rebuilt.check_container(original.project, USER_FW_TYPE) or rebuilt.decode() != image:
         sys.exit("internal error: the rebuilt file does not verify; nothing written")
     if os.path.abspath(out_path) == os.path.abspath(original_path):
         sys.exit("refusing to overwrite the original")
@@ -79,7 +89,7 @@ def main():
     c = sub.add_parser("check", help="verify an update file")
     c.add_argument("file")
     p = sub.add_parser("pack", help="build an update file for a modified image")
-    p.add_argument("original", help="the original update file, e.g. firmware/fwdc239b.bin")
+    p.add_argument("original", help="the original update file, e.g. fwdc239b.bin or fwdc243b.bin")
     p.add_argument("image", help="the modified unpacked image")
     p.add_argument("-o", "--output", required=True)
     args = ap.parse_args()

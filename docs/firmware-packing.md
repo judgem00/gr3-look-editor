@@ -13,6 +13,9 @@ tools/fw-pack.py pack firmware/fwdc239b.bin assets/fwdc239b/unpackedFW-looks \
     -o assets/fwdc239b/FWDC239B.BIN
 ```
 
+The GR IIIx file `fwdc243b.bin` (firmware 1.60) has the same layout; see
+[GR IIIx](#gr-iiix) below.
+
 ## Summary
 
 - The container is protected by **two additive checksums**, both "sum of all
@@ -101,3 +104,27 @@ are the two word sums above.
   computes correctly only the hardware can show.
 - **Changed size.** `fw-pack` only supports changes that do not change the
   image size; that is enough for matrices and tables.
+
+## GR IIIx
+
+`fwdc243b.bin` (GR IIIx 1.60, built 2025/09/25 11:30:50 JST) is the GR III
+2.10 build compiled two minutes later for the other model. Both images unpack
+to 59,718,388 bytes, and only 99 bytes differ, all of them identity:
+
+| | GR III | GR IIIx |
+|---|---|---|
+| model name (header, RAM 0x53002008) | `GR III` | `GR IIIx` |
+| project number (+0x30, +0x78, footer) | 0x24c | 0x261 |
+| model ID (RAM 0x5381fe54) | 0x1320e | 0x1329a |
+| version (+0x38) | 2.10 (`02 0a 15 1b`) | 1.60 (`01 3c 0b 11`) |
+| year constants (RAM 0x536b62ec, 0x53d62314) | 2018 | 2020 |
+
+The rest are the build time, a copyright string, a second copy of the header
+in another section (from 0x550eea70), and the checksums. The `.data` section
+(look tables, matrices, curves) and GammaTuning are identical, so every
+address the editor uses holds the same content in both. `core/tests/models.rs`
+checks this, and that an export patches both images at the same bytes.
+
+The camera only takes a file with its own project number, so a GR III file
+cannot be flashed to a GR IIIx or the other way round. `fw-pack.py` accepts
+both project numbers.
