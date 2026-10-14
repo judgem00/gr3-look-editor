@@ -281,6 +281,14 @@ $("head-preset-file").onchange = async (e) => {
   e.target.value = "";     // the same file again must trigger a reload
   if (f) await loadPreset(f);
 };
+// index.html?preset=tutorial: a preset shipped with the editor (presets/<name>.looks.json),
+// loaded once the firmware is in (the tutorial links here)
+window.addEventListener("editor-ready", async () => {
+  const name = new URLSearchParams(location.search).get("preset");
+  if (!name || !/^[a-z0-9-]+$/.test(name)) return;
+  const res = await fetch(`presets/${name}.looks.json`);
+  if (res.ok) await loadPreset(new File([await res.blob()], `${name}.looks.json`));
+});
 // a look shipped with the editor, to start from
 $("example-preset").onclick = async () => {
   const res = await fetch("presets/example.looks.json");

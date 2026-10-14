@@ -1381,6 +1381,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     await fetchTone();
     const pre = await api("/api/dng");
     if (pre.status === 200) await show(await pre.json());
+    window.dispatchEvent(new Event("editor-ready"));
   } catch (err) {
     $("fw-info").textContent = t("error_prefix", { msg: err.message });
   }

@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Look Editor Tutorial</title>
+<link rel="icon" href="data:,">
+<style>
+:root {
+  --bg: #121315; --panel: #1b1d20; --line: #2a2d31; --text: #e6e6e3; --muted: #8c8f94;
+  --accent: #e8b04a; --warn: #e0745a; --field: #24272b;
+  font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Inter", system-ui, sans-serif;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; background: var(--bg); color: var(--text); }
+a { color: var(--accent); }
+header {
+  position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 16px;
+  padding: 10px 16px; border-bottom: 1px solid var(--line); background: rgba(18,19,21,.94); backdrop-filter: blur(6px);
+}
+.brand { font-weight: 700; letter-spacing: .04em; font-size: 13px; }
+.brand span { font-weight: 400; color: var(--muted); }
+header .grow { flex: 1; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.seg button { background: none; border: 0; color: var(--muted); padding: 5px 10px; cursor: pointer; font: 600 12px/1.4 inherit; font-family: inherit; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button.on { background: var(--field); color: var(--text); }
+.btn { display: inline-block; background: var(--field); color: var(--text); border: 1px solid var(--line);
+  border-radius: 6px; padding: 7px 14px; font: inherit; font-size: 13px; text-decoration: none; cursor: pointer; }
+.btn:hover { border-color: #444; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #1a1407; font-weight: 600; }
+
+main { max-width: 1080px; margin: 0 auto; padding: 0 16px 64px; }
+.hero { padding: 48px 0 24px; }
+.hero h1 { font-size: 34px; line-height: 1.15; margin: 0 0 12px; letter-spacing: -.01em; }
+.hero p { color: var(--muted); max-width: 680px; margin: 0 0 18px; font-size: 16px; }
+.hero .row { display: flex; gap: 10px; flex-wrap: wrap; }
+h2 { font-size: 22px; margin: 56px 0 8px; }
+h2 .num { display: inline-grid; place-items: center; width: 28px; height: 28px; margin-right: 10px; border-radius: 50%;
+  background: var(--accent); color: #1a1407; font-size: 14px; vertical-align: 3px; }
+.lead { color: var(--muted); max-width: 720px; margin: 0 0 16px; }
+p b, li b { color: var(--text); }
+.toc { display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 14px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); font-size: 13px; }
+.toc a { color: var(--muted); text-decoration: none; }
+.toc a:hover { color: var(--text); }
+
+/* gallery: one photo, the camera JPEG against a look, with a slider */
+.viewer { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+.looks { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.looks button { background: var(--field); color: var(--muted); border: 1px solid var(--line); border-radius: 999px;
+  padding: 5px 12px; font: inherit; font-size: 13px; cursor: pointer; }
+.looks button.on { color: #1a1407; background: var(--accent); border-color: var(--accent); font-weight: 600; }
+.compare { position: relative; margin: 0 auto; background: #0b0b0c; border-radius: 6px; overflow: hidden; user-select: none; touch-action: none; }
+.compare img { display: block; width: 100%; height: auto; }
+.compare .top { position: absolute; inset: 0; clip-path: inset(0 0 0 var(--cut, 50%)); }
+.compare .bar { position: absolute; top: 0; bottom: 0; left: var(--cut, 50%); width: 0; border-left: 2px solid rgba(255,255,255,.85); cursor: ew-resize; }
+.compare .bar::after { content: ""; position: absolute; top: 50%; left: -10px; width: 18px; height: 40px; margin-top: -20px; border-radius: 9px; background: rgba(255,255,255,.9); }
+.compare .tag { position: absolute; top: 10px; padding: 2px 8px; border-radius: 4px; background: rgba(0,0,0,.6); font-size: 12px; pointer-events: none; }
+.compare .tag.l { left: 10px; } .compare .tag.r { right: 10px; }
+.desc { margin: 12px 2px 4px; color: var(--muted); font-size: 14px; min-height: 3em; }
+.desc b { color: var(--text); }
+.thumbs { display: flex; gap: 8px; overflow-x: auto; padding: 10px 2px 2px; }
+.thumbs button { flex: none; padding: 0; border: 2px solid transparent; border-radius: 6px; background: none; cursor: pointer; overflow: hidden; }
+.thumbs button.on { border-color: var(--accent); }
+.thumbs img { display: block; height: 72px; width: auto; }
+.compare.portrait { max-width: min(520px, 46vh); }
+
+/* steps */
+figure { margin: 16px 0 0; }
+figure img { display: block; width: 100%; height: auto; border: 1px solid var(--line); border-radius: 8px; cursor: zoom-in; }
+figcaption { color: var(--muted); font-size: 13px; margin-top: 6px; }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+ul.tips, ol.tips { color: var(--muted); padding-left: 20px; max-width: 760px; }
+ul.tips li, ol.tips li { margin: 4px 0; }
+.note { border-left: 3px solid var(--accent); background: rgba(232,176,74,.07); padding: 10px 14px; border-radius: 0 6px 6px 0; color: var(--muted); max-width: 760px; }
+.note.warn { border-color: var(--warn); background: rgba(224,116,90,.08); }
+code { font-size: 13px; background: var(--field); padding: 1px 5px; border-radius: 4px; }
+dialog { border: 0; padding: 0; background: none; max-width: 96vw; max-height: 96vh; }
+dialog img { display: block; max-width: 96vw; max-height: 92vh; border-radius: 6px; }
+dialog::backdrop { background: rgba(0,0,0,.85); }
+footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line); padding-top: 16px; margin-top: 56px; }
+
+@media (max-width: 760px) {
+  .hero h1 { font-size: 26px; }
+  .two { grid-template-columns: 1fr; }
+  header .brand span { display: none; }
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">GR III / IIIx <span>Look Editor · Tutorial</span></div>
+  <div class="grow"></div>
+  <div class="seg" id="lang" role="group" aria-label="Language">
+    <button data-lang="en" type="button">EN</button><button data-lang="de" type="button">DE</button>
+  </div>
+  <a class="btn primary" href="index.html" data-t="open_editor">Open the editor</a>
+</header>
+
+<main>
+  <section class="hero">
+    <h1 data-t="title">Your own looks on the GR III</h1>
+    <p data-t-html="intro"></p>
+    <div class="row">
+      <a class="btn primary" href="index.html?preset=tutorial" data-t="try_preset">Open the editor with these looks</a>
+      <a class="btn" href="presets/tutorial.looks.json" download="tutorial.looks.json" data-t="dl_preset">Download the preset</a>
+    </div>
+  </section>
+
+  <nav class="toc" id="toc"></nav>
+
+  <section id="looks">
+    <h2 data-t="looks_h">The four looks of this tutorial</h2>
+    <p class="lead" data-t-html="looks_lead"></p>
+    <div class="viewer">
+      <div class="looks" id="look-tabs"></div>
+      <div class="compare" id="compare">
+        <img id="img-base" alt="">
+        <div class="top"><img id="img-look" alt=""></div>
+        <div class="bar" id="bar"></div>
+        <span class="tag l" data-t="camera_jpeg">Camera JPEG</span><span class="tag r" id="tag-look"></span>
+      </div>
+      <p class="desc" id="look-desc"></p>
+      <div class="thumbs" id="thumbs"></div>
+    </div>
+  </section>
+
+  <section id="s1">
+    <h2><span class="num">1</span><span data-t="s1_h">Load the camera firmware</span></h2>
+    <p class="lead" data-t-html="s1"></p>
+    <figure><img src="tutorial/01-firmware.jpg" alt="" loading="lazy"><figcaption data-t="s1_c"></figcaption></figure>
+  </section>
+
+  <section id="s2">
+    <h2><span class="num">2</span><span data-t="s2_h">Open a photo</span></h2>
+    <p class="lead" data-t-html="s2"></p>
+    <figure><img src="tutorial/02-photo.jpg" alt="" loading="lazy"><figcaption data-t="s2_c"></figcaption></figure>
+  </section>
+
+  <section id="s3">
+    <h2><span class="num">3</span><span data-t="s3_h">Choose a target and a source</span></h2>
+    <p class="lead" data-t-html="s3"></p>
+    <figure><img src="tutorial/03-target-source.jpg" alt="" loading="lazy"><figcaption data-t="s3_c"></figcaption></figure>
+    <ul class="tips">
+      <li data-t-html="s3_t1"></li>
+      <li data-t-html="s3_t2"></li>
+      <li data-t-html="s3_t3"></li>
+    </ul>
+  </section>
+
+  <section id="s4">
+    <h2><span class="num">4</span><span data-t="s4_h">Shape the look</span></h2>
+    <p class="lead" data-t-html="s4"></p>
+    <div class="two">
+      <figure><img src="tutorial/04-curves.jpg" alt="" loading="lazy"><figcaption data-t="s4_c1"></figcaption></figure>
+      <figure><img src="tutorial/05-wheels.jpg" alt="" loading="lazy"><figcaption data-t="s4_c2"></figcaption></figure>
+    </div>
+    <figure><img src="tutorial/06-hsl.jpg" alt="" loading="lazy"><figcaption data-t="s4_c3"></figcaption></figure>
+    <ul class="tips">
+      <li data-t-html="s4_t1"></li>
+      <li data-t-html="s4_t2"></li>
+      <li data-t-html="s4_t3"></li>
+      <li data-t-html="s4_t4"></li>
+    </ul>
+  </section>
+
+  <section id="s5">
+    <h2><span class="num">5</span><span data-t="s5_h">Compare</span></h2>
+    <p class="lead" data-t-html="s5"></p>
+    <figure><img src="tutorial/07-before-after.jpg" alt="" loading="lazy"><figcaption data-t="s5_c"></figcaption></figure>
+  </section>
+
+  <section id="s6">
+    <h2><span class="num">6</span><span data-t="s6_h">More targets, Cross Process variants</span></h2>
+    <p class="lead" data-t-html="s6"></p>
+    <figure><img src="tutorial/08-cross-process.jpg" alt="" loading="lazy"><figcaption data-t="s6_c"></figcaption></figure>
+  </section>
+
+  <section id="s7">
+    <h2><span class="num">7</span><span data-t="s7_h">Export</span></h2>
+    <p class="lead" data-t-html="s7"></p>
+    <figure><img src="tutorial/09-export.jpg" alt="" loading="lazy"><figcaption data-t="s7_c"></figcaption></figure>
+  </section>
+
+  <section id="s8">
+    <h2><span class="num">8</span><span data-t="s8_h">Put it on the camera</span></h2>
+    <ol class="tips">
+      <li data-t-html="s8_1"></li>
+      <li data-t-html="s8_2"></li>
+      <li data-t-html="s8_3"></li>
+      <li data-t-html="s8_4"></li>
+      <li data-t-html="s8_5"></li>
+    </ol>
+    <p class="note warn" data-t="risk"></p>
+  </section>
+
+  <footer data-t-html="footer"></footer>
+</main>
+
+<dialog id="zoom"><img id="zoom-img" alt=""></dialog>
+
+<script>
+// Texts in English and German; the choice is shared with the editor (localStorage "lang").
+const T = {
+  en: {
+    open_editor: "Open the editor",
+    title: "Your own looks on the GR III",
+    intro: "The Look Editor builds image controls of your own into Ricoh's official firmware update for the GR III and GR IIIx. This tutorial walks through one session with four looks, from loading the firmware to flashing the camera. Everything runs in your browser; nothing is uploaded.",
+    try_preset: "Open the editor with these looks", dl_preset: "Download the preset",
+    looks_h: "The four looks of this tutorial",
+    looks_lead: "Each look replaces one image control of the camera and starts from the colours of another. Drag the slider to compare with the camera JPEG, pick a photo below. The renders are the editor's preview of the raw file; Cross Process is shown with Color Tone 1.",
+    camera_jpeg: "Camera JPEG",
+    look_Vivid: "Vivid", look_BleechBypass_GR: "Bleach Bypass", look_HdrCuisine: "HDR Tone", look_CrossProcess: "Cross Process",
+    desc_Vivid: "<b>Vivid ← Negative Film.</b> Negative Film's soft colours, saturation ×1.34, a curve that deepens the shadows, cyan in the shadows and warm highlights from the colour wheels.",
+    desc_BleechBypass_GR: "<b>Bleach Bypass ← Positive Film.</b> Positive Film's colours with red and blue turned (calibration: red −5, blue −35), a light S-curve, and HSL that moves yellow and green towards a warmer, more even tone.",
+    desc_HdrCuisine: "<b>HDR Tone ← Negative Film.</b> HDR's effects off, so it is a plain image control. Negative Film's colours, darker shadows and brighter highlights from the wheels' luminance, a warm overall tint, and HSL that makes reds richer.",
+    desc_CrossProcess: "<b>Cross Process ← Oldschool Positive Film.</b> The extra base Oldschool Positive Film (rich red, muted green and yellow, deep blacks), saturation ×1.2, three variants for Color Tone 1–3: 1 and 3 with teal shadows and warm highlights, 3 stronger. HSL boosts red and calms blue.",
+    toc_looks: "Looks", toc_1: "Firmware", toc_2: "Photo", toc_3: "Target & source", toc_4: "Edit", toc_5: "Compare", toc_6: "Cross Process", toc_7: "Export", toc_8: "Camera",
+    s1_h: "Load the camera firmware",
+    s1: "The editor works on Ricoh's update file: GR III <b>2.10</b> (<code>fwdc239b.bin</code>) or GR IIIx <b>1.60</b> (<code>fwdc243b.bin</code>), from <a href=\"https://www.ricoh-imaging.co.jp/english/products/gr-3/firmup/index.html\" target=\"_blank\" rel=\"noopener\">Ricoh's firmware page</a>. Drop it onto the window. The editor checks that it is exactly that build and that it packs back into the same file; other versions are refused.",
+    s1_c: "The firmware screen. The file stays in the browser.",
+    s2_h: "Open a photo",
+    s2: "Open a <b>DNG</b> from your camera, or drop it onto the preview. The editor renders it with the camera's own colour matrices and tone curves and fits the preview to the JPEG embedded in the DNG. Until you choose a target, it shows the photo's own image control.",
+    s2_c: "A photo taken in Negative Film, before any edit. Top left the views, top right the buttons for presets and photos.",
+    s3_h: "Choose a target and a source",
+    s3: "<b>Target</b> is the image control of the camera that gets your look, for example Vivid. <b>Source</b> is the colours it starts from, for example Negative Film, or the target's own. The edit column below then belongs to that target alone; every other image control stays as Ricoh made it.",
+    s3_c: "Vivid as the target, built from Negative Film. The menu shows each target's state: stock, from another look, edited (●).",
+    s3_t1: "Retro, Bleach Bypass, HDR Tone and Cross Process are not offered as sources. As targets they start from their own colours.",
+    s3_t2: "Changing the source later keeps your curves, wheels and HSL; only the base underneath changes.",
+    s3_t3: "The extra base <b>Oldschool Positive Film</b> sets a colour matrix and a tone curve of its own; the target keeps its look data.",
+    s4_h: "Shape the look",
+    s4: "The column has one section per kind of edit: <b>Base colour</b> (saturation, hue, calibration of red, green and blue), <b>RGB curves</b>, <b>Colour wheels</b>, <b>HSL curves</b> and <b>Advanced</b> (matrix values, copying curves). A dot marks a changed section; each has its own reset.",
+    s4_c1: "RGB curves of Vivid: one curve on all three channels. Click adds a point, drag moves it, double-click removes it.",
+    s4_c2: "Colour wheels: cyan into the shadows, warm into the highlights. The slider under each wheel changes brightness.",
+    s4_c3: "HSL curves of Bleach Bypass: hue, saturation and luminance per colour, as the camera's hue-selective stage can do them (the steps are drawn dashed).",
+    s4_t1: "The curves and wheels are written into the target's own channel curves in the firmware.",
+    s4_t2: "HSL cannot follow any curve: per quarter of the colour circle the camera has at most 5 steps, 11 in all. The preview shows exactly those steps.",
+    s4_t3: "The camera's own settings (contrast, saturation, highlights, shadows …) keep working on top of your look. Under <i>Camera settings of the photo</i> you can try them in the preview.",
+    s4_t4: "HDR Tone as a target always has its effects off: a plain image control with colours of its own.",
+    s5_h: "Compare",
+    s5: "<b>Before / After</b> puts the target's stock look next to your edit, <b>Compare camera</b> the camera JPEG next to the preview, <b>Camera JPEG</b> shows the JPEG alone. Drag the line to move the split.",
+    s5_c: "Before / After for Bleach Bypass: left the stock look, right the look from Positive Film.",
+    s6_h: "More targets, Cross Process variants",
+    s6: "Switch to another target at any time; your edits stay with the target they belong to. One export can carry all of them. <b>Cross Process</b> has three curve variants, selected in the camera via <i>Color Tone 1–3</i>; the buttons above its curve pick the variant you edit.",
+    s6_c: "Cross Process from Oldschool Positive Film, Color Tone 1. A dot on a variant marks its changes.",
+    s7_h: "Export",
+    s7: "<b>Export</b> in the header lists every changed target with its source and what was changed, and shows the free space in the firmware. Confirm the risk, create the update file and download it together with a preset. Loading the preset later (<i>Load preset</i>) brings back every slider, curve and wheel.",
+    s7_c: "The export dialog with four targets. The update file is checked before it is offered.",
+    s8_h: "Put it on the camera",
+    s8_1: "Fully charge the battery.",
+    s8_2: "Copy <code>FWDC239B.BIN</code> (GR IIIx: <code>FWDC243B.BIN</code>) unchanged to the top-level folder of the SD card.",
+    s8_3: "Insert the card and start the firmware update from the camera menu, as with an official update. Do not switch the camera off meanwhile.",
+    s8_4: "Select the image control you changed, for example Vivid: it now carries your look.",
+    s8_5: "Back to the original: install Ricoh's original file the same way.",
+    risk: "At your own risk. Modified firmware may void the warranty. There is no known way to recover if an update goes wrong. This is an unofficial project, not affiliated with Ricoh Imaging.",
+    footer: "Photos: sample DNGs from a GR III. Previews rendered by the editor. <a href=\"index.html\">Open the editor</a>.",
+  },
+  de: {
+    open_editor: "Editor öffnen",
+    title: "Eigene Looks für die GR III",
+    intro: "Der Look-Editor baut eigene Bildstile in Ricohs offizielles Firmware-Update für GR III und GR IIIx ein. Dieses Tutorial zeigt eine Sitzung mit vier Looks, vom Laden der Firmware bis zum Aufspielen auf die Kamera. Alles läuft in deinem Browser, nichts wird hochgeladen.",
+    try_preset: "Editor mit diesen Looks öffnen", dl_preset: "Preset herunterladen",
+    looks_h: "Die vier Looks dieses Tutorials",
+    looks_lead: "Jeder Look ersetzt einen Bildstil der Kamera und startet mit den Farben eines anderen. Zieh den Regler für den Vergleich mit dem Kamera-JPEG, wähl unten ein Foto. Die Bilder sind die Vorschau des Editors aus der RAW-Datei; Cross Process ist mit Farbton 1 gezeigt.",
+    camera_jpeg: "Kamera-JPEG",
+    look_Vivid: "Vivid", look_BleechBypass_GR: "Bleach Bypass", look_HdrCuisine: "HDR-Ton", look_CrossProcess: "Cross Process",
+    desc_Vivid: "<b>Vivid ← Negative Film.</b> Die weichen Farben von Negative Film, Sättigung ×1,34, eine Kurve, die die Schatten vertieft, Cyan in den Schatten und warme Lichter aus den Farbrädern.",
+    desc_BleechBypass_GR: "<b>Bleach Bypass ← Positive Film.</b> Die Farben von Positive Film mit gedrehtem Rot und Blau (Kalibrierung: Rot −5, Blau −35), eine leichte S-Kurve und HSL, das Gelb und Grün zu einem wärmeren, ruhigeren Ton schiebt.",
+    desc_HdrCuisine: "<b>HDR-Ton ← Negative Film.</b> HDR-Effekte aus, also ein normaler Bildstil. Farben von Negative Film, dunklere Schatten und hellere Lichter über die Helligkeit der Farbräder, ein warmer Gesamtton und HSL für satteres Rot.",
+    desc_CrossProcess: "<b>Cross Process ← Oldschool Positive Film.</b> Die Grundlage Oldschool Positive Film (kräftiges Rot, gedämpftes Grün und Gelb, tiefe Schwärzen), Sättigung ×1,2, drei Varianten für Farbton 1–3: 1 und 3 mit petrolfarbenen Schatten und warmen Lichtern, 3 kräftiger. HSL verstärkt Rot und beruhigt Blau.",
+    toc_looks: "Looks", toc_1: "Firmware", toc_2: "Foto", toc_3: "Ziel & Quelle", toc_4: "Bearbeiten", toc_5: "Vergleichen", toc_6: "Cross Process", toc_7: "Export", toc_8: "Kamera",
+    s1_h: "Kamera-Firmware laden",
+    s1: "Der Editor arbeitet mit Ricohs Update-Datei: GR III <b>2.10</b> (<code>fwdc239b.bin</code>) oder GR IIIx <b>1.60</b> (<code>fwdc243b.bin</code>), zu finden auf <a href=\"https://www.ricoh-imaging.co.jp/english/products/gr-3/firmup/index.html\" target=\"_blank\" rel=\"noopener\">Ricohs Firmware-Seite</a>. Zieh sie ins Fenster. Der Editor prüft, dass es genau dieser Stand ist und dass sie sich wieder zur selben Datei packen lässt; andere Versionen lehnt er ab.",
+    s1_c: "Der Firmware-Bildschirm. Die Datei bleibt im Browser.",
+    s2_h: "Foto öffnen",
+    s2: "Öffne ein <b>DNG</b> deiner Kamera oder zieh es auf die Vorschau. Der Editor rechnet es mit den Farbmatrizen und Tonkurven der Kamera und gleicht die Vorschau am JPEG ab, das im DNG steckt. Solange kein Ziel gewählt ist, zeigt er den Bildstil des Fotos.",
+    s2_c: "Ein Foto in Negative Film, noch unbearbeitet. Oben links die Ansichten, oben rechts die Knöpfe für Presets und Fotos.",
+    s3_h: "Ziel und Quelle wählen",
+    s3: "<b>Ziel</b> ist der Bildstil der Kamera, der deinen Look bekommt, zum Beispiel Vivid. <b>Quelle</b> sind die Farben, mit denen er startet, zum Beispiel Negative Film oder die eigenen des Ziels. Die Spalte darunter gehört dann nur diesem Ziel; alle anderen Bildstile bleiben, wie Ricoh sie gemacht hat.",
+    s3_c: "Vivid als Ziel, aus Negative Film. Das Menü zeigt den Zustand jedes Ziels: original, aus einem anderen Look, bearbeitet (●).",
+    s3_t1: "Retro, Bleach Bypass, HDR-Ton und Cross Process werden nicht als Quelle angeboten. Als Ziel starten sie mit ihren eigenen Farben.",
+    s3_t2: "Ein späterer Quellwechsel behält Kurven, Farbräder und HSL; nur die Grundlage darunter wechselt.",
+    s3_t3: "Die Grundlage <b>Oldschool Positive Film</b> bringt eine eigene Farbmatrix und Tonkurve mit; das Ziel behält seine Look-Daten.",
+    s4_h: "Den Look formen",
+    s4: "Die Spalte hat einen Abschnitt pro Art der Bearbeitung: <b>Grundfarbe</b> (Sättigung, Farbton, Kalibrierung von Rot, Grün und Blau), <b>RGB-Kurven</b>, <b>Farbräder</b>, <b>HSL-Kurven</b> und <b>Erweitert</b> (Matrix-Werte, Kurven kopieren). Ein Punkt markiert einen geänderten Abschnitt, jeder hat sein eigenes Zurücksetzen.",
+    s4_c1: "RGB-Kurven von Vivid: eine Kurve auf allen drei Kanälen. Klick setzt einen Punkt, Ziehen verschiebt ihn, Doppelklick entfernt ihn.",
+    s4_c2: "Farbräder: Cyan in die Schatten, Wärme in die Lichter. Der Regler unter jedem Rad ändert die Helligkeit.",
+    s4_c3: "HSL-Kurven von Bleach Bypass: Farbton, Sättigung und Helligkeit pro Farbe, so wie die farbtonselektive Stufe der Kamera sie kann (die Stufen sind gestrichelt).",
+    s4_t1: "Kurven und Farbräder landen in den eigenen Kanalkurven des Ziels in der Firmware.",
+    s4_t2: "HSL kann nicht jeder Kurve folgen: Pro Viertel des Farbkreises hat die Kamera höchstens 5 Stufen, insgesamt 11. Die Vorschau zeigt genau diese Stufen.",
+    s4_t3: "Die Einstellungen der Kamera (Kontrast, Sättigung, Lichter, Schatten …) wirken weiter auf deinen Look. Unter <i>Kamera-Einstellungen der Aufnahme</i> kannst du sie in der Vorschau ausprobieren.",
+    s4_t4: "HDR-Ton als Ziel hat seine Effekte immer aus: ein normaler Bildstil mit eigenen Farben.",
+    s5_h: "Vergleichen",
+    s5: "<b>Vorher / Nachher</b> stellt den Original-Look des Ziels neben deine Bearbeitung, <b>Vergleich Kamera</b> das Kamera-JPEG neben die Vorschau, <b>Kamera-JPEG</b> zeigt das JPEG allein. Die Linie lässt sich verschieben.",
+    s5_c: "Vorher / Nachher für Bleach Bypass: links der Original-Look, rechts der Look aus Positive Film.",
+    s6_h: "Weitere Ziele, Varianten von Cross Process",
+    s6: "Du kannst jederzeit zu einem anderen Ziel wechseln; deine Änderungen bleiben bei ihrem Ziel. Ein Export nimmt alle mit. <b>Cross Process</b> hat drei Kurven-Varianten, in der Kamera über <i>Farbton 1–3</i> gewählt; die Knöpfe über seiner Kurve wählen die Variante, die du bearbeitest.",
+    s6_c: "Cross Process aus Oldschool Positive Film, Farbton 1. Ein Punkt an einer Variante markiert ihre Änderungen.",
+    s7_h: "Export",
+    s7: "<b>Export</b> in der Kopfzeile listet jedes geänderte Ziel mit Quelle und Änderungen und zeigt den freien Platz in der Firmware. Risiko bestätigen, Update-Datei erstellen und zusammen mit einem Preset herunterladen. Später bringt <i>Preset laden</i> jeden Regler, jede Kurve und jedes Farbrad zurück.",
+    s7_c: "Der Export-Dialog mit vier Zielen. Die Update-Datei wird geprüft, bevor sie angeboten wird.",
+    s8_h: "Auf die Kamera spielen",
+    s8_1: "Akku voll laden.",
+    s8_2: "<code>FWDC239B.BIN</code> (GR IIIx: <code>FWDC243B.BIN</code>) unverändert ins oberste Verzeichnis der SD-Karte kopieren.",
+    s8_3: "Karte einlegen und das Firmware-Update im Menü der Kamera starten, wie bei einem offiziellen Update. Kamera dabei nicht ausschalten.",
+    s8_4: "Den geänderten Bildstil wählen, zum Beispiel Vivid: Er trägt jetzt deinen Look.",
+    s8_5: "Zurück zum Original: die Originaldatei von Ricoh genauso aufspielen.",
+    risk: "Auf eigenes Risiko. Veränderte Firmware kann die Garantie kosten. Für den Fall, dass ein Update schiefgeht, ist noch kein Rettungsweg bekannt. Inoffizielles Projekt, nicht mit Ricoh Imaging verbunden.",
+    footer: "Fotos: Beispiel-DNGs einer GR III. Vorschauen vom Editor gerechnet. <a href=\"index.html\">Editor öffnen</a>.",
+  },
+};
+let LANG = (() => { try { const l = localStorage.getItem("lang"); if (T[l]) return l; } catch {} return "en"; })();
+const t = (k) => T[LANG][k] ?? T.en[k] ?? k;
+
+const PHOTOS = ["MR022068", "MR019241", "MR020180", "MR021687", "MR022009", "MR022069", "MR022070"];
+const LOOKS = ["Vivid", "BleechBypass_GR", "HdrCuisine", "CrossProcess"];
+const TOC = [["looks", "toc_looks"], ["s1", "toc_1"], ["s2", "toc_2"], ["s3", "toc_3"], ["s4", "toc_4"], ["s5", "toc_5"], ["s6", "toc_6"], ["s7", "toc_7"], ["s8", "toc_8"]];
+const view = { photo: PHOTOS[0], look: LOOKS[0] };
+const $ = (id) => document.getElementById(id);
+const img = (p, l) => `tutorial/gallery/${p}-${l}.jpg`;
+
+function render() {
+  document.documentElement.lang = LANG;
+  for (const el of document.querySelectorAll("[data-t]")) el.textContent = t(el.dataset.t);
+  for (const el of document.querySelectorAll("[data-t-html]")) el.innerHTML = t(el.dataset.tHtml);
+  for (const b of document.querySelectorAll("#lang button")) b.classList.toggle("on", b.dataset.lang === LANG);
+  $("toc").innerHTML = TOC.map(([id, k]) => `<a href="#${id}">${t(k)}</a>`).join("");
+  $("look-tabs").innerHTML = LOOKS.map((l) => `<button type="button" data-look="${l}" class="${l === view.look ? "on" : ""}">${t("look_" + l)}</button>`).join("");
+  for (const b of $("look-tabs").children) b.onclick = () => { view.look = b.dataset.look; render(); };
+  $("img-base").src = img(view.photo, "camera");
+  $("img-look").src = img(view.photo, view.look);
+  $("tag-look").textContent = t("look_" + view.look);
+  $("look-desc").innerHTML = t("desc_" + view.look);
+  for (const b of $("thumbs").children) b.classList.toggle("on", b.dataset.photo === view.photo);
+}
+
+$("thumbs").innerHTML = PHOTOS.map((p) => `<button type="button" data-photo="${p}"><img src="${img(p, "camera")}" alt="${p}" loading="lazy"></button>`).join("");
+for (const b of $("thumbs").children) b.onclick = () => { view.photo = b.dataset.photo; render(); };
+$("img-base").onload = () => $("compare").classList.toggle("portrait", $("img-base").naturalHeight > $("img-base").naturalWidth);
+
+// the split between camera JPEG (left) and look (right)
+const cmp = $("compare");
+let drag = false;
+const setCut = (e) => {
+  const r = cmp.getBoundingClientRect();
+  cmp.style.setProperty("--cut", `${Math.max(0, Math.min(100, (100 * (e.clientX - r.left)) / r.width))}%`);
+};
+cmp.addEventListener("pointerdown", (e) => { drag = true; cmp.setPointerCapture(e.pointerId); setCut(e); });
+cmp.addEventListener("pointermove", (e) => drag && setCut(e));
+cmp.addEventListener("pointerup", () => { drag = false; });
+
+for (const b of document.querySelectorAll("#lang button")) b.onclick = () => {
+  LANG = b.dataset.lang;
+  try { localStorage.setItem("lang", LANG); } catch {}
+  render();
+};
+for (const im of document.querySelectorAll("figure img")) im.onclick = () => { $("zoom-img").src = im.src; $("zoom").showModal(); };
+$("zoom").onclick = () => $("zoom").close();
+render();
+</script>
+</body>
+</html>
