@@ -90,7 +90,7 @@ curves linked or per channel, colour wheels; the curves always start
 linear), **4 Export**. Other image controls and the tone curve
 for all image controls are under "advanced". Technically Cross Process gets
 its own ColorMatrix set and its own matrix in the free area `0x53002080…`
-(`core/src/looks.rs`, `private_cross`; the set is 21 words long).
+(`core/src/looks.rs`, `private_set_at`; the set is 21 words long).
 
 - **Colour matrix** per image control, directly or via saturation/hue.
 - **Calibration** as in Lightroom: hue and saturation of the primaries red,
@@ -154,7 +154,7 @@ its own ColorMatrix set and its own matrix in the free area `0x53002080…`
   computes like Negative Film and carries RGB curves
   ([docs/tone-curves.md](tone-curves.md)).
 - **Extra bases:** besides the image controls of the camera, the base list
-  offers **Positive Film (GR 1)** (rich red, muted green and yellow, deep
+  offers **Oldschool Positive Film** (rich red, muted green and yellow, deep
   blacks). It sets the Cross Process matrix (a fixed matrix times the
   Standard matrix of the loaded firmware) and one tone curve on R, G and B of
   Color Tone 1–3; the camera's own settings keep working on top. Choosing

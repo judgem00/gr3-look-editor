@@ -3,7 +3,12 @@
 mod common;
 use common::need;
 
+use grlook::addr::file_offset;
+use grlook::grfw::{self, Container};
 use grlook::session::Session;
+
+/// the private colour set of Cross Process (looks.rs)
+const CROSS_SET: u32 = 0x5300_2080;
 use serde_json::{json, Value};
 
 /// first difference between two JSON values; numbers may differ by `tol`
@@ -55,7 +60,8 @@ fn firmware_tone_inherit_export() {
     // the web version names the build, not a path on disk
     fw["path"] = json!("work/fwdc239b/unpackedFW");
     // which camera the file is for: newer than the reference answers
-    for k in ["camera", "version", "update_file", "multiaxial", "tone_control_base", "effects_off", "curve_looks", "look_channel_sets"] {
+    for k in ["camera", "version", "update_file", "multiaxial", "tone_control_base", "effects_off", "curve_looks", "look_channel_sets",
+              "targets", "target_names", "sources"] {
         fw.as_object_mut().unwrap().remove(k);
     }
     if let Some(d) = diff(&fw, &g["firmware"], "firmware", 1e-12) {
@@ -70,7 +76,8 @@ fn firmware_tone_inherit_export() {
     let mut inh = s.set_inherit(&json!({"target": "CrossProcess", "source": "NegativeFilm"})).unwrap();
     inh["path"] = json!("work/fwdc239b/unpackedFW");
     // which camera the file is for: newer than the reference answers
-    for k in ["camera", "version", "update_file", "multiaxial", "tone_control_base", "effects_off", "curve_looks", "look_channel_sets"] {
+    for k in ["camera", "version", "update_file", "multiaxial", "tone_control_base", "effects_off", "curve_looks", "look_channel_sets",
+              "targets", "target_names", "sources"] {
         inh.as_object_mut().unwrap().remove(k);
     }
     if let Some(d) = diff(&inh, &g["inherit"]["NegativeFilm"], "inherit", 1e-12) {
@@ -82,9 +89,34 @@ fn firmware_tone_inherit_export() {
     for (n, e) in g["export"].as_array().unwrap().iter().enumerate() {
         s.set_inherit(&json!({"target": "CrossProcess", "source": e["inherit"]})).unwrap();
         let (r, packed, preset) = s.export(&e["request"]).unwrap();
-        assert_eq!(packed.len() as u64, e["update_size"].as_u64().unwrap(), "export {n}: size");
-        assert_eq!(r["update_sha256"], e["update_sha256"], "export {n}: update file differs");
-        assert_eq!(r["frames_reencoded"], e["frames_reencoded"], "export {n}");
+        let tone = !e["request"]["tone"].is_null();
+        let retro = e["inherit"] == json!("Retro");
+        if tone {
+            // the tone curve for all image controls is no longer written
+            assert_eq!(r["tone_ignored"], json!(true), "export {n}");
+            continue;
+        }
+        if retro {
+            // Cross Process built from Retro now reads Retro's neutral toning
+            // (index 4) instead of index 0 (toning -4): the four toning
+            // pointers of its private set move by 8 bytes, nothing else
+            let mut img = Container::parse(packed).unwrap().decode().unwrap();
+            for w in 11..15u32 {
+                let at = file_offset(CROSS_SET + 4 * w);
+                let v = u32::from_le_bytes(img[at..at + 4].try_into().unwrap());
+                img[at..at + 4].copy_from_slice(&(v - 8).to_le_bytes());
+            }
+            grfw::fix_image_checksum(&mut img);
+            let raw = common::update_file().unwrap();
+            let mut c = Container::parse(raw).unwrap();
+            let stock = c.decode().unwrap();
+            let (old, _) = grfw::repack(&c, &stock, &img).unwrap();
+            assert_eq!(json!(grlook::session::sha256_hex(&old)), e["update_sha256"], "export {n}: more than the toning differs");
+        } else {
+            assert_eq!(packed.len() as u64, e["update_size"].as_u64().unwrap(), "export {n}: size");
+            assert_eq!(r["update_sha256"], e["update_sha256"], "export {n}: update file differs");
+            assert_eq!(r["frames_reencoded"], e["frames_reencoded"], "export {n}");
+        }
         let mut preset: Value = serde_json::from_str(&preset).unwrap();
         let mut want = e["preset"].clone();
         preset["source"] = json!(null);

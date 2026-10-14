@@ -215,7 +215,7 @@ for shots there).
   Bypass and HDR have variants with their own parameter sets (table index
   22/23 and 24). MultiAxial and the toning tables remain open.
 - **Shared matrices:** solved for the editor. Standard, HdrCuisine and
-  CrossProcess share one ColorMatrix set. `looks::private_set` copies the set
+  CrossProcess share one ColorMatrix set. `looks::private_set_at` copies the set
   (21 words) and its matrix into free space and redirects the look's entry in
   `0x55018d94`: Cross Process always (`0x53002080`), HDR when its effects are
   off (`0x53003e40`, next to the curve selector).

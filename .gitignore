@@ -8,6 +8,8 @@ unpackedFW*
 *.dng
 *.JPG
 *.jpg
+# tutorial images: canvas renders and screenshots, no camera metadata
+!editor/static/tutorial/**/*.jpg
 # python
 .venv/
 __pycache__/

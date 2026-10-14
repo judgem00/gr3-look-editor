@@ -16,6 +16,7 @@ pub mod looks;
 pub mod multiaxial;
 pub mod session;
 pub mod space;
+pub mod targets;
 pub mod tone;
 pub mod tonecontrol;
 pub mod wasm;
