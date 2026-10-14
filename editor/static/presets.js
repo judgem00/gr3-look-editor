@@ -17,14 +17,12 @@
 function targetExport(T) {
   const s = targetSpec(T), e = editOf(T);
   const out = { source: s.source, effects_off: s.effects_off };
-  if (canEditMatrix(T)) {
-    const m = {};
-    if (!same(effective(T), sourceLook(T).matrix)) m[T] = effective(T);
-    // Bleach Bypass as its own source keeps three variants with sets of their own
-    if (T === BLEACH && s.source === BLEACH && !s.ext && !slidersNeutral(e))
-      for (const v of BLEACH_VARIANTS) m[v] = variantEffective(v);
-    if (Object.keys(m).length) out.matrices = m;
-  }
+  const m = {};
+  if (!same(effective(T), sourceLook(T).matrix)) m[T] = effective(T);
+  // Bleach Bypass as its own source keeps three variants with sets of their own
+  if (T === BLEACH && s.source === BLEACH && !s.ext && !slidersNeutral(e))
+    for (const v of BLEACH_VARIANTS) m[v] = variantEffective(v);
+  if (Object.keys(m).length) out.matrices = m;
   if (hslChangedOf(T)) out.hsl = hsl.looks[T];
   const idx = targetChannels(T);
   if (T === CROSS) {
@@ -118,7 +116,6 @@ function fromV1(p, warn) {
   for (const [T, src] of Object.entries(p.inherit || {})) {
     if (isTarget(T)) tg(T).source = src || T; else skip(T);
   }
-  if (Array.isArray(p.effects_off) && p.effects_off.includes(HDR)) tg(HDR).effects_off = true;
   const me = p.matrix_edits || {};
   for (const [n, e] of Object.entries(me)) {
     if (isTarget(n)) tg(n).edit.matrix = e; else skip(n);
@@ -184,14 +181,12 @@ function applyPreset(p, warn) {
     if (!spec || typeof spec !== "object") continue;
     const s = targetSpec(T), ed = spec.edit || {};
     const src = spec.source || T;
-    if (state.fw.sources.includes(src)) s.source = src;
-    else warn.push(t("e_source_bad", { look: label(T), name: src }));
-    s.effects_off = T === HDR && (!!spec.effects_off || s.source !== HDR);
+    if (sourcesFor(T).includes(src)) s.source = src;
+    else warn.push(t(state.fw.sources.includes(src) ? "e_source_off" : "e_source_bad", { look: label(T), name: label(src) }));
     if (ed.ext) {
       if (state.extBases.some((x) => x.id === ed.ext)) Object.assign(s, { ext: ed.ext, source: T });
       else warn.push(t("e_ext", { name: ed.ext }));
     }
-    if (T === HDR && s.ext) s.effects_off = true;
 
     // colour: sliders and the base if typed in; otherwise the exported matrix as the base
     const e = editOf(T);

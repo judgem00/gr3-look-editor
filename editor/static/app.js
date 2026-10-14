@@ -367,7 +367,7 @@ function renderPickers() {
   if (!T) { ssel.innerHTML = ""; $("pick-note").hidden = true; return; }
   const s = targetSpec(T);
   const opt = (v, text, hint) => `<option value="${esc(v)}"${hint ? ` title="${esc(hint)}"` : ""}>${esc(text)}</option>`;
-  const looks = state.fw.sources.map((n) =>
+  const looks = sourcesFor(T).map((n) =>
     opt(`look:${n}`, n === T ? t("src_own", { look: label(n) }) : label(n), SOURCE_HINTS[n] && t(SOURCE_HINTS[n])));
   const exts = state.extBases.map((x) => opt(`ext:${x.id}`, extText(x.label), extText(x.hint)));
   ssel.innerHTML = `<optgroup label="${esc(t("src_looks"))}">${looks.join("")}</optgroup>` +
@@ -377,9 +377,8 @@ function renderPickers() {
 
   // at most one line about the target's rules
   const note = $("pick-note");
-  const key = T === HDR && (s.source !== HDR || s.ext) ? "pick_hdr"
+  const key = T === HDR ? "pick_hdr"
     : T === BLEACH && s.source !== BLEACH ? "pick_bleach"
-    : s.source === "Retro" && T !== "Retro" ? "pick_retro"
     : T === CROSS ? "pick_cross" : null;
   note.hidden = !key;
   if (key) note.textContent = t(key);
@@ -398,8 +397,6 @@ function setSource(T, value) {
   clearExtCurves(T, extOf(T));
   s.source = source;
   s.ext = ext;
-  // HDR takes another source or a matrix of its own only with its effects off
-  if (T === HDR && (source !== HDR || ext)) s.effects_off = true;
   editOf(T).base = null;     // hand-typed matrix values belonged to the old base
   applyExtCurves(T, extOf(T));
   relink();
@@ -422,14 +419,13 @@ function select(name) {
 
 // ---- the edit column ----------------------------------------------------------
 
-const SECTIONS = ["base", "curves", "wheels", "hsl", "hdr", "adv"];
+const SECTIONS = ["base", "curves", "wheels", "hsl", "adv"];
 function sectionDirty(sec, T) {
   switch (sec) {
     case "base": return baseColourChanged(T);
     case "curves": return curvesEdited(T);
     case "wheels": return gradedOf(T).length > 0;
     case "hsl": return hslChangedOf(T);
-    case "hdr": return targetSpec(T).effects_off;
     case "adv": return matrixTyped(T);
   }
   return false;
@@ -440,21 +436,15 @@ function renderSections() {
   $("no-target").hidden = !!T;
   for (const sec of SECTIONS) {
     const el = $(`sec-${sec}`);
-    el.hidden = !T || (sec === "hdr" && T !== HDR);
+    el.hidden = !T;
     if (el.hidden) continue;
     const dirty = sectionDirty(sec, T);
     el.classList.toggle("dirty", dirty);
     el.querySelector("button.reset").disabled = !dirty;
   }
   if (!T) return;
-  // HDR with its effects on keeps the matrix it shares with Standard
-  const own = canEditMatrix(T);
-  $("base-hdr").hidden = own;
-  $("base-edit").hidden = !own;
-  $("adv-matrix").hidden = !own;
   renderBase();
   renderAdvanced();
-  renderHdr();
 }
 
 function resetSection(sec) {
@@ -476,7 +466,6 @@ function resetSection(sec) {
       requestTone();
       break;
     case "hsl": delete hsl.looks[T]; renderHsl(); requestHsl(); break;
-    case "hdr": setEffectsOff(false); return;
   }
   update();
 }
@@ -515,7 +504,7 @@ function renderBase() {
 
 function renderAdvanced() {
   const T = state.current;
-  if (!T || !canEditMatrix(T)) return;
+  if (!T) return;
   const start = startMatrix(T);
   const m = effective(T);
   const box = $("matrix");
@@ -544,29 +533,6 @@ function renderAdvanced() {
   const look = state.looks[T];
   $("addr").textContent = look ? `0x${look.address.toString(16)}` : "";
 }
-
-function renderHdr() {
-  if (state.current !== HDR) return;
-  const s = targetSpec(HDR);
-  const forced = s.source !== HDR || !!s.ext;
-  $("hdr-off").checked = s.effects_off;
-  $("hdr-off").disabled = forced && s.effects_off;
-  $("hdr-note").textContent = t(forced ? "hdr_needed" : "hdr_off_short");
-}
-
-function setEffectsOff(off) {
-  const s = targetSpec(HDR);
-  if (!off && (s.source !== HDR || s.ext)) {
-    // back to HDR's own data: another source needs the effects off
-    clearExtCurves(HDR, extOf(HDR));
-    Object.assign(s, { source: HDR, ext: null });
-    editOf(HDR).base = null;
-  }
-  s.effects_off = off;
-  update();
-  requestTone();
-}
-$("hdr-off").onchange = (e) => setEffectsOff(e.target.checked);
 
 // the header's export button and the list in the export dialog
 function renderChanges() {

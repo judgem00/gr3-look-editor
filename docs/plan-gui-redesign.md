@@ -38,6 +38,11 @@ screen between the controls.
 - Every target gets a colour matrix of its own. Without it, a target that
   takes its data from a source shares the source's matrix (see below).
 - Monochrome image controls are not offered as targets for now.
+- (Phase 2 review) HDR Tone as a target always has its effects off; there
+  is no switch for them. Retro, Bleach Bypass (all three variants) and
+  Cross Process are not offered as a source for another target: their
+  colours do not make a good base. As targets they keep their own colours
+  as the starting point.
 
 ## Background: why every target needs its own matrix
 
@@ -97,7 +102,7 @@ Retro, Negative Film) next to the existing Cross Process and HDR sets.
   - *Colour wheels*: shadows, midtones, highlights, global, balance; they
     write the target's RGB curves as today.
   - *HSL curves*: Hue vs Hue / Sat / Lum, protect shadows and highlights.
-  - *HDR effects off*: only for HDR Tone.
+  - *HDR effects off*: only for HDR Tone (dropped in Phase 2: always off).
   - *Advanced*: matrix values, copy curves.
 - **Space meter** pinned at the bottom of the side panel, for all targets
   together.
@@ -297,10 +302,13 @@ the hero box, the tone-curve panel and the "other image controls" and
   (`POST /api/target`, add or `remove`), so `/api/hsl` and `/api/space` see
   the same colour sets as the export. The export itself sends every changed
   target in the v2 format.
-- *Rules in the UI:* HDR Tone with another source or an extra base switches
-  its effects off (the switch is then locked; its reset goes back to HDR's
-  own colours); with its effects on the base colour and matrix sections are
-  replaced by one line. Bleach Bypass as its own source applies the sliders
+- *Rules in the UI* (after the user's review): HDR Tone as a target always
+  has its effects off, so it always has a matrix of its own and the
+  editor has no HDR section; an HDR Tone that is not changed stays stock.
+  The source picker leaves out Retro, Bleach Bypass 1–3 and Cross Process
+  for every target but the look itself (`NO_SOURCE` in `targets.js`); a
+  preset that names one keeps the target's own colours and says so. The
+  core still accepts them. Bleach Bypass as its own source applies the sliders
   to all three variants (`matrices` for Var. 2/3 too). Extra bases work for
   every target: the target keeps its own look data, the base sets matrix and
   curves.
@@ -315,7 +323,7 @@ the hero box, the tone-curve panel and the "other image controls" and
 - *Browser test* (MR024661, fwdc239b): Standard ← Vivid, Vivid ← Negative
   Film then Retro (curve, HSL, wheel, saturation), Positive Film ← Bleach
   Bypass 3 (calibration), Bleach Bypass ← Standard, Retro ← Retro
-  (saturation), HDR ← Standard (effects off forced), Cross Process ←
+  (saturation), HDR ← Standard (effects off), Cross Process ←
   Positive Film (GR 1), Negative Film ← Positive Film; each changes the
   preview from stock. Switching targets and changing Vivid's source kept its
   edits byte for byte. The export of all eight gave `FWDC239B.BIN` (checks
@@ -336,9 +344,9 @@ Checklist against `docs/editor.md` (features of the earlier editor):
 | Copy a single channel or a whole set | Advanced → Copy curves |
 | Channel curves of the other colour image controls | RGB curves of that target |
 | Free space meter, export refused when full | pinned meter (all targets), dialog repeats it |
-| HDR effects off | own section, HDR only |
+| HDR effects off | always off for HDR Tone as a target, no switch |
 | Colour wheels | own section; Cross Process per variant |
-| Cross Process with another look's data | Source picker (any target) |
+| Cross Process with another look's data | Source picker (any target; Retro, Bleach Bypass, Cross Process not offered as sources) |
 | Extra bases, removed with untouched curves, recognised in presets | Source picker, "Extra bases"; leaving one removes its untouched curves; v1 detection kept |
 | Camera settings drawer, Load preview settings from DNG, white balance | unchanged |
 | Export: update file + preset, stale downloads hidden after an edit | Export dialog from the header |
@@ -366,10 +374,10 @@ Standard as the control):
 | Standard | — | unchanged, control |
 | Vivid | Negative Film | own matrix: more saturation + marker curve |
 | Negative Film | — | stock (must stay identical to stock despite Vivid) |
-| Positive Film | Bleach Bypass 3 | calibration red hue shift (toning shift) |
+| Positive Film | Vivid | calibration red hue shift |
 | Retro | Retro | own matrix (Retro's vignette must stay) |
 | Bleach Bypass | Standard | own matrix; all three variants the same |
-| HDR Tone | Standard | effects off, own matrix |
+| HDR Tone | Standard | own matrix (effects always off) |
 | Cross Process | Positive Film (GR 1) | as today |
 
 Shots of the grey ramp and the MultiAxial target per target, compared with

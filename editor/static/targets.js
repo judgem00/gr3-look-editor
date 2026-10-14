@@ -4,7 +4,8 @@
 // changing its source keeps them; only the base underneath changes.
 //
 // Per target the editor keeps
-//   state.targets[name]  { source, ext, effects_off }  (ext: id of an extra base)
+//   state.targets[name]  { source, ext, effects_off }  (ext: id of an extra base;
+//                        effects_off: HDR Tone only, always on for it)
 //   state.edits[name]    { base | null, sat, hue, calib }  (base null: the source's matrix)
 //   state.chan.edits / state.grade  by channel index / set name, as before
 //   hsl.looks[name]      HSL curves (hsl.js)
@@ -21,7 +22,9 @@ const targetNames = () => (state.fw ? state.fw.target_names : []);
 const isTarget = (name) => targetNames().includes(name);
 
 function targetSpec(name) {
-  if (!state.targets[name]) state.targets[name] = { source: name, ext: null, effects_off: false };
+  // HDR Tone as a target always has its effects off (no local tone mapping):
+  // the modified firmware never carries them, and only then is its matrix its own
+  if (!state.targets[name]) state.targets[name] = { source: name, ext: null, effects_off: name === HDR };
   return state.targets[name];
 }
 
@@ -32,8 +35,11 @@ const extOf = (name) => {
 // the look whose data the target computes with (an extra base keeps the target's own)
 const sourceOf = (name) => targetSpec(name).source;
 const sourceLook = (name) => state.stock[sourceOf(name)];
-// HDR gets a matrix of its own only with its effects off (targets.rs)
-const canEditMatrix = (name) => name !== HDR || targetSpec(name).effects_off;
+// Looks that are not offered as a source for another target: their colours
+// do not make a good base. As its own source each stays a target.
+const NO_SOURCE = ["Retro", "BleechBypass_GR", "BleechBypass_GR · Var. 2", "BleechBypass_GR · Var. 3", "CrossProcess"];
+const sourcesFor = (name) => state.fw.sources.filter((n) => n === name || !NO_SOURCE.includes(n));
+
 // the matrix the target starts from: its source's, or the extra base's
 const startMatrix = (name) => (extOf(name) ? extMatrix(extOf(name)) : sourceLook(name).matrix);
 
@@ -50,14 +56,13 @@ const baseMatrix = (name) => editOf(name).base || startMatrix(name);
 const applySliders = (e, base) => mul(mul(mul(saturation(e.sat), hueRotation(e.hue)), base), calibMatrix(e.calib));
 
 function effective(name) {
-  if (!canEditMatrix(name)) return startMatrix(name);
   return applySliders(editOf(name), baseMatrix(name));
 }
 // Bleach Bypass as its own source keeps its variants: the sliders act on each
 const variantEffective = (v) => applySliders(editOf(BLEACH), state.stock[v].matrix);
 
-const baseColourChanged = (name) => canEditMatrix(name) && !slidersNeutral(editOf(name));
-const matrixTyped = (name) => canEditMatrix(name) && !!editOf(name).base &&
+const baseColourChanged = (name) => !slidersNeutral(editOf(name));
+const matrixTyped = (name) => !!editOf(name).base &&
   !same(editOf(name).base, startMatrix(name));
 
 // ---- curves ----------------------------------------------------------------------
@@ -104,8 +109,7 @@ const hslChangedOf = (name) => !hslNeutral(hsl.looks[name]);
 function targetChanged(name) {
   if (!state.fw || !state.stock[name]) return false;
   const s = targetSpec(name);
-  return s.source !== name || !!s.ext || s.effects_off ||
-    (canEditMatrix(name) && !same(effective(name), state.stock[name].matrix)) ||
+  return s.source !== name || !!s.ext || !same(effective(name), state.stock[name].matrix) ||
     curvesForExport(name).length > 0 || hslChangedOf(name);
 }
 const changedTargets = () => targetNames().filter(targetChanged);
@@ -122,7 +126,7 @@ function targetState(name) {
 function changesOf(name) {
   const out = [];
   const e = editOf(name);
-  if (canEditMatrix(name) && (!slidersNeutral(e) || matrixTyped(name))) out.push(t("ex_matrix"));
+  if (!slidersNeutral(e) || matrixTyped(name)) out.push(t("ex_matrix"));
   const sets = new Set(curvesForExport(name).map(chanSetOf));
   if (sets.size) out.push(name === CROSS ? t("ex_curves_sets", { list: SET_ORDER.filter((n) => sets.has(n)).map(setLabel).join(", ") }) : t("ex_curves"));
   if (gradedOf(name).length) out.push(t("ex_wheels"));
