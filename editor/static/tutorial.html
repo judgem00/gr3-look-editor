@@ -51,9 +51,12 @@ p b, li b { color: var(--text); }
 .looks button { background: var(--field); color: var(--muted); border: 1px solid var(--line); border-radius: 999px;
   padding: 5px 12px; font: inherit; font-size: 13px; cursor: pointer; }
 .looks button.on { color: #1a1407; background: var(--accent); border-color: var(--accent); font-weight: 600; }
-.compare { position: relative; margin: 0 auto; background: #0b0b0c; border-radius: 6px; overflow: hidden; user-select: none; touch-action: none; }
-.compare img { display: block; width: 100%; height: auto; }
-.compare .top { position: absolute; inset: 0; clip-path: inset(0 0 0 var(--cut, 50%)); }
+.compare { position: relative; margin: 0 auto; background: #0b0b0c; border-radius: 6px; overflow: hidden; cursor: ew-resize;
+  -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; touch-action: none; }
+.compare img { display: block; width: 100%; height: auto; pointer-events: none; -webkit-user-drag: none; }
+
+.compare .top { position: absolute; top: 0; bottom: 0; right: 0; width: calc(100% - var(--cut, 50%)); overflow: hidden; }
+.compare .top img { position: absolute; top: 0; right: 0; width: var(--w, 100%); max-width: none; height: 100%; }
 .compare .bar { position: absolute; top: 0; bottom: 0; left: var(--cut, 50%); width: 0; border-left: 2px solid rgba(255,255,255,.85); cursor: ew-resize; }
 .compare .bar::after { content: ""; position: absolute; top: 50%; left: -10px; width: 18px; height: 40px; margin-top: -20px; border-radius: 9px; background: rgba(255,255,255,.9); }
 .compare .tag { position: absolute; top: 10px; padding: 2px 8px; border-radius: 4px; background: rgba(0,0,0,.6); font-size: 12px; pointer-events: none; }
@@ -116,8 +119,8 @@ footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line)
     <div class="viewer">
       <div class="looks" id="look-tabs"></div>
       <div class="compare" id="compare">
-        <img id="img-base" alt="">
-        <div class="top"><img id="img-look" alt=""></div>
+        <img id="img-base" alt="" draggable="false">
+        <div class="top"><img id="img-look" alt="" draggable="false"></div>
         <div class="bar" id="bar"></div>
         <span class="tag l" data-t="camera_jpeg">Camera JPEG</span><span class="tag r" id="tag-look"></span>
       </div>
@@ -313,7 +316,7 @@ const T = {
 let LANG = (() => { try { const l = localStorage.getItem("lang"); if (T[l]) return l; } catch {} return "en"; })();
 const t = (k) => T[LANG][k] ?? T.en[k] ?? k;
 
-const PHOTOS = ["MR022068", "MR019241", "MR020180", "MR021687", "MR022009", "MR022069", "MR022070"];
+const PHOTOS = ["MR022068", "MR019241", "MR022069", "MR022070"];
 const LOOKS = ["Vivid", "BleechBypass_GR", "HdrCuisine", "CrossProcess"];
 const TOC = [["looks", "toc_looks"], ["s1", "toc_1"], ["s2", "toc_2"], ["s3", "toc_3"], ["s4", "toc_4"], ["s5", "toc_5"], ["s6", "toc_6"], ["s7", "toc_7"], ["s8", "toc_8"]];
 const view = { photo: PHOTOS[0], look: LOOKS[0] };
@@ -329,6 +332,7 @@ function render() {
   $("look-tabs").innerHTML = LOOKS.map((l) => `<button type="button" data-look="${l}" class="${l === view.look ? "on" : ""}">${t("look_" + l)}</button>`).join("");
   for (const b of $("look-tabs").children) b.onclick = () => { view.look = b.dataset.look; render(); };
   $("img-base").src = img(view.photo, "camera");
+  preload(view.photo);
   $("img-look").src = img(view.photo, view.look);
   $("tag-look").textContent = t("look_" + view.look);
   $("look-desc").innerHTML = t("desc_" + view.look);
@@ -337,7 +341,15 @@ function render() {
 
 $("thumbs").innerHTML = PHOTOS.map((p) => `<button type="button" data-photo="${p}"><img src="${img(p, "camera")}" alt="${p}" loading="lazy"></button>`).join("");
 for (const b of $("thumbs").children) b.onclick = () => { view.photo = b.dataset.photo; render(); };
-$("img-base").onload = () => $("compare").classList.toggle("portrait", $("img-base").naturalHeight > $("img-base").naturalWidth);
+// the look on top, cut from the left; its image keeps the full width so it lines up
+const fit = () => $("compare").style.setProperty("--w", `${$("compare").clientWidth}px`);
+$("img-base").onload = () => {
+  $("compare").classList.toggle("portrait", $("img-base").naturalHeight > $("img-base").naturalWidth);
+  fit();
+};
+new ResizeObserver(fit).observe($("compare"));
+// every look of the shown photo in the cache, so switching does not flash
+const preload = (p) => LOOKS.forEach((l) => { new Image().src = img(p, l); });
 
 // the split between camera JPEG (left) and look (right)
 const cmp = $("compare");
@@ -346,7 +358,8 @@ const setCut = (e) => {
   const r = cmp.getBoundingClientRect();
   cmp.style.setProperty("--cut", `${Math.max(0, Math.min(100, (100 * (e.clientX - r.left)) / r.width))}%`);
 };
-cmp.addEventListener("pointerdown", (e) => { drag = true; cmp.setPointerCapture(e.pointerId); setCut(e); });
+cmp.addEventListener("pointerdown", (e) => { e.preventDefault(); drag = true; cmp.setPointerCapture(e.pointerId); setCut(e); });
+cmp.addEventListener("dragstart", (e) => e.preventDefault());
 cmp.addEventListener("pointermove", (e) => drag && setCut(e));
 cmp.addEventListener("pointerup", () => { drag = false; });
 
