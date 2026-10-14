@@ -2,7 +2,7 @@
 //! file the user dropped in, the decoded image and the current look data.
 //! Requests and answers are JSON, routed by editor/static/bridge.js.
 
-use crate::{chan, gamma, grfw, looks, tone};
+use crate::{chan, gamma, grfw, looks, multiaxial, tone};
 use crate::gamma::{Engine, ToneParams};
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
@@ -156,7 +156,21 @@ impl Session {
             "channel_sets": sets,
             "channel_linear": chan::linear(),
             "inherit": self.inherit_json(),
+            "multiaxial": { "ycc": multiaxial::ycc(img, 11), "circle": multiaxial::CIRCLE },
+            "tone_control_base": crate::tonecontrol::base(img),
         })
+    }
+
+    /// POST /api/hsl {look, hsl}: what the MultiAxial stage gets for the
+    /// look's HSL settings; the preview applies exactly that
+    pub fn hsl(&self, body: &Value) -> Result<Value, String> {
+        let name = body.get("look").and_then(|v| v.as_str()).unwrap_or("");
+        let table = looks::table_of(name).ok_or(format!("unknown look {name:?}"))?;
+        let ycc = multiaxial::ycc(&self.fw, table);
+        let h = multiaxial::Hsl::from_json(body.get("hsl").unwrap_or(&Value::Null));
+        let mut out = multiaxial::encode(&h, &ycc)?.to_json();
+        out["ycc"] = json!(ycc);
+        Ok(out)
     }
 
     /// POST /api/inherit {target, source}; source null undoes it
@@ -245,6 +259,22 @@ impl Session {
         // linear curves and its own matrix
         let mut img = self.fw.clone();
         looks::patch(&mut img, matrices)?;
+        // HSL: a MultiAxial set of its own for each look that has one
+        let mut hsl_out = Map::new();
+        if let Some(h) = body.get("hsl").and_then(|v| v.as_object()) {
+            let mut sets = vec![];
+            for (name, v) in h {
+                let table = looks::table_of(name).ok_or(format!("HSL for unknown look {name:?}"))?;
+                let parsed = multiaxial::Hsl::from_json(v);
+                if parsed.is_neutral() {
+                    continue;
+                }
+                let e = multiaxial::encode(&parsed, &multiaxial::ycc(&img, table)).map_err(|e| format!("HSL {name}: {e}"))?;
+                sets.push((table, e));
+                hsl_out.insert(name.clone(), v.clone());
+            }
+            multiaxial::patch(&mut img, &sets)?;
+        }
         if tone_changed {
             let fams = families(tone_req.get("families").unwrap_or(&Value::Null));
             let edit: Vec<(usize, Vec<u16>)> = tone::apply(&gamma::base_curves(&img), &pts, &fams)
@@ -273,6 +303,8 @@ impl Session {
             "channel_grade": or_null("grade"),
             // base + sliders (incl. calibration) to edit again; the camera uses "matrices"
             "matrix_edits": or_null("matrix_edits"),
+            // per-hue adjustments (MultiAxial) per look
+            "hsl": if hsl_out.is_empty() { Value::Null } else { Value::Object(hsl_out) },
             "inherit": if self.inherit.is_empty() { Value::Null } else { self.inherit_json() },
         });
         let preset_text = serde_json::to_string_pretty(&preset).unwrap();
@@ -354,6 +386,14 @@ impl Session {
     /// POST /api/dng, after the browser decoded the embedded JPEG to RGBA at
     /// the size of the (unoriented) preview: meta, linear image, camera image
     pub fn prepare_shot(&self, shot: &crate::dng::Shot, camera_rgba: Option<&[u8]>, filename: &str) -> Result<Prepared, String> {
+        self.prepare_shot_with(shot, camera_rgba, filename, true)
+    }
+
+    /// as prepare_shot; `vignette_fit` false leaves out what the earlier
+    /// editor did not model -- lens shading, the shot's shadow correction and
+    /// the highlight chroma roll-off -- so the fit matches its answers
+    pub fn prepare_shot_with(&self, shot: &crate::dng::Shot, camera_rgba: Option<&[u8]>, filename: &str,
+                             vignette_fit: bool) -> Result<Prepared, String> {
         use crate::{dng, fit};
         let tone_label = shot.image_tone.and_then(looks::image_tone_look);
         let shot_look = tone_label.map(|t| t.1);
@@ -362,6 +402,11 @@ impl Session {
             .map(|c| c.chunks_exact(4).flat_map(|p| [p[0], p[1], p[2]]).map(|v| v as f32 / 255.0).collect());
 
         let (mut gain, mut scale, mut residual) = (0x1800, 4000.0, None);
+        // Retro and HDR Tone change the edges themselves: their shots show the
+        // lens correction only together with that, so they get the default
+        let own_edges = matches!(shot_look, Some("Retro") | Some("HdrCuisine"));
+        let (mut vignette, mut vignette_source) = (fit::DEFAULT_VIGNETTE, "default");
+        let mut chroma = fit::DEFAULT_HIGHLIGHT_CHROMA;
         if let Some(cam) = &camera {
             let all = looks::looks(&self.fw);
             let name = shot_look.unwrap_or("Standard");
@@ -376,7 +421,29 @@ impl Session {
                                               r["mono_mix"].as_bool().unwrap_or(false));
             let engine = Engine::new(&self.fw, &[]);
             let curve = |g: i32| engine.curve(&self.fw, fit::tone_params(&shot.params, g));
-            let (g, s, res) = fit::fit_camera_tone(&rendered, cam, &curve)?;
+            // the shot's own shadow correction, as the camera applied it
+            let tc = shot.shadow_correction.filter(|_| vignette_fit)
+                .and_then(|l| crate::tonecontrol::table(&crate::tonecontrol::base(&self.fw), crate::tonecontrol::strength(l)));
+            let tc = tc.as_deref();
+            let (mut g, mut s, mut res) = fit::fit_camera_tone(&rendered, cam, &curve, tc)?;
+            if vignette_fit && !own_edges {
+                let lut: Vec<f64> = curve(g)?.iter().map(|&v| v as f64).collect();
+                if let Some(v) = fit::fit_vignette(&rendered, cam, shot.width, shot.height, &lut, s, tc) {
+                    (vignette, vignette_source) = (v, "fitted");
+                }
+            }
+            let corrected = if vignette_fit {
+                // scale and fine match again, on the corrected image
+                let c = fit::apply_vignette(&rendered, shot.width, shot.height, &vignette);
+                (g, s, res) = fit::fit_camera_tone(&c, cam, &curve, tc)?;
+                c
+            } else {
+                rendered
+            };
+            if vignette_fit {
+                let lut: Vec<f64> = curve(g)?.iter().map(|&v| v as f64).collect();
+                chroma = fit::fit_highlight_chroma(&corrected, cam, &lut, s, &res, tc);
+            }
             (gain, scale, residual) = (g, s, Some(res));
         }
         let (linear, w, h) = dng::orient(&shot.linear, shot.width, shot.height, 3, shot.flip);
@@ -388,6 +455,9 @@ impl Session {
             "width": w, "height": h, "wb": shot.wb, "model": shot.model,
             "image_tone": tone_label.map(|t| t.0), "shot_look": shot_look,
             "params": params, "gain": gain, "scale": scale, "residual": residual,
+            "shadow_correction": shot.shadow_correction,
+            "highlight_chroma": if vignette_fit { json!(chroma) } else { Value::Null },
+            "vignette": if vignette_fit { json!({ "coef": vignette, "source": vignette_source }) } else { Value::Null },
             "filename": filename,
         });
         Ok(Prepared { meta, linear, camera })

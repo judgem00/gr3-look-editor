@@ -47,7 +47,7 @@ fn firmware_tone_inherit_export() {
     // the web version names the build, not a path on disk
     fw["path"] = json!("work/fwdc239b/unpackedFW");
     // which camera the file is for: newer than the reference answers
-    for k in ["camera", "version", "update_file"] {
+    for k in ["camera", "version", "update_file", "multiaxial", "tone_control_base"] {
         fw.as_object_mut().unwrap().remove(k);
     }
     if let Some(d) = diff(&fw, &g["firmware"], "firmware", 1e-12) {
@@ -62,7 +62,7 @@ fn firmware_tone_inherit_export() {
     let mut inh = s.set_inherit(&json!({"target": "CrossProcess", "source": "NegativeFilm"})).unwrap();
     inh["path"] = json!("work/fwdc239b/unpackedFW");
     // which camera the file is for: newer than the reference answers
-    for k in ["camera", "version", "update_file"] {
+    for k in ["camera", "version", "update_file", "multiaxial", "tone_control_base"] {
         inh.as_object_mut().unwrap().remove(k);
     }
     if let Some(d) = diff(&inh, &g["inherit"]["NegativeFilm"], "inherit", 1e-12) {
@@ -81,6 +81,8 @@ fn firmware_tone_inherit_export() {
         let mut want = e["preset"].clone();
         preset["source"] = json!(null);
         want["source"] = json!(null);
+        // newer than the reference answers: HSL (none in these requests)
+        assert_eq!(preset.as_object_mut().unwrap().remove("hsl"), Some(Value::Null));
         if let Some(d) = diff(&preset, &want, &format!("preset[{n}]"), 1e-12) {
             panic!("{d}");
         }
