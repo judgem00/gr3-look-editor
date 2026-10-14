@@ -1,6 +1,6 @@
 # Plan: RGB curves and HSL for every colour look
 
-Status: Phases 0 and 1 done (2026-10-14), Phase 2 (editor) next. Firmware `fwdc239b` (GR III
+Status: Phases 0–2 done (2026-10-14), Phase 3 (docs) next. Firmware `fwdc239b` (GR III
 2.10); the GR IIIx 1.60 image uses the same addresses.
 
 ## Goal
@@ -217,6 +217,16 @@ the plan above:
   in the camera.
 - Presets: new fields `look_curves`, `effects_off`; old presets stay valid.
 - Change list and i18n (de/en).
+
+**Result (2026-10-14): done.** The curves tab has an image-control
+selector (Cross Process + the seven colour looks; Bleach Bypass and HDR
+variants use their look's curves). The other looks' curves are channel
+indices 12..32 (`look_channel_sets`, 3 per look in `curve_looks` order), so
+points, RGB linking, wheels, copying and presets work as for Cross Process;
+export turns those indices into `look_curves`. The HDR switch calls
+`effects`, the meter calls `space` (curves tab and export tab). Checked in
+the browser: edit, preview, export, preset round trip, the old example
+preset.
 
 ### Phase 3: docs
 

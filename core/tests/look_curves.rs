@@ -190,7 +190,10 @@ fn every_look_gets_its_own_curves() {
         assert_eq!(r["space"]["rgb"], json!(7));
         assert_eq!(r["space"]["fits"], json!(true));
         let preset: Value = serde_json::from_str(&preset).unwrap();
-        assert_eq!(preset["look_curves"], lc);
+        let nums = |v: &Value| -> Vec<Vec<f64>> { serde_json::from_value(v.clone()).unwrap() };
+        for name in CURVE_LOOKS {
+            assert_eq!(nums(&preset["look_curves"][name]), nums(&lc[name]), "preset {name}");
+        }
         if let Ok(path) = std::env::var("LC_DUMP") {
             if s.build.name == "fwdc239b" {
                 std::fs::write(&path, &img).unwrap();
@@ -309,3 +312,45 @@ fn preview_takes_any_looks_curves() {
     }
 }
 
+
+#[test]
+fn editor_channels_are_look_curves() {
+    let (s, _) = need!(sessions().into_iter().next());
+    let fw = s.firmware();
+    let lc = all_looks();
+    let sets = &fw["look_channel_sets"];
+    assert_eq!(sets["Standard"], json!([12, 13, 14]));
+    assert_eq!(sets["NegativeFilm"], json!([30, 31, 32]));
+    // the editor sends changed channels by index; untouched channels of a look stay linear
+    let mut channels = serde_json::Map::new();
+    for (k, c) in lc["Standard"].as_array().unwrap().iter().enumerate() {
+        channels.insert((12 + k).to_string(), c.clone());
+    }
+    channels.insert("15".into(), lc["Vivid"][0].clone());
+    let lin: Vec<f64> = chan::linear().iter().map(|&v| v as f64).collect();
+    let direct = json!({"Standard": lc["Standard"], "Vivid": [lc["Vivid"][0], lin, lin]});
+    let (a, _, pa) = s.export(&json!({"channels": channels})).unwrap();
+    let (b, _, _) = s.export(&json!({"look_curves": direct})).unwrap();
+    assert_eq!(a["update_sha256"], b["update_sha256"]);
+    let pa: Value = serde_json::from_value(serde_json::from_str(&pa).unwrap()).unwrap();
+    assert_eq!(pa["look_curves"].as_object().unwrap().len(), 2);
+    assert!(s.export(&json!({"channels": channels, "look_curves": {"Vivid": lc["Vivid"]}})).is_err());
+    assert!(s.export(&json!({"channels": {"33": lin}})).is_err());
+
+    // the preview: edits and wheels on a look's set, no curves in the reference
+    let out = s.tone(&json!({"chan": {"set": [12, 13, 14],
+        "edits": {"12": {"base": lc["Standard"][0], "points": [[0, 0], [1, 1]]}},
+        "grade": {"Standard": {"global": {"hue": 0, "amount": 0.5, "lum": 0}}}}})).unwrap();
+    let lut: Vec<u16> = serde_json::from_value(out["lut"].clone()).unwrap();
+    let eff: Vec<Vec<i64>> = serde_json::from_value(out["channel_curves"].clone()).unwrap();
+    assert_eq!(eff.len(), 33);
+    assert_ne!(eff[13], chan::linear().iter().map(|&v| v as i64).collect::<Vec<_>>(), "wheel applied");
+    for k in 0..3 {
+        assert_eq!(out["rgb"][k], json!(chan::compose(&lut, &eff[12 + k])));
+        assert_eq!(out["rgb_ref"][k], out["lut_ref"]);
+    }
+    // the meter counts looks by name
+    let m = s.space(&json!({"looks": ["Standard", "Vivid"]})).unwrap();
+    assert_eq!(m["rgb"], json!(2));
+    assert!(s.space(&json!({"looks": ["CrossProcess"]})).is_err());
+}
