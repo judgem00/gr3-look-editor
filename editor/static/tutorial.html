@@ -105,6 +105,7 @@ footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line)
   <section class="hero">
     <h1 data-t="title">Your own looks on the GR III</h1>
     <p data-t-html="intro"></p>
+    <p class="note" data-t-html="slots"></p>
     <div class="row">
       <a class="btn primary" href="index.html?preset=tutorial" data-t="try_preset">Open the editor with these looks</a>
       <a class="btn" href="presets/tutorial.looks.json" download="tutorial.looks.json" data-t="dl_preset">Download the preset</a>
@@ -212,7 +213,9 @@ const T = {
     intro: "The Look Editor builds image controls of your own into Ricoh's official firmware update for the GR III and GR IIIx. This tutorial walks through one session with four looks, from loading the firmware to flashing the camera. Everything runs in your browser; nothing is uploaded.",
     try_preset: "Open the editor with these looks", dl_preset: "Download the preset",
     looks_h: "The four looks of this tutorial",
-    looks_lead: "Each look replaces one image control of the camera and starts from the colours of another. Drag the slider to compare with the camera JPEG, pick a photo below. The renders are the editor's preview of the raw file; Cross Process is shown with Color Tone 1.",
+    slots: "<b>About the names:</b> “Vivid”, “Bleach Bypass”, “HDR Tone” and “Cross Process” below are the <b>slots</b> in the camera menu that these new looks overwrite, not Ricoh's original image controls. After flashing, choosing Bleach Bypass in the camera gives you the new look shown here; the other image controls stay as Ricoh made them.",
+    new_in: "New look in {look}",
+    looks_lead: "Each look overwrites one image control of the camera and starts from the colours of another (the name before the arrow is the overwritten slot, the one after it the starting colours). Drag the slider to compare with the camera JPEG, pick a photo below. The renders are the editor's preview of the raw file; Cross Process is shown with Color Tone 1.",
     camera_jpeg: "Camera JPEG",
     look_Vivid: "Vivid", look_BleechBypass_GR: "Bleach Bypass", look_HdrCuisine: "HDR Tone", look_CrossProcess: "Cross Process",
     desc_Vivid: "<b>Vivid ← Negative Film.</b> Negative Film's soft colours, saturation ×1.34, a curve that deepens the shadows, cyan in the shadows and warm highlights from the colour wheels.",
@@ -265,7 +268,9 @@ const T = {
     intro: "Der Look-Editor baut eigene Bildstile in Ricohs offizielles Firmware-Update für GR III und GR IIIx ein. Dieses Tutorial zeigt eine Sitzung mit vier Looks, vom Laden der Firmware bis zum Aufspielen auf die Kamera. Alles läuft in deinem Browser, nichts wird hochgeladen.",
     try_preset: "Editor mit diesen Looks öffnen", dl_preset: "Preset herunterladen",
     looks_h: "Die vier Looks dieses Tutorials",
-    looks_lead: "Jeder Look ersetzt einen Bildstil der Kamera und startet mit den Farben eines anderen. Zieh den Regler für den Vergleich mit dem Kamera-JPEG, wähl unten ein Foto. Die Bilder sind die Vorschau des Editors aus der RAW-Datei; Cross Process ist mit Farbton 1 gezeigt.",
+    slots: "<b>Zu den Namen:</b> „Vivid“, „Bleach Bypass“, „HDR-Ton“ und „Cross Process“ sind hier die <b>Plätze</b> im Kameramenü, die diese neuen Looks überschreiben, nicht Ricohs Original-Bildstile. Nach dem Aufspielen bekommst du bei Bleach Bypass in der Kamera den hier gezeigten neuen Look; die übrigen Bildstile bleiben, wie Ricoh sie gemacht hat.",
+    new_in: "Neuer Look in {look}",
+    looks_lead: "Jeder Look überschreibt einen Bildstil der Kamera und startet mit den Farben eines anderen (vor dem Pfeil der überschriebene Platz, dahinter die Ausgangsfarben). Zieh den Regler für den Vergleich mit dem Kamera-JPEG, wähl unten ein Foto. Die Bilder sind die Vorschau des Editors aus der RAW-Datei; Cross Process ist mit Farbton 1 gezeigt.",
     camera_jpeg: "Kamera-JPEG",
     look_Vivid: "Vivid", look_BleechBypass_GR: "Bleach Bypass", look_HdrCuisine: "HDR-Ton", look_CrossProcess: "Cross Process",
     desc_Vivid: "<b>Vivid ← Negative Film.</b> Die weichen Farben von Negative Film, Sättigung ×1,34, eine Kurve, die die Schatten vertieft, Cyan in den Schatten und warme Lichter aus den Farbrädern.",
@@ -334,7 +339,7 @@ function render() {
   $("img-base").src = img(view.photo, "camera");
   preload(view.photo);
   $("img-look").src = img(view.photo, view.look);
-  $("tag-look").textContent = t("look_" + view.look);
+  $("tag-look").textContent = t("new_in").replace("{look}", t("look_" + view.look));
   $("look-desc").innerHTML = t("desc_" + view.look);
   for (const b of $("thumbs").children) b.classList.toggle("on", b.dataset.photo === view.photo);
 }
