@@ -75,6 +75,9 @@ that adds the least error, or merges a step into "unchanged". The answer to
 `/api/hsl` contains the smooth curves and the steps, and the editor draws
 both.
 
+[multiaxial-steps.html](multiaxial-steps.html) shows the quadrants and the
+steps interactively (open the file in a browser).
+
 ## What a step or band becomes
 
 A step (or a band, from older presets) has hue (°), saturation and
