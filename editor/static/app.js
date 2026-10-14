@@ -1626,6 +1626,12 @@ wrap.addEventListener("drop", (e) => {
 
 // ---- start ------------------------------------------------------------------
 
+// the beta of a branch is published under /beta/ (.github/workflows/pages.yml)
+if (/\/beta\//.test(location.pathname)) {
+  $("beta-badge").hidden = false;
+  document.title += " (beta)";
+}
+
 (async () => {
   try {
     initGL();
