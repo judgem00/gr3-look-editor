@@ -1,6 +1,6 @@
 # Plan: target-first editor
 
-Status: Phases 0 and 1 done (2026-10-14), Phase 2 next.
+Status: Phases 0, 1 and 2 done (2026-10-14), Phase 3 next.
 
 ## Goal
 
@@ -275,6 +275,81 @@ vignette. To be confirmed on the camera in Phase 4.
 - Browser test with the bundled DNGs: each target × a non-trivial source,
   switching targets keeps edits, source change keeps curves/HSL/wheels,
   v1 example preset loads.
+
+**Result (2026-10-14): done.** The editor is target-first; the old tabs,
+the hero box, the tone-curve panel and the "other image controls" and
+"image control" selectors are gone.
+
+- *Files:* `targets.js` (state per target, what is changed, the session
+  sync), `app.js` (preview, pickers, the edit column), `presets.js` (export
+  dialog, v2 request, v1 → v2 conversion and loading). `hsl.js` keeps its
+  HSL per look; it is now keyed by target and does nothing without one.
+- *State:* per target `{source, ext, effects_off}` and a matrix edit
+  `{base | null, sat, hue, calib}`; `base` null means the source's stock
+  matrix (or the extra base's), so a source change moves the base and keeps
+  the sliders, curves, wheels and HSL. Hand-typed matrix values go with the
+  old base. Curves and wheels stay keyed by channel index and set as before
+  (Cross Process: Color Tone 1–3, every other target its own look set).
+- *Preview:* the source's stock sat/hue matrices and the target's
+  effective matrix; Before / After against the target's stock matrix. With
+  no target: the photo's own image control, unedited.
+- *Session:* the editor keeps the core's targets equal to the changed ones
+  (`POST /api/target`, add or `remove`), so `/api/hsl` and `/api/space` see
+  the same colour sets as the export. The export itself sends every changed
+  target in the v2 format.
+- *Rules in the UI:* HDR Tone with another source or an extra base switches
+  its effects off (the switch is then locked; its reset goes back to HDR's
+  own colours); with its effects on the base colour and matrix sections are
+  replaced by one line. Bleach Bypass as its own source applies the sliders
+  to all three variants (`matrices` for Var. 2/3 too). Extra bases work for
+  every target: the target keeps its own look data, the base sets matrix and
+  curves.
+- *Presets:* v2 round trip exact (export body before = after loading the
+  exported preset, all eight targets). v1: `inherit`, `effects_off`,
+  `matrix_edits`/`matrices`, `channel_edits`/`channel_curves(_pre)`,
+  `look_curves`, `channel_grade`, `hsl` are mapped to their targets;
+  monochrome looks and variants are left out with a note, a tone curve is
+  ignored with a note. The example preset comes back as Cross Process from
+  Positive Film (GR 1) with the same nine Color Tone curves and matrix as
+  the earlier editor exported (difference 0).
+- *Browser test* (MR024661, fwdc239b): Standard ← Vivid, Vivid ← Negative
+  Film then Retro (curve, HSL, wheel, saturation), Positive Film ← Bleach
+  Bypass 3 (calibration), Bleach Bypass ← Standard, Retro ← Retro
+  (saturation), HDR ← Standard (effects off forced), Cross Process ←
+  Positive Film (GR 1), Negative Film ← Positive Film; each changes the
+  preview from stock. Switching targets and changing Vivid's source kept its
+  edits byte for byte. The export of all eight gave `FWDC239B.BIN` (checks
+  ok) and a v2 preset; the session then held all eight targets, space
+  4.3 / 13.5 KB.
+
+Checklist against `docs/editor.md` (features of the earlier editor):
+
+| Feature | Now |
+|---|---|
+| Views Edited, Before / After, Compare camera, Camera JPEG | kept; Before is the target's stock look |
+| Colour matrix directly or via saturation / hue | Base colour + Advanced → Matrix values |
+| Calibration (R/G/B hue and saturation) | Base colour |
+| Bleach Bypass and HDR variants with their own matrix | Bleach as its own source: sliders on all three variants; HDR's table 24 is monochrome and not a source |
+| HSL per image control, protect shadows/highlights, 5 sets max | HSL curves section, per target |
+| Tone curve for all image controls | removed (decision); v1 presets: ignored with a note |
+| Cross Process channel curves Color Tone 1–3; set from a Cross Process DNG | RGB curves; variant buttons for Cross Process only; DNG still selects the set |
+| Copy a single channel or a whole set | Advanced → Copy curves |
+| Channel curves of the other colour image controls | RGB curves of that target |
+| Free space meter, export refused when full | pinned meter (all targets), dialog repeats it |
+| HDR effects off | own section, HDR only |
+| Colour wheels | own section; Cross Process per variant |
+| Cross Process with another look's data | Source picker (any target) |
+| Extra bases, removed with untouched curves, recognised in presets | Source picker, "Extra bases"; leaving one removes its untouched curves; v1 detection kept |
+| Camera settings drawer, Load preview settings from DNG, white balance | unchanged |
+| Export: update file + preset, stale downloads hidden after an edit | Export dialog from the header |
+| Load preset from header, drag & drop, example preset | kept; result in a notice under the header |
+| Standard shares its matrix with HDR | no longer: Standard as a target always has its own set |
+
+Known limits: Cross Process unedited previews with neutral curves (the
+session's Cross Process target is linear, as the export writes it when it
+is a target); a Cross Process that is not changed stays stock in the
+export. HDR's tone mapping and Retro's vignette are not in the preview, as
+before.
 
 ### Phase 3: docs
 

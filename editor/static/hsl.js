@@ -57,6 +57,7 @@ function requestHsl() {
 
 async function fetchHsl() {
   const look = state.current;
+  if (!look) return;
   const res = await api("/api/hsl", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -108,7 +109,7 @@ vec3 multiaxial(vec3 c) {
 }
 `;
 
-const hslActive = () => !!hsl.enc && hsl.encLook === state.current && !hslNeutral(hsl.looks[state.current]);
+const hslActive = () => !!state.current && !!hsl.enc && hsl.encLook === state.current && !hslNeutral(hsl.looks[state.current]);
 
 function hslUniforms() {
   const on = hslActive();
@@ -210,7 +211,7 @@ function hslBackground() {
 
 function drawHslCurve() {
   const cv = hslCv();
-  if (!cv || !state.fw) return;
+  if (!cv || !state.fw || !state.current) return;
   const ctx = cv.getContext("2d");
   const { w, h, px, py } = hslGeom();
   ctx.putImageData(hslBackground(), 0, 0);
@@ -272,7 +273,10 @@ function drawHslCurve() {
 function hslChanged() {
   renderHslStatus();
   drawHslCurve();
+  renderPickers();
+  renderSections();
   renderChanges();
+  syncTargets();
   requestHsl();
 }
 
@@ -302,6 +306,7 @@ function hslPointer() {
     return vals[Math.floor(hslG(x / hslGeom().w) / (HSL_CIRCLE / vals.length)) % vals.length];
   };
   cv.onpointerdown = (e) => {
+    if (!state.current) return;
     const [x, y] = pos(e);
     const pts = hslOf(state.current).curves[hsl.channel];
     let i = hit(x, y);
@@ -342,6 +347,7 @@ function renderHsl() {
 }
 
 function renderHslProtect() {
+  if (!state.current) return;
   const p = hslOf(state.current).protect;
   const pct = (v) => `${Math.round(v / 40.96)} %`;
   $("hsl-shadows").value = p.shadows;
@@ -354,7 +360,7 @@ function renderHslProtect() {
 
 function renderHslStatus() {
   const el = $("hsl-status");
-  if (!el) return;
+  if (!el || !state.current) return;
   if (hsl.error) { el.className = "note warn"; el.textContent = `${hsl.error} ${t("hsl_error_preview")}`; return; }
   const e = hsl.enc && hsl.encLook === state.current ? hsl.enc : null;
   const notes = e && e.notes && e.notes.length ? e.notes : [];
@@ -373,7 +379,6 @@ function initHsl() {
   $("hsl-shadows").oninput = (e) => { hslOf(state.current).protect.shadows = +e.target.value; renderHslProtect(); hslChanged(); };
   $("hsl-hi").oninput = (e) => { hslOf(state.current).protect.highlights = +e.target.value; renderHslProtect(); hslChanged(); };
   $("hsl-hi-w").oninput = (e) => { hslOf(state.current).protect.highlight_weight = +e.target.value / 100; renderHslProtect(); hslChanged(); };
-  $("hsl-reset").onclick = () => { delete hsl.looks[state.current]; renderHsl(); hslChanged(); };
 }
 
 // a preset's "hsl": {look: {curves | bands, protect}}; returns warnings.

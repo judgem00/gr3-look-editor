@@ -1,21 +1,24 @@
-// GR III / GR IIIx look editor — preview, matrix and tone curve editing.
+// GR III / GR IIIx look editor — preview and the edit column of one target.
 //
 // The preview runs the colour part of ColorMatrixTuning on the GPU:
 //   camera RGB -> white balance -> sensor CCM -> look matrix -> (mono mix)
 //   -> MultiAxial (HSL, hsl.js)
 // followed by the camera's tone curve. That curve comes from the core (worker), which
-// runs the camera's own GammaTuning code on the (edited) base curves; a small
-// residual fitted from the camera JPEG stands in for its image-dependent shadow
-// correction.
+// runs the camera's own GammaTuning code on the base curves; a small residual
+// fitted from the camera JPEG stands in for its image-dependent shadow
+// correction. It always shows the selected target (targets.js) as the camera
+// would: its source's look data, its own matrix, curves and HSL.
 
 const $ = (id) => document.getElementById(id);
 const SCALE = 8192;
 
 const state = {
   fw: null,            // /api/firmware
-  looks: {},           // name -> look from the firmware
-  edits: {},           // matrix address -> { base, sat, hue }
-  current: null,
+  looks: {},           // name -> look from the session's firmware (addresses)
+  stock: {},           // name -> look as in stock firmware (matrices, sat and hue matrices)
+  targets: {},         // target name -> { source, ext, effects_off } (targets.js)
+  edits: {},           // target name -> { base, sat, hue, calib }
+  current: null,       // the selected target; null: none yet
   mode: "edit",
   split: 0.5,
   ev: 0,
@@ -23,34 +26,18 @@ const state = {
   wbCal: null,         // [R, B] calibration of the photo's camera, null: typical
   wbShot: null,        // { k, gm } closest to the shot's white balance
   shot: null,          // /api/dng meta
-  tone: { points: [[0, 0], [1, 1]], families: [0, 1, 2] },
   params: { key: 0, contrast: 0, highlight: 0, shadow: 0, saturation: 0, hue: 0, shadowcorr: 0 },
   residual: true,
   vignette: true,      // the camera's lens shading correction in the preview
   curves: null,        // last /api/tone answer
-  chan: { edits: {}, set: "Preset 1", channel: 0, all: true },   // the look's channel curves (Farbton 1-3)
-  extBases: [],        // extra bases from _local/bases.json (not in the repo)
-  extBase: null,       // id of the active extra base
+  chan: { edits: {}, set: "Preset 1", channel: 0, all: true },   // channel curves by index (Color Tone 1-3, the looks' own)
+  extBases: [],        // extra bases: BUILTIN_BASES and _local/bases.json (not in the repo)
   grade: {},           // set name -> colour wheels, applied by the core after the edits
 };
 const TONE_KEYS = ["key", "contrast", "highlight", "shadow"];
 // camera settings that act through matrices, not the tone curve: saturation
 // selects A[sat] in ColorMatrixTuning, hue a Cb/Cr rotation after the curve
 const COLOR_KEYS = ["saturation", "hue"];
-const INHERIT_TARGET = "CrossProcess";
-const INHERIT_SOURCES = ["Standard", "Vivid", "PositiveFilm", "NegativeFilm", "Retro",
-  "BleechBypass_GR", "BleechBypass_GR · Var. 2", "BleechBypass_GR · Var. 3"];
-// what the last export contained; a later edit makes its downloads stale
-const exportKey = () => JSON.stringify([
-  Object.fromEntries((state.fw ? state.fw.looks : []).filter((l) => isChanged(l.name))
-    .map((l) => [l.name, effective(l.name).map((v) => Math.round(v * SCALE))])),
-  toneChanged() ? state.tone : null,
-  state.fw ? changedChannels().map((i) => [i, chanValues(i)]) : [],
-  state.fw ? state.fw.inherit : {},
-  hslForExport(),
-  state.fw ? state.fw.effects_off : [],
-]);
-const toneChanged = () => !state.tone.points.every(([x, y]) => Math.abs(x - y) < 1e-4);
 
 // firmware names -> the names in the camera menu
 const LOOK_LABELS = {
@@ -65,6 +52,11 @@ const esc = (v) => String(v).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&l
 const store = {   // per-viewer conveniences only; the page works without storage
   get(k) { try { return localStorage.getItem(k); } catch { return null; } },
   set(k, v) { try { localStorage.setItem(k, v); } catch { /* private mode */ } },
+};
+const SOURCE_HINTS = {
+  Standard: "hint_standard", Vivid: "hint_vivid", PositiveFilm: "hint_positive", NegativeFilm: "hint_negative",
+  Retro: "hint_retro", BleechBypass_GR: "hint_bleach", "BleechBypass_GR · Var. 2": "hint_bleach_var",
+  "BleechBypass_GR · Var. 3": "hint_bleach_var", HdrCuisine: "hint_hdr", CrossProcess: "hint_cross",
 };
 
 // ---- small 3x3 helpers, row-major arrays of 9 --------------------------------
@@ -86,7 +78,7 @@ function inverse(m) {
     .map((v) => v / det);
 }
 const step = (k) => Math.max(0, Math.min(8, Math.round(state.params[k] || 0) + 4));
-// the camera's saturation matrix for the current look and setting
+// the camera's saturation matrix for a look and the current setting
 const satMatrix = (look) => (look.sat_matrices ? look.sat_matrices[step("saturation")] : ident());
 // hue: YCbCr = H x YCC on the tone-mapped RGB; as an RGB matrix YCC^-1 H YCC
 function hueMatrix(look) {
@@ -113,7 +105,7 @@ function hueRotation(deg) {
   return [c + k, k - s, k + s, k + s, c + k, k - s, k - s, k + s, c + k];
 }
 
-// ---- edit state -------------------------------------------------------------
+// ---- calibration ------------------------------------------------------------
 
 // Lightroom-style calibration: hue (-100..100 -> +-30 deg) and saturation
 // (-100..100 -> x0..x2) of the R, G, B primaries
@@ -145,22 +137,6 @@ function calibMatrix(c) {
   if (kk.some((v) => !(v > 0.05))) return ident();     // degenerate: keep the look as it is
   return P.map((v, n) => v * kk[n % 3]);
 }
-
-function editOf(name) {
-  const look = state.looks[name];
-  if (!state.edits[look.address])
-    state.edits[look.address] = { base: look.matrix.slice(), sat: 1, hue: 0, calib: neutralCalib() };
-  const e = state.edits[look.address];
-  if (!e.calib) e.calib = neutralCalib();
-  return e;
-}
-
-function effective(name) {
-  const e = editOf(name);
-  return mul(mul(mul(saturation(e.sat), hueRotation(e.hue)), e.base), calibMatrix(e.calib));
-}
-
-const isChanged = (name) => !same(effective(name), state.looks[name].matrix);
 
 // ---- WebGL ------------------------------------------------------------------
 
@@ -288,13 +264,25 @@ function texture(unit, setup) {
 
 const uni = (n) => gl.getUniformLocation(prog, n);
 
+// what the preview renders: the target as the camera would (its source's look
+// data, its own matrix), against the target's stock look; without a target the
+// photo's own image control, unedited
+function previewLooks() {
+  const T = state.current;
+  if (!T) {
+    const l = state.stock[(state.shot && state.shot.shot_look) || "Standard"] || state.stock.Standard;
+    return { m: l.matrix, look: l, ref: l.matrix, refLook: l, mono: l.mono_mix };
+  }
+  const own = state.stock[T];
+  return { m: effective(T), look: sourceLook(T), ref: own.matrix, refLook: own, mono: false };
+}
+
 function draw() {
   if (!state.shot || !tex.lut) return;
-  const look = state.looks[state.current];
+  const p = previewLooks();
   const sensor = state.fw.sensor_ccm;
-  const A = satMatrix(look);
-  const m = mul(mul(A, effective(state.current)), sensor);
-  const mRef = mul(mul(A, look.matrix), sensor);
+  const m = mul(mul(satMatrix(p.look), p.m), sensor);
+  const mRef = mul(mul(satMatrix(p.refLook), p.ref), sensor);
   gl.viewport(0, 0, canvas.width, canvas.height);
   gl.uniform1i(uni("uImg"), 0);
   gl.uniform1i(uni("uLut"), 1);
@@ -303,8 +291,8 @@ function draw() {
   gl.uniform1i(uni("uRes"), 4);
   gl.uniformMatrix3fv(uni("uM"), false, transpose(m));
   gl.uniformMatrix3fv(uni("uMRef"), false, transpose(mRef));
-  gl.uniformMatrix3fv(uni("uHue"), false, transpose(hueMatrix(look)));
-  gl.uniform1i(uni("uMono"), look.mono_mix ? 1 : 0);
+  gl.uniformMatrix3fv(uni("uHue"), false, transpose(hueMatrix(p.look)));
+  gl.uniform1i(uni("uMono"), p.mono ? 1 : 0);
   gl.uniform1i(uni("uResidual"), state.residual && state.shot.residual ? 1 : 0);
   // part of the fine match: fitted on the camera JPEG like the residual
   gl.uniform1i(uni("uChromaOn"), state.residual && state.shot.highlight_chroma ? 1 : 0);
@@ -348,8 +336,9 @@ function placeSplit() {
   $("labels").style.right = "auto";
   $("labels").style.width = `${r.w - 16}px`;
   $("labels").style.top = `${r.y + 8}px`;
-  $("label-l").textContent = t(state.mode !== "ab" ? "label_camera" : state.current === INHERIT_TARGET ? "label_base" : "label_original");
-  $("label-r").textContent = t(state.current === INHERIT_TARGET ? "label_look" : "label_edited");
+  const T = state.current;
+  $("label-l").textContent = state.mode !== "ab" ? t("label_camera") : T ? t("label_stock", { look: label(T) }) : t("label_original");
+  $("label-r").textContent = T ? t("label_edited") : t("label_original");
 }
 
 let dragging = false;
@@ -363,67 +352,157 @@ window.addEventListener("pointermove", (e) => {
 });
 window.addEventListener("resize", placeSplit);
 
-// ---- UI ---------------------------------------------------------------------
+// ---- target and source pickers ------------------------------------------------
 
-function renderLooks() {
-  const sel = $("look-select");
-  sel.innerHTML = "";
-  for (const look of state.fw.looks) {
-    const o = document.createElement("option");
-    o.value = look.name;
-    o.textContent = label(look.name) +
-      (isChanged(look.name) ? t("changed_mark") : "") +
-      (state.shot && state.shot.shot_look === look.name ? t("photo_look") : "");
-    sel.appendChild(o);
-  }
-  sel.value = state.current;
+function renderPickers() {
+  if (!state.fw) return;
+  const T = state.current;
+  const tsel = $("target");
+  tsel.innerHTML = `<option value="">${esc(t("target_choose"))}</option>` + targetNames().map((n) =>
+    `<option value="${esc(n)}">${esc(label(n))} — ${esc(targetState(n))}${targetChanged(n) ? " ●" : ""}</option>`).join("");
+  tsel.value = T || "";
+
+  const ssel = $("source");
+  ssel.disabled = !T;
+  if (!T) { ssel.innerHTML = ""; $("pick-note").hidden = true; return; }
+  const s = targetSpec(T);
+  const opt = (v, text, hint) => `<option value="${esc(v)}"${hint ? ` title="${esc(hint)}"` : ""}>${esc(text)}</option>`;
+  const looks = state.fw.sources.map((n) =>
+    opt(`look:${n}`, n === T ? t("src_own", { look: label(n) }) : label(n), SOURCE_HINTS[n] && t(SOURCE_HINTS[n])));
+  const exts = state.extBases.map((x) => opt(`ext:${x.id}`, extText(x.label), extText(x.hint)));
+  ssel.innerHTML = `<optgroup label="${esc(t("src_looks"))}">${looks.join("")}</optgroup>` +
+    (exts.length ? `<optgroup label="${esc(t("src_extra"))}">${exts.join("")}</optgroup>` : "");
+  ssel.value = s.ext ? `ext:${s.ext}` : `look:${s.source}`;
+  ssel.title = s.ext ? extText(extOf(T).tip) : "";
+
+  // at most one line about the target's rules
+  const note = $("pick-note");
+  const key = T === HDR && (s.source !== HDR || s.ext) ? "pick_hdr"
+    : T === BLEACH && s.source !== BLEACH ? "pick_bleach"
+    : s.source === "Retro" && T !== "Retro" ? "pick_retro"
+    : T === CROSS ? "pick_cross" : null;
+  note.hidden = !key;
+  if (key) note.textContent = t(key);
 }
-$("look-select").onchange = (e) => select(e.target.value);
 
-function renderMatrix() {
-  const look = state.looks[state.current];
-  const m = effective(state.current);
-  const box = $("matrix");
-  box.innerHTML = "";
-  m.forEach((v, i) => {
-    const inp = document.createElement("input");
-    inp.type = "number";
-    inp.step = "0.01";
-    inp.value = v.toFixed(4);
-    if (Math.round(v * SCALE) !== Math.round(look.matrix[i] * SCALE)) inp.classList.add("diff");
-    inp.onchange = () => {
-      const val = parseFloat(inp.value);
-      if (Number.isNaN(val)) return renderMatrix();
-      const cur = effective(state.current);
-      cur[i] = val;
-      Object.assign(editOf(state.current), { base: cur, sat: 1, hue: 0, calib: neutralCalib() });
-      update();
-    };
-    box.appendChild(inp);
-    if (i % 3 === 2) box.appendChild(document.createElement("span"));
+$("target").onchange = (e) => select(e.target.value || null);
+$("source").onchange = (e) => setSource(state.current, e.target.value);
+
+// switch the target's base; curves, wheels, HSL and the sliders stay
+function setSource(T, value) {
+  if (!T) return;
+  const s = targetSpec(T);
+  const ext = value.startsWith("ext:") ? value.slice(4) : null;
+  const source = ext ? T : value.slice(5);
+  if (s.ext === ext && s.source === source) return;
+  clearExtCurves(T, extOf(T));
+  s.source = source;
+  s.ext = ext;
+  // HDR takes another source or a matrix of its own only with its effects off
+  if (T === HDR && (source !== HDR || ext)) s.effects_off = true;
+  editOf(T).base = null;     // hand-typed matrix values belonged to the old base
+  applyExtCurves(T, extOf(T));
+  relink();
+  chanEditor.deselect();
+  update();
+  requestTone();
+}
+
+function select(name) {
+  state.current = name && isTarget(name) ? name : null;
+  if (state.current) {
+    hsl.drag = null;
+    renderHsl();
+    requestHsl();
+  }
+  chanEditor.deselect();
+  update();
+  requestTone();
+}
+
+// ---- the edit column ----------------------------------------------------------
+
+const SECTIONS = ["base", "curves", "wheels", "hsl", "hdr", "adv"];
+function sectionDirty(sec, T) {
+  switch (sec) {
+    case "base": return baseColourChanged(T);
+    case "curves": return curvesEdited(T);
+    case "wheels": return gradedOf(T).length > 0;
+    case "hsl": return hslChangedOf(T);
+    case "hdr": return targetSpec(T).effects_off;
+    case "adv": return matrixTyped(T);
+  }
+  return false;
+}
+
+function renderSections() {
+  const T = state.current;
+  $("no-target").hidden = !!T;
+  for (const sec of SECTIONS) {
+    const el = $(`sec-${sec}`);
+    el.hidden = !T || (sec === "hdr" && T !== HDR);
+    if (el.hidden) continue;
+    const dirty = sectionDirty(sec, T);
+    el.classList.toggle("dirty", dirty);
+    el.querySelector("button.reset").disabled = !dirty;
+  }
+  if (!T) return;
+  // HDR with its effects on keeps the matrix it shares with Standard
+  const own = canEditMatrix(T);
+  $("base-hdr").hidden = own;
+  $("base-edit").hidden = !own;
+  $("adv-matrix").hidden = !own;
+  renderBase();
+  renderAdvanced();
+  renderHdr();
+}
+
+function resetSection(sec) {
+  const T = state.current;
+  if (!T) return;
+  const e = editOf(T);
+  switch (sec) {
+    case "base": Object.assign(e, { sat: 1, hue: 0, calib: neutralCalib() }); break;
+    case "adv": e.base = null; break;
+    case "curves":
+      for (const i of targetChannels(T)) delete state.chan.edits[i];
+      applyExtCurves(T, extOf(T));
+      relink();
+      chanEditor.deselect();
+      requestTone();
+      break;
+    case "wheels":
+      for (const n of setsOf(T)) delete state.grade[n];
+      requestTone();
+      break;
+    case "hsl": delete hsl.looks[T]; renderHsl(); requestHsl(); break;
+    case "hdr": setEffectsOff(false); return;
+  }
+  update();
+}
+for (const sec of SECTIONS) {
+  const el = $(`sec-${sec}`);
+  el.querySelector("button.reset").onclick = (ev) => { ev.preventDefault(); ev.stopPropagation(); resetSection(sec); };
+  el.addEventListener("toggle", () => {
+    store.set(`sec-${sec}`, el.open ? "1" : "0");
+    if (!el.open) return;
+    // canvases draw at their size once visible
+    if (sec === "curves") { chanEditor.draw(); }
+    if (sec === "wheels") renderWheels();
+    if (sec === "hsl") drawHslCurve();
+    if (sec === "adv") drawChannels();
   });
-  const sums = [0, 1, 2].map((r) => m[r * 3] + m[r * 3 + 1] + m[r * 3 + 2]);
-  $("sums").innerHTML = t("row_sums") + sums
-    .map((s) => `<span class="${Math.abs(s - 1) > 0.001 ? "bad" : ""}">${s.toFixed(4)}</span>`)
-    .join(" · ") + (sums.some((s) => Math.abs(s - 1) > 0.001) ? ` <span class="bad">${t("cast")}</span>` : "");
-  $("addr").textContent = `0x${look.address.toString(16)}`;
-  const note = $("shared-note");
-  note.hidden = !look.shared_with.length;
-  note.className = "note warn";
-  note.textContent = t("shared", { look: label(look.name), others: look.shared_with.map(label).join(t("and")) });
-  const rows = [0, 1, 2].map((r) => m.slice(r * 3, r * 3 + 3).map((v) => v.toFixed(4)).join());
-  if (!look.mono_mix && rows[0] === rows[1] && rows[1] === rows[2]) {
-    note.hidden = false;
-    note.className = "note";
-    note.textContent = t("mono_filter");
+}
+function restoreSections() {
+  for (const sec of SECTIONS) {
+    const v = store.get(`sec-${sec}`);
+    $(`sec-${sec}`).open = v ? v === "1" : sec === "base" || sec === "curves";
   }
-  if (look.mono_mix) {
-    note.hidden = false;
-    note.className = "note";
-    note.textContent = t("mono_mix");
-  }
-  renderInherit();
-  const e = editOf(state.current);
+}
+
+function renderBase() {
+  const T = state.current;
+  const e = editOf(T);
   $("sat").value = e.sat; $("sat-out").textContent = e.sat.toFixed(2);
   $("hue").value = e.hue; $("hue-out").textContent = `${e.hue.toFixed(1)}°`;
   for (const p of PRIMS) for (const k of ["hue", "sat"]) {
@@ -434,246 +513,79 @@ function renderMatrix() {
   }
 }
 
-// ---- 1 Grundlage: what the user's look (in the Cross Process slot) starts from
-
-const CROSS = INHERIT_TARGET;
-const BASES = [null, "Vivid", "PositiveFilm", "NegativeFilm", "Retro",
-  "BleechBypass_GR", "BleechBypass_GR · Var. 2", "BleechBypass_GR · Var. 3"];
-const BASE_HINTS = {
-  null: "hint_standard", Vivid: "hint_vivid", PositiveFilm: "hint_positive", NegativeFilm: "hint_negative",
-  Retro: "hint_retro", BleechBypass_GR: "hint_bleach",
-  "BleechBypass_GR · Var. 2": "hint_bleach_var", "BleechBypass_GR · Var. 3": "hint_bleach_var",
-};
-const baseOf = () => (state.fw.inherit || {})[CROSS] || null;
-
-function renderInherit() {
-  const ul = $("base-list");
-  const cur = baseOf();
-  const ext = extBaseOf();
-  ul.innerHTML = "";
-  for (const b of BASES) {
-    const li = document.createElement("li");
-    li.className = b === cur && !ext ? "on" : "";
-    li.innerHTML = `<b>${b ? label(b) : t("base_standard")}</b><span>${t(BASE_HINTS[b])}</span>`;
-    li.onclick = () => setBase(b);
-    ul.appendChild(li);
-  }
-  for (const x of state.extBases) {
-    const li = document.createElement("li");
-    li.className = ext === x ? "on" : "";
-    li.innerHTML = `<b>${esc(extText(x.label))}</b><span>${esc(extText(x.hint))}</span>`;
-    li.onclick = () => setExtBase(x);
-    ul.appendChild(li);
-  }
-  const src = cur;
-  const p = src && state.shot && state.shot.shot_look === src && state.shot.params;
-  $("inherit-note").textContent = ext ? extText(ext.tip)
-    : src
-    ? t("base_tip", { look: label(src) }) +
-      (p ? t("base_tip_photo", { contrast: signed(p.contrast || 0), highlight: signed(p.highlight || 0),
-                                 shadow: signed(p.shadow || 0), saturation: signed(p.saturation || 0) }) : "") + "."
-    : "";
-}
-
-// switch the look data of the Cross Process slot to `source` (null: Standard)
-async function applyInherit(source) {
-  if (source === baseOf()) return true;
-  const res = await api("/api/inherit", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ target: CROSS, source }),
+function renderAdvanced() {
+  const T = state.current;
+  if (!T || !canEditMatrix(T)) return;
+  const start = startMatrix(T);
+  const m = effective(T);
+  const box = $("matrix");
+  box.innerHTML = "";
+  m.forEach((v, i) => {
+    const inp = document.createElement("input");
+    inp.type = "number";
+    inp.step = "0.01";
+    inp.value = v.toFixed(4);
+    if (Math.round(v * SCALE) !== Math.round(start[i] * SCALE)) inp.classList.add("diff");
+    inp.onchange = () => {
+      const val = parseFloat(inp.value);
+      if (Number.isNaN(val)) return renderAdvanced();
+      const cur = effective(T);
+      cur[i] = val;
+      Object.assign(editOf(T), { base: cur, sat: 1, hue: 0, calib: neutralCalib() });
+      update();
+    };
+    box.appendChild(inp);
+    if (i % 3 === 2) box.appendChild(document.createElement("span"));
   });
-  if (!res.ok) return false;
-  const fw = await res.json();
-  Object.assign(state.fw, { looks: fw.looks, inherit: fw.inherit });
-  for (const l of fw.looks) state.looks[l.name] = l;
-  return true;
+  const sums = [0, 1, 2].map((r) => m[r * 3] + m[r * 3 + 1] + m[r * 3 + 2]);
+  $("sums").innerHTML = t("row_sums") + sums
+    .map((s) => `<span class="${Math.abs(s - 1) > 0.001 ? "bad" : ""}">${s.toFixed(4)}</span>`)
+    .join(" · ") + (sums.some((s) => Math.abs(s - 1) > 0.001) ? ` <span class="bad">${t("cast")}</span>` : "");
+  const look = state.looks[T];
+  $("addr").textContent = look ? `0x${look.address.toString(16)}` : "";
 }
 
-async function setBase(source) {
-  const hadExt = !!extBaseOf();
-  if (source === baseOf() && !hadExt) return;
-  if (hadExt) clearExtBase();
-  if (!(await applyInherit(source))) { renderInherit(); return; }
-  // the look keeps its own matrix slot; start it from the new base, keep the sliders
-  const e = state.edits[state.looks[CROSS].address];
-  if (e) e.base = state.looks[CROSS].matrix.slice();
-  renderInherit();
+function renderHdr() {
+  if (state.current !== HDR) return;
+  const s = targetSpec(HDR);
+  const forced = s.source !== HDR || !!s.ext;
+  $("hdr-off").checked = s.effects_off;
+  $("hdr-off").disabled = forced && s.effects_off;
+  $("hdr-note").textContent = t(forced ? "hdr_needed" : "hdr_off_short");
+}
+
+function setEffectsOff(off) {
+  const s = targetSpec(HDR);
+  if (!off && (s.source !== HDR || s.ext)) {
+    // back to HDR's own data: another source needs the effects off
+    clearExtCurves(HDR, extOf(HDR));
+    Object.assign(s, { source: HDR, ext: null });
+    editOf(HDR).base = null;
+  }
+  s.effects_off = off;
   update();
-  if (hadExt) renderChannelPanel();
   requestTone();
 }
+$("hdr-off").onchange = (e) => setEffectsOff(e.target.checked);
 
-// ---- extra bases ----------------------------------------------------------------
-// Bases that are not image controls of the GR III / GR IIIx firmware.
-// Each: { id, label, hint, tip: {en, de}, matrix_from: look name, matrix_mul: [9],
-//         channel_curve: [256] }. The matrix is matrix_mul x the look's matrix of the
-// loaded firmware; the curve goes on R, G and B of Color Tone 1-3. An optional
-// _local/bases.json (not in the repo) adds bases or replaces one with the same id.
-
-// Extra bases built into the editor: a colour matrix relative to Standard and a
-// tone curve for Color Tone 1-3.
-const BUILTIN_BASES = [{
-  id: "positive-film-classic",
-  label: {"en": "Positive Film (GR 1)", "de": "Positive Film (GR 1)"},
-  hint: {"en": "rich red, muted green and yellow, deep blacks", "de": "kräftiges Rot, gedämpftes Grün und Gelb, tiefe Schwärzen"},
-  tip: {"en": "Colour as a matrix, tone as curves on Color Tone 1-3. In the camera: Cross Process, controls at 0.", "de": "Farbe als Matrix, Ton als Kurven auf Farbton 1–3. In der Kamera: Cross Process, Regler auf 0."},
-  matrix_from: "Standard",
-  matrix_mul: [1.040811742340139, 0.20596874929707515, -0.19377299757717903, 0.04734633241530474, 0.9336765395681852, -0.01931811901750858, -0.06289532853274803, 0.3269147342454318, 0.7756132715716554],
-  channel_curve: [
-    0, 0, 0, 0, 21, 42, 64, 85, 107, 128, 159, 191, 223, 255, 297, 340,
-    383, 430, 478, 526, 574, 608, 640, 672, 704, 750, 798, 846, 894, 956, 1020, 1084,
-    1134, 1182, 1230, 1279, 1340, 1404, 1468, 1532, 1596, 1660, 1724, 1788, 1852, 1916, 1980, 2044,
-    2134, 2231, 2301, 2365, 2429, 2518, 2614, 2685, 2749, 2813, 2902, 2998, 3094, 3190, 3310, 3438,
-    3518, 3582, 3646, 3733, 3829, 3925, 4021, 4117, 4213, 4309, 4405, 4501, 4597, 4693, 4789, 4885,
-    4981, 5056, 5120, 5206, 5302, 5398, 5494, 5653, 5782, 5878, 5974, 6070, 6145, 6209, 6355, 6465,
-    6529, 6594, 6658, 6801, 6914, 6978, 7042, 7106, 7170, 7234, 7298, 7400, 7490, 7554, 7655, 7728,
-    7760, 7846, 7938, 8002, 8066, 8130, 8194, 8258, 8322, 8386, 8484, 8562, 8594, 8643, 8706, 8803,
-    8882, 8915, 8963, 9058, 9154, 9218, 9267, 9299, 9347, 9411, 9475, 9568, 9666, 9731, 9766, 9795,
-    9859, 9986, 10023, 10050, 10114, 10178, 10242, 10280, 10370, 10434, 10498, 10537, 10562, 10626, 10690, 10794,
-    10818, 10882, 10946, 10986, 11051, 11074, 11138, 11202, 11266, 11330, 11372, 11436, 11458, 11522, 11586, 11650,
-    11693, 11757, 11822, 11842, 11905, 11950, 12014, 12078, 12143, 12161, 12225, 12289, 12336, 12353, 12417, 12464,
-    12528, 12592, 12657, 12673, 12721, 12785, 12849, 12865, 12928, 12992, 13042, 13106, 13171, 13184, 13235, 13299,
-    13363, 13428, 13492, 13504, 13556, 13620, 13685, 13749, 13813, 13877, 13942, 13952, 14016, 14070, 14134, 14199,
-    14263, 14327, 14391, 14456, 14520, 14528, 14592, 14656, 14713, 14777, 14841, 14905, 14970, 15034, 15098, 15162,
-    15167, 15231, 15295, 15359, 15423, 15487, 15551, 15615, 15679, 15743, 15807, 15933, 16000, 16064, 16190, 16383,
-  ],
-}];
-
-const extText = (v) => (v && typeof v === "object" ? v[LANG] || v.en || "" : v || "");
-const extBaseOf = () => state.extBases.find((x) => x.id === state.extBase) || null;
-const extMatrix = (x) => mul(x.matrix_mul, state.looks[x.matrix_from].matrix);
-const sameCurve = (a, b) => a && b && a.length === b.length && a.every((v, k) => v === b[k]);
-
-async function loadExtBases() {
-  let local = [];
-  try {
-    const res = await fetch("_local/bases.json", { cache: "no-store" });
-    if (res.ok) local = await res.json();
-  } catch { /* no local bases */ }
-  const curve = (v) => Array.isArray(v) && v.length === 256 && v.every(Number.isFinite);
-  const valid = (x) => x && typeof x.id === "string" &&
-    state.looks[x.matrix_from] && Array.isArray(x.matrix_mul) && x.matrix_mul.length === 9 &&
-    x.matrix_mul.every(Number.isFinite) && (x.channel_curve == null || curve(x.channel_curve));
-  const byId = new Map(BUILTIN_BASES.filter(valid).map((x) => [x.id, x]));
-  for (const x of (Array.isArray(local) ? local : []).filter(valid)) byId.set(x.id, x);
-  return [...byId.values()];
-}
-
-async function setExtBase(x) {
-  if (extBaseOf() === x) return;
-  if (extBaseOf()) clearExtBase();
-  // Cross Process keeps the Standard look data; the base only sets matrix and curves
-  if (!(await applyInherit(null))) { renderInherit(); return; }
-  editOf(CROSS).base = extMatrix(x);
-  if (x.channel_curve) {
-    for (const n of SET_ORDER) for (const i of chanSet(n))
-      state.chan.edits[i] = { base: x.channel_curve.map((v) => Math.round(v)), points: IDENT.map((p) => p.slice()) };
-    relink();
-  }
-  state.extBase = x.id;
-  renderInherit();
-  update();
-  renderChannelPanel();
-  requestTone();
-}
-
-// leave an extra base: its matrix goes, its curves go where they are still untouched
-function clearExtBase() {
-  const x = extBaseOf();
-  state.extBase = null;
-  if (!x) return;
-  const e = state.edits[state.looks[CROSS].address];
-  if (e) e.base = state.looks[CROSS].matrix.slice();
-  if (!x.channel_curve) return;
-  for (const n of SET_ORDER) for (const i of chanSet(n)) {
-    const c = state.chan.edits[i];
-    if (c && sameCurve(c.base, x.channel_curve.map((v) => Math.round(v))) && isIdent(c.points)) delete state.chan.edits[i];
-  }
-  relink();
-}
-
-// after loading a preset: was it made from an extra base?
-function detectExtBase() {
-  state.extBase = null;
-  if (baseOf() !== null) return;
-  const e = state.edits[state.looks[CROSS].address];
-  if (!e) return;
-  for (const x of state.extBases) {
-    const m = extMatrix(x);
-    if (m.every((v, k) => Math.abs(v - e.base[k]) < 1e-6)) { state.extBase = x.id; return; }
-  }
-}
-
+// the header's export button and the list in the export dialog
 function renderChanges() {
-  if (!$("downloads").hidden && state.lastExport !== exportKey()) {
-    $("downloads").hidden = true;
-    $("export").classList.add("primary");
-    $("export-msg").textContent = "";
-  }
-  const others = state.fw.looks.map((l) => l.name).filter((n) => n !== CROSS && isChanged(n));
-  const sets = new Set(changedChannels().map(chanSetOf));
-  const ext = extBaseOf();
-  const names = [t("ch_base", { look: ext ? extText(ext.label) : baseOf() ? label(baseOf()) : t("base_standard") })];
-  if (isChanged(CROSS)) names.push(t("ch_colors"));
-  for (const n of SET_ORDER) names.push(`${setLabel(n)}: ` + (sets.has(n)
-    ? t(gradedSets().includes(n) ? "ch_curves_wheels" : "ch_curves")
-    : t("ch_neutral")));
-  for (const n of lookSets()) if (sets.has(n))
-    names.push(t("ch_look_curves", { look: label(n), what: t(gradedSets().includes(n) ? "ch_curves_wheels" : "ch_curves") }));
-  if (hdrOff()) names.push(t("ch_hdr_off"));
-  for (const n of others) names.push(`<span class="warn">${t("ch_other", { look: label(n) })}</span>`);
-  for (const n of hslChangedLooks())
-    names.push(n === CROSS ? t("ch_hsl") : `<span class="warn">${t("ch_hsl_other", { look: label(n) })}</span>`);
-  if (toneChanged()) names.push(`<span class="warn">${t("ch_tone")}</span>`);
-  $("changes").innerHTML = names.map((n) => `<li>${n}</li>`).join("");
-  const badge = { base: !!baseOf() || !!ext, color: isChanged(CROSS) || others.length > 0 || hslChangedLooks().length > 0,
-    curves: sets.size > 0 || toneChanged() };
-  for (const b of document.querySelectorAll("#tabs button")) b.classList.toggle("dirty", !!badge[b.dataset.tab]);
+  if (!state.fw) return;
+  const list = changedTargets();
+  $("export-open").textContent = list.length ? t("export_n", { n: list.length }) : t("export_btn");
+  renderExportDialog();
   requestSpace();
 }
 const chanSetOf = (idx) => Object.keys(state.fw.channel_sets).find((n) => state.fw.channel_sets[n].includes(idx));
 
-// ---- tabs -------------------------------------------------------------------
-
-function showTab(tab) {
-  for (const b of document.querySelectorAll("#tabs button")) b.classList.toggle("on", b.dataset.tab === tab);
-  for (const s of document.querySelectorAll("section.tab")) s.hidden = s.dataset.tab !== tab;
-  store.set("tab", tab);
-  document.querySelector("aside").dataset.tab = tab;
-  // base belongs to the user's look; curves to it or to a colour look with curves of its own
-  if (tab === "base" && state.current !== CROSS) select(CROSS);
-  if (tab === "curves" && state.current !== CROSS && !curveLook(state.current)) select(CROSS);
-  if (tab === "curves") { chanEditor.draw(); drawChannels(); renderWheels(); toneEditor.draw(); drawEffective(); }
-}
-for (const b of document.querySelectorAll("#tabs button")) b.onclick = () => showTab(b.dataset.tab);
-
-function renderOtherLook() {
-  const el = $("other-look");
-  el.hidden = state.current === CROSS;
-  if (el.hidden) return;
-  el.innerHTML = t("other_look", { look: label(state.current) }) +
-    `<a href="#" id="back-to-look">${t("back_to_look")}</a>`;
-  $("back-to-look").onclick = (e) => { e.preventDefault(); select(CROSS); };
-}
-
 function update() {
-  renderCurveLook();
-  renderMatrix();
-  renderLooks();
-  renderOtherLook();
+  if (!state.fw) return;
+  renderPickers();
+  renderSections();
+  renderChannelPanel();
   renderChanges();
+  syncTargets();
   draw();
-}
-
-function select(name) {
-  state.current = name;
-  renderHsl();
-  requestHsl();
-  update();
-  // the preview's channel curves follow the look
-  chanEditor.deselect();
-  requestTone();
 }
 
 for (const b of document.querySelectorAll("#modes button")) {
@@ -708,6 +620,8 @@ const calibUI = {};
 })();
 $("sat").oninput = (e) => { editOf(state.current).sat = parseFloat(e.target.value); update(); };
 $("hue").oninput = (e) => { editOf(state.current).hue = parseFloat(e.target.value); update(); };
+$("sat").ondblclick = () => { editOf(state.current).sat = 1; update(); };
+$("hue").ondblclick = () => { editOf(state.current).hue = 0; update(); };
 for (const k of TONE_KEYS) {
   $(`p-${k}`).oninput = (e) => {
     state.params[k] = parseInt(e.target.value, 10);
@@ -739,18 +653,6 @@ function setShadowCorr(level) {
 }
 $("p-shadowcorr").onchange = (e) => { setShadowCorr(+e.target.value); draw(); };
 $("vignette").onchange = (e) => { state.vignette = e.target.checked; draw(); };
-for (const cb of document.querySelectorAll(".fam")) {
-  cb.onchange = () => {
-    state.tone.families = [...document.querySelectorAll(".fam:checked")].map((x) => +x.value);
-    requestTone();
-  };
-}
-$("tone-reset").onclick = () => {
-  state.tone.points = [[0, 0], [1, 1]];
-  toneEditor.deselect();
-  requestTone();
-  renderChanges();
-};
 $("ev").oninput = (e) => {
   state.ev = parseFloat(e.target.value);
   $("ev-out").textContent = `${state.ev >= 0 ? "+" : ""}${state.ev.toFixed(1)} EV`;
@@ -793,71 +695,76 @@ function wbAsShot() {
   state.wb = { kelvin: false, k: s.k, ab: 0, gm: s.gm };
   renderWb();
 }
-$("reset").onclick = () => {
-  const look = state.looks[state.current];
-  state.edits[look.address] = { base: look.matrix.slice(), sat: 1, hue: 0, calib: neutralCalib() };
-  update();
-};
-
-$("risk-ok").onchange = e => { $("export").disabled = !e.target.checked; };
-
-$("export").onclick = async () => {
-  const matrices = {};
-  for (const l of state.fw.looks) if (isChanged(l.name)) matrices[l.name] = effective(l.name);
-  $("export-msg").className = "note";
-  $("export-msg").textContent = t("creating");
-  const res = await api("/api/export", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      matrices,
-      tone: toneChanged() ? state.tone : null,
-      channels: Object.fromEntries(changedChannels().map((i) => [i, chanValues(i)])),
-      // the points behind those curves, so a loaded preset can be edited again
-      channel_edits: Object.fromEntries(changedChannels().filter((i) => state.chan.edits[i])
-        .map((i) => [i, { base: state.chan.edits[i].base, points: state.chan.edits[i].points }])),
-      // slider positions; the base only when typed in by hand, since otherwise it is
-      // the firmware's own matrix and comes from there again on load
-      matrix_edits: Object.fromEntries(state.fw.looks.filter((l) => isChanged(l.name))
-        .map((l) => {
-          const e = editOf(l.name);
-          const own = e.base.every((v, i) => Math.abs(v - l.matrix[i]) < 1e-9);
-          return [l.name, { ...e, base: own ? null : e.base }];
-        })),
-      channels_pre: gradedSets().length ? Object.fromEntries(changedChannels().map((i) => [i, chanPre(i)])) : null,
-      grade: gradedSets().length ? Object.fromEntries(gradedSets().map((n) => [n, state.grade[n]])) : null,
-      hsl: hslForExport(),
-    }),
-  });
-  if (res.ok) {
-    const r = await res.json();
-    $("export-msg").className = "note ok";
-    $("export-msg").textContent = t("done_web");
-    state.lastExport = exportKey();
-    offerDownloads(r.downloads || {}, r.update_file);
-  } else {
-    $("export-msg").className = "note warn";
-    $("export-msg").textContent = await errorText(res);
-  }
-};
-
-function offerDownloads(urls, updateFile) {
-  const set = (id, url, name) => {
-    const a = $(id);
-    a.hidden = !url;
-    if (url) { a.href = url; a.download = name || ""; }
-  };
-  set("dl-update", urls.update, updateFile && updateFile.split("/").pop());
-  set("dl-preset", urls.preset, t("preset_name"));
-  $("downloads").hidden = !urls.update && !urls.preset;
-  $("export").classList.toggle("primary", $("downloads").hidden);
-  if (urls.update) $("dl-update").focus();
-}
 
 async function errorText(res) {
   const body = await res.text();
   const m = body.match(/<p>(.*?)<\/p>/s);
   return m ? m[1] : t("error", { status: res.status });
+}
+
+// a one-line message under the header (preset loaded, a refused request)
+function notice(text, warn) {
+  $("notice").hidden = !text;
+  $("notice").classList.toggle("warn", !!warn);
+  $("notice-text").textContent = text || "";
+}
+$("notice-close").onclick = () => notice("");
+
+// ---- extra bases ----------------------------------------------------------------
+// Bases that are not image controls of the GR III / GR IIIx firmware.
+// Each: { id, label, hint, tip: {en, de}, matrix_from: look name, matrix_mul: [9],
+//         channel_curve: [256] }. The matrix is matrix_mul x the look's stock
+// matrix of the loaded firmware; the curve goes on R, G and B of the target's
+// curves (Color Tone 1-3 for Cross Process). The target keeps its own look
+// data. An optional _local/bases.json (not in the repo) adds bases or replaces
+// one with the same id.
+
+// Extra bases built into the editor: a colour matrix relative to Standard and a
+// tone curve for the channel curves.
+const BUILTIN_BASES = [{
+  id: "positive-film-classic",
+  label: {"en": "Positive Film (GR 1)", "de": "Positive Film (GR 1)"},
+  hint: {"en": "rich red, muted green and yellow, deep blacks", "de": "kräftiges Rot, gedämpftes Grün und Gelb, tiefe Schwärzen"},
+  tip: {"en": "Colour as a matrix, tone as curves on R, G and B. In the camera: the target's controls at 0.", "de": "Farbe als Matrix, Ton als Kurven auf R, G und B. In der Kamera: Regler des Ziels auf 0."},
+  matrix_from: "Standard",
+  matrix_mul: [1.040811742340139, 0.20596874929707515, -0.19377299757717903, 0.04734633241530474, 0.9336765395681852, -0.01931811901750858, -0.06289532853274803, 0.3269147342454318, 0.7756132715716554],
+  channel_curve: [
+    0, 0, 0, 0, 21, 42, 64, 85, 107, 128, 159, 191, 223, 255, 297, 340,
+    383, 430, 478, 526, 574, 608, 640, 672, 704, 750, 798, 846, 894, 956, 1020, 1084,
+    1134, 1182, 1230, 1279, 1340, 1404, 1468, 1532, 1596, 1660, 1724, 1788, 1852, 1916, 1980, 2044,
+    2134, 2231, 2301, 2365, 2429, 2518, 2614, 2685, 2749, 2813, 2902, 2998, 3094, 3190, 3310, 3438,
+    3518, 3582, 3646, 3733, 3829, 3925, 4021, 4117, 4213, 4309, 4405, 4501, 4597, 4693, 4789, 4885,
+    4981, 5056, 5120, 5206, 5302, 5398, 5494, 5653, 5782, 5878, 5974, 6070, 6145, 6209, 6355, 6465,
+    6529, 6594, 6658, 6801, 6914, 6978, 7042, 7106, 7170, 7234, 7298, 7400, 7490, 7554, 7655, 7728,
+    7760, 7846, 7938, 8002, 8066, 8130, 8194, 8258, 8322, 8386, 8484, 8562, 8594, 8643, 8706, 8803,
+    8882, 8915, 8963, 9058, 9154, 9218, 9267, 9299, 9347, 9411, 9475, 9568, 9666, 9731, 9766, 9795,
+    9859, 9986, 10023, 10050, 10114, 10178, 10242, 10280, 10370, 10434, 10498, 10537, 10562, 10626, 10690, 10794,
+    10818, 10882, 10946, 10986, 11051, 11074, 11138, 11202, 11266, 11330, 11372, 11436, 11458, 11522, 11586, 11650,
+    11693, 11757, 11822, 11842, 11905, 11950, 12014, 12078, 12143, 12161, 12225, 12289, 12336, 12353, 12417, 12464,
+    12528, 12592, 12657, 12673, 12721, 12785, 12849, 12865, 12928, 12992, 13042, 13106, 13171, 13184, 13235, 13299,
+    13363, 13428, 13492, 13504, 13556, 13620, 13685, 13749, 13813, 13877, 13942, 13952, 14016, 14070, 14134, 14199,
+    14263, 14327, 14391, 14456, 14520, 14528, 14592, 14656, 14713, 14777, 14841, 14905, 14970, 15034, 15098, 15162,
+    15167, 15231, 15295, 15359, 15423, 15487, 15551, 15615, 15679, 15743, 15807, 15933, 16000, 16064, 16190, 16383,
+  ],
+}];
+
+const extText = (v) => (v && typeof v === "object" ? v[LANG] || v.en || "" : v || "");
+const extMatrix = (x) => mul(x.matrix_mul, state.stock[x.matrix_from].matrix);
+const sameCurve = (a, b) => a && b && a.length === b.length && a.every((v, k) => v === b[k]);
+
+async function loadExtBases() {
+  let local = [];
+  try {
+    const res = await fetch("_local/bases.json", { cache: "no-store" });
+    if (res.ok) local = await res.json();
+  } catch { /* no local bases */ }
+  const curve = (v) => Array.isArray(v) && v.length === 256 && v.every(Number.isFinite);
+  const valid = (x) => x && typeof x.id === "string" &&
+    state.stock[x.matrix_from] && Array.isArray(x.matrix_mul) && x.matrix_mul.length === 9 &&
+    x.matrix_mul.every(Number.isFinite) && (x.channel_curve == null || curve(x.channel_curve));
+  const byId = new Map(BUILTIN_BASES.filter(valid).map((x) => [x.id, x]));
+  for (const x of (Array.isArray(local) ? local : []).filter(valid)) byId.set(x.id, x);
+  return [...byId.values()];
 }
 
 // ---- loading a DNG ----------------------------------------------------------
@@ -948,7 +855,7 @@ async function show(meta) {
   update();
 }
 
-// ---- tone curve and channel curves --------------------------------------------
+// ---- channel curves ---------------------------------------------------------------
 
 const IDENT = [[0, 0], [1, 1]];
 const isIdent = (pts) => pts.every(([x, y]) => Math.abs(x - y) < 1e-4);
@@ -956,20 +863,11 @@ const CH_NAMES = ["R", "G", "B"];
 const CH_COLORS = ["#e0645a", "#6fbf73", "#5b8fe0"];
 
 const chanSet = (name) => state.fw.channel_sets[name || curSet()];
-// the other colour looks' curves (core: look_sets), merged into channel_sets at start;
-// Bleach Bypass and HDR variants use their look's curves
-const CURVE_ALIAS = { "BleechBypass_GR · Var. 2": "BleechBypass_GR", "BleechBypass_GR · Var. 3": "BleechBypass_GR",
-  "HdrCuisine · Var.": "HdrCuisine" };
+// the other colour looks' curves (core: look_sets), merged into channel_sets at start
 const lookSets = () => (state.fw && state.fw.curve_looks) || [];
-const curveLook = (name) => {
-  const n = CURVE_ALIAS[name] || name;
-  return lookSets().includes(n) ? n : null;
-};
-// the set the curves tab edits: Cross Process's Color Tone, or the shown look's own
-const curSet = () => (state.current === CROSS ? state.chan.set : curveLook(state.current) || state.chan.set);
+// the set the curves section edits: Cross Process's Color Tone, or the target's own
+const curSet = () => (state.current && state.current !== CROSS ? state.current : state.chan.set);
 const allSets = () => [...SET_ORDER, ...lookSets()];
-const HDR = "HdrCuisine";
-const hdrOff = () => !!state.fw && (state.fw.effects_off || []).includes(HDR);
 function mergeLookSets() {
   Object.assign(state.fw.channel_sets, state.fw.look_channel_sets);
   while (state.fw.channel_curves.length < 12 + 3 * lookSets().length)
@@ -1006,8 +904,6 @@ const wheelNeutral = (w) => !w || (Math.abs(w.amount || 0) < 1e-4 && Math.abs(w.
 const gradeNeutral = (g) => !g || WHEELS.every(([k]) => wheelNeutral(g[k]));
 const gradedSets = () => Object.keys(state.grade).filter((n) => !gradeNeutral(state.grade[n]));
 const chanGraded = (idx) => gradedSets().some((n) => chanSet(n).includes(idx));
-const chanPre = (idx) => (state.curves && state.curves.channel_curves_pre
-  ? state.curves.channel_curves_pre[idx] : chanValues(idx));
 const chanChanged = (idx) => {
   if (chanGraded(idx)) return true;
   const e = state.chan.edits[idx];
@@ -1016,19 +912,11 @@ const chanChanged = (idx) => {
   return !isIdent(e.points);
 };
 const changedChannels = () => [...Array(state.fw.channel_curves.length).keys()].filter(chanChanged);
-const chanLabel = (idx) => {
-  for (const [name, set] of Object.entries(state.fw.channel_sets)) {
-    const k = set.indexOf(idx);
-    if (k >= 0) return `${setLabel(name)} · ${CH_NAMES[k]}`;
-  }
-  return t("curve_n", { n: idx });
-};
-// the set the preview applies: Cross Process's Color Tone or the look's own curves
-const previewSet = () => (state.current === CROSS || curveLook(state.current) ? chanSet() : null);
+// the set the preview applies: the target's
+const previewSet = () => (state.current ? chanSet() : null);
 
 let toneBusy = false, tonePending = false;
 function requestTone() {
-  toneEditor.draw();
   chanEditor.draw();
   if (toneBusy) { tonePending = true; return; }
   toneBusy = true;
@@ -1046,7 +934,6 @@ async function fetchTone() {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       params: state.params, gain: state.shot ? state.shot.gain : 0x1800,
-      edit: { points: state.tone.points, families: state.tone.families },
       chan: { edits, set: previewSet(), grade: state.grade },
     }),
   });
@@ -1065,11 +952,11 @@ async function fetchTone() {
   if (tex.lutRef) gl.deleteTexture(tex.lutRef);
   tex.lut = up(1, c.rgb || [c.lut, c.lut, c.lut]);
   tex.lutRef = up(3, c.rgb_ref || [c.lut_ref, c.lut_ref, c.lut_ref]);
-  toneEditor.draw();
   chanEditor.draw();
-  drawEffective();
   drawChannels();
   renderChannelPanel();
+  renderPickers();
+  renderSections();
   renderChanges();
   drawHslCurve();
   draw();
@@ -1148,7 +1035,7 @@ function pointEditor(cv, { points, transfer, color }) {
 
   cv.tabIndex = 0;
   cv.addEventListener("pointerdown", (e) => {
-    if (e.button !== 0) return;
+    if (e.button !== 0 || !state.current) return;
     cv.focus();
     const pts = points();
     dragIdx = hit(e);
@@ -1190,33 +1077,17 @@ function pointEditor(cv, { points, transfer, color }) {
   return { draw, deselect: () => { selected = -1; } };
 }
 
-const toneEditor = pointEditor($("curve"), {
-  points: () => state.tone.points,
-  transfer: () => state.curves && state.curves.transfer,
-  color: () => css("--accent"),
-});
-
 const chanEditor = pointEditor($("chan-curve"), {
-  points: () => (state.fw ? chanEdit(chanActive()).points : IDENT),
-  transfer: () => state.curves && state.curves.channel_transfer &&
+  points: () => (state.fw && state.current ? chanEdit(chanActive()).points : IDENT),
+  transfer: () => state.current && state.curves && state.curves.channel_transfer &&
     state.curves.channel_transfer[chanActive()],
   color: () => (state.chan.all ? css("--text") : CH_COLORS[state.chan.channel]),
 });
 
-function drawEffective() {
-  const cv = $("effective"), ctx = cv.getContext("2d"), w = cv.width, h = cv.height;
-  drawGrid(ctx, w, h);
-  if (!state.curves) return;
-  // x: input on a square-root scale so the shadows get room
-  const pts = (lut) => lut.map((v, i) => [Math.sqrt(i / 255) * w, h - (v / 16384) * h]);
-  polyline(ctx, pts(state.curves.lut_ref), css("--muted"), 2);
-  polyline(ctx, pts(state.curves.lut), css("--accent"), 3);
-}
-
 function drawChannels() {
   const cv = $("chan-effective"), ctx = cv.getContext("2d"), w = cv.width, h = cv.height;
   drawGrid(ctx, w, h);
-  if (!state.fw) return;
+  if (!state.fw || !state.current) return;
   // the three channel curves of the set: input = computed tone value, 0..0x4000
   const pts = (c) => c.map((v, i) => [(i / 255) * w, h - (v / 16384) * h]);
   chanSet().forEach((idx, k) => {
@@ -1226,9 +1097,13 @@ function drawChannels() {
 }
 
 function renderChannelPanel() {
-  if (!state.fw) return;
-  for (const b of document.querySelectorAll("#chan-sets button"))
+  if (!state.fw || !state.current) return;
+  const cross = state.current === CROSS;
+  $("chan-variant").hidden = !cross;
+  for (const b of document.querySelectorAll("#chan-sets button")) {
     b.classList.toggle("on", b.dataset.set === state.chan.set);
+    b.textContent = setLabel(b.dataset.set) + (chanSet(b.dataset.set).some(chanChanged) ? " •" : "");
+  }
   document.querySelectorAll("#chan-channels button").forEach((b, k) => {
     b.classList.toggle("on", k === 0 ? state.chan.all : !state.chan.all && k - 1 === state.chan.channel);
     b.textContent = k === 0 ? "RGB" : CH_NAMES[k - 1] + (chanChanged(chanSet()[k - 1]) ? " •" : "");
@@ -1237,10 +1112,7 @@ function renderChannelPanel() {
     ? t("chan_all")
     : t("chan_one", { ch: CH_NAMES[state.chan.channel], up: t(["red", "green", "blue"][state.chan.channel]),
                        down: ["Cyan", "Magenta", LANG === "de" ? "Gelb" : "Yellow"][state.chan.channel] });
-  $("chan-panel").classList.toggle("inactive", !previewSet());
-  renderCurveLook();
   renderWheels();
-  $("chan-note").textContent = "";
 }
 
 function buildChannelPanel() {
@@ -1250,7 +1122,7 @@ function buildChannelPanel() {
     const b = document.createElement("button");
     b.dataset.set = name;
     b.textContent = setLabel(name);
-    b.onclick = () => { state.chan.set = name; chanEditor.deselect(); renderWheels(); requestTone(); };
+    b.onclick = () => { state.chan.set = name; chanEditor.deselect(); renderChannelPanel(); requestTone(); };
     sets.appendChild(b);
   }
   document.querySelectorAll("#chan-channels button").forEach((b, k) => {
@@ -1308,184 +1180,17 @@ $("chan-copy-set").onclick = () => {
   chanEditor.deselect();
   requestTone();
 };
+// back to where the curve started (an extra base's curve, or neutral)
 $("chan-reset").onclick = () => {
-  for (const idx of state.chan.all ? chanSet() : [chanActive()]) delete state.chan.edits[idx];
-  relink();
-  chanEditor.deselect();
-  requestTone();
-};
-$("chan-reset-set").onclick = () => {
-  for (const idx of chanSet()) delete state.chan.edits[idx];
-  delete state.grade[curSet()];
-  relink();
-  chanEditor.deselect();
-  requestTone();
-};
-
-// ---- loading a preset ---------------------------------------------------------
-
-// A preset is the *.looks.json an export writes:
-//   { source, matrices: {look: [9]}, tone: {points, families} | null,
-//     channel_curves: {idx: [256]} | null, channel_edits: {idx: {base, points}} | null,
-//     inherit: {target: source} | null }
-// It replaces every current edit. Look data inheritance goes first, because
-// it changes which matrix address a look edits.
-async function loadPreset(file) {
-  const msg = $("preset-msg");
-  let ok = false;
-  msg.className = "note";
-  try {
-    let p;
-    try { p = JSON.parse(await file.text()); } catch { throw new Error(t("e_json")); }
-    if (!p || typeof p !== "object" || !["matrices", "matrix_edits", "tone", "channel_curves", "channel_edits", "inherit", "hsl", "look_curves", "effects_off"].some((k) => k in p))
-      throw new Error(t("e_preset"));
-    const warn = [];
-
-    const inherit = p.inherit || {};
-    const targets = new Set([...Object.keys(state.fw.inherit || {}), ...Object.keys(inherit)]);
-    for (const target of targets) {
-      const source = inherit[target] || null;
-      if (((state.fw.inherit || {})[target] || null) === source) continue;
-      const res = await api("/api/inherit", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ target, source }),
-      });
-      if (!res.ok) { warn.push(t("e_inherit", { target, source, msg: await errorText(res) })); continue; }
-      const fw = await res.json();
-      Object.assign(state.fw, { looks: fw.looks, inherit: fw.inherit });
-      for (const l of fw.looks) state.looks[l.name] = l;
-    }
-
-    // HDR with its effects off has a matrix of its own: before the matrices
-    const effects = Array.isArray(p.effects_off) ? p.effects_off : [];
-    if (JSON.stringify(effects) !== JSON.stringify(state.fw.effects_off || [])) {
-      const res = await api("/api/effects", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ effects_off: effects }),
-      });
-      if (!res.ok) warn.push(await errorText(res));
-      else {
-        const fw = await res.json();
-        Object.assign(state.fw, { looks: fw.looks, effects_off: fw.effects_off });
-        for (const l of fw.looks) state.looks[l.name] = l;
-      }
-    }
-
-    state.edits = {};
-    // newer presets keep base + sliders (incl. calibration) per look
-    for (const [name, e] of Object.entries(p.matrix_edits || {})) {
-      if (!state.looks[name] || !e) continue;
-      const base = e.base == null ? state.looks[name].matrix
-        : Array.isArray(e.base) && e.base.length === 9 && e.base.every(Number.isFinite) ? e.base : null;
-      if (!base) { warn.push(t("e_matrix", { name })); continue; }
-      const cal = neutralCalib();
-      for (const q of PRIMS) for (const k of ["hue", "sat"])
-        cal[q][k] = Math.max(-100, Math.min(100, +(((e.calib || {})[q] || {})[k]) || 0));
-      Object.assign(editOf(name), { base: base.slice(), sat: +e.sat || 1, hue: +e.hue || 0, calib: cal });
-    }
-    for (const [name, m] of Object.entries(p.matrices || {})) {
-      if (p.matrix_edits && p.matrix_edits[name]) continue;
-      if (!state.looks[name]) { warn.push(t("e_look", { name })); continue; }
-      if (!Array.isArray(m) || m.length !== 9 || m.some((v) => !Number.isFinite(v))) {
-        warn.push(t("e_matrix", { name })); continue;
-      }
-      Object.assign(editOf(name), { base: m.slice(), sat: 1, hue: 0 });
-    }
-
-    const matrixCount = new Set([...Object.keys(p.matrices || {}), ...Object.keys(p.matrix_edits || {})]
-      .filter((n) => state.looks[n])).size;
-    const tone = p.tone || {};
-    const pts = Array.isArray(tone.points) && tone.points.length >= 2 &&
-      tone.points.every((q) => Array.isArray(q) && q.length === 2 && q.every(Number.isFinite))
-      ? tone.points.map((q) => q.slice()).sort((a, b) => a[0] - b[0]) : null;
-    if (p.tone && !pts) warn.push(t("e_tone"));
-    state.tone.points = pts || IDENT.map((q) => q.slice());
-    state.tone.families = Array.isArray(tone.families) ? tone.families.filter((f) => [0, 1, 2].includes(f)) : [0, 1, 2];
-    for (const cb of document.querySelectorAll(".fam")) cb.checked = state.tone.families.includes(+cb.value);
-
-    state.chan.edits = {};
-    state.grade = {};
-    let channels = 0;
-    // with wheels the preset keeps the curves before grading, so the wheels stay editable
-    const pre = p.channel_grade && p.channel_curves_pre;
-    if (p.channel_grade && (pre || p.channel_edits)) {
-      for (const [n, g] of Object.entries(p.channel_grade)) {
-        if (!state.fw.channel_sets[n]) { warn.push(t("e_set", { name: n })); continue; }
-        state.grade[n] = normGrade(g);
-      }
-    }
-    const curve = (v) => Array.isArray(v) && v.length === 256 && v.every(Number.isFinite);
-    const validPoints = (v) => Array.isArray(v) && v.length >= 2 &&
-      v.every((q) => Array.isArray(q) && q.length === 2 && q.every(Number.isFinite));
-    if (p.channel_edits) {
-      // newer presets keep the points, so the curves stay editable
-      for (const [idx, e] of Object.entries(p.channel_edits)) {
-        const i = +idx;
-        if (!(i >= 0 && i < state.fw.channel_curves.length) || !e || !(e.base == null || curve(e.base)) || !validPoints(e.points)) {
-          warn.push(t("e_channel", { idx })); continue;
-        }
-        state.chan.edits[i] = {
-          base: e.base == null ? null : e.base.map((v) => Math.round(v)),
-          points: e.points.map((q) => q.slice()).sort((a, b) => a[0] - b[0]),
-        };
-        channels++;
-      }
-    } else {
-      // older presets: only the finished curves, which become the base under straight points
-      for (const [idx, vals] of Object.entries((pre ? p.channel_curves_pre : p.channel_curves) || {})) {
-        const i = +idx;
-        if (!(i >= 0 && i < state.fw.channel_curves.length) || !curve(vals)) { warn.push(t("e_channel", { idx })); continue; }
-        state.chan.edits[i] = { base: vals.map((v) => Math.round(v)), points: IDENT.map((q) => q.slice()) };
-        channels++;
-      }
-    }
-
-    // curves of other looks given only as finished curves: they become the base
-    for (const [name, rgb] of Object.entries(p.look_curves || {})) {
-      const set = (state.fw.look_channel_sets || {})[name];
-      if (!set || !Array.isArray(rgb) || rgb.length !== 3 || !rgb.every(curve)) { warn.push(t("e_set", { name })); continue; }
-      if (set.some((i) => state.chan.edits[i])) continue;
-      set.forEach((i, k) => {
-        state.chan.edits[i] = { base: rgb[k].map((v) => Math.round(v)), points: IDENT.map((q) => q.slice()) };
-        channels++;
-      });
-    }
-
-    warn.push(...hslLoad(p.hsl));
-    renderHsl();
-    requestHsl();
-
-    detectExtBase();
-    relink();
-    toneEditor.deselect();
-    chanEditor.deselect();
-    renderWheels();
-    update();
-    requestTone();
-    if (p.source && state.fw.path && !p.source.endsWith(state.fw.path))
-      warn.push(t("e_source", { source: p.source }));
-    const parts = [
-      matrixCount && t("p_matrices", { n: matrixCount }),
-      pts && !isIdent(pts) && t("p_tone"),
-      channels && t("p_channels", { n: channels }),
-      gradedSets().length && t("p_wheels", { list: gradedSets().map(setLabel).join(", ") }),
-      hslChangedLooks().length && t("p_hsl", { list: hslChangedLooks().map(label).join(", ") }),
-      hdrOff() && t("p_hdr_off"),
-      Object.keys(inherit).length && Object.entries(inherit).map(([t, s]) => `${t} ← ${s}`).join(", "),
-    ].filter(Boolean);
-    msg.className = warn.length ? "note warn" : "note";
-    ok = !warn.length;
-    msg.textContent = t("preset_loaded", { name: file.name, parts: parts.join(" · ") || t("preset_nothing") }) +
-      (warn.length ? t("preset_hints", { list: warn.join("; ") }) : "");
-  } catch (err) {
-    msg.className = "note warn";
-    msg.textContent = t("preset_failed", { msg: err.message });
+  for (const idx of state.chan.all ? chanSet() : [chanActive()]) {
+    const c0 = curveStart(idx);
+    if (c0) state.chan.edits[idx] = { base: c0, points: IDENT.map((p) => p.slice()) };
+    else delete state.chan.edits[idx];
   }
-  return ok;
-}
-
+  relink();
+  chanEditor.deselect();
+  requestTone();
+};
 
 // ---- colour grading wheels -----------------------------------------------------
 
@@ -1536,6 +1241,7 @@ const wheelUI = {};
 let gradeTimer = null;
 function gradeChanged() {
   renderWheels();
+  renderSections();
   renderChanges();
   clearTimeout(gradeTimer);       // dragging sends at most one request per frame
   gradeTimer = setTimeout(requestTone, 16);
@@ -1562,7 +1268,7 @@ function buildWheels() {
     };
     let drag = false;
     cv.addEventListener("pointerdown", (e) => {
-      if (e.button !== 0 || e.detail > 1) return;
+      if (e.button !== 0 || e.detail > 1 || !state.current) return;
       drag = true; cv.setPointerCapture(e.pointerId); at(e);
     });
     cv.addEventListener("pointermove", (e) => drag && at(e));
@@ -1573,13 +1279,14 @@ function buildWheels() {
     wheelUI[key] = { el, cv, lum, out: el.querySelector("output") };
   }
   $("grade-balance").oninput = (e) => { gradeOf(curSet()).balance = +e.target.value / 100; gradeChanged(); };
-  $("grade-reset").onclick = () => { delete state.grade[curSet()]; gradeChanged(); };
 }
 
 function renderWheels() {
-  if (!state.fw || !wheelUI.global) return;
+  if (!state.fw || !wheelUI.global || !state.current) return;
   const g = state.grade[curSet()] || normGrade({});
-  $("grade-set").textContent = setLabel(curSet());
+  // Cross Process: the wheels of the variant chosen under RGB curves
+  $("grade-set").hidden = state.current !== CROSS;
+  $("grade-set").textContent = t("wheels_for", { set: setLabel(curSet()) });
   for (const [key] of WHEELS) {
     const { el, cv, lum, out } = wheelUI[key], w = g[key];
     const ctx = cv.getContext("2d"), n = cv.width, c = n / 2, R = c - 2;
@@ -1599,9 +1306,6 @@ function renderWheels() {
   }
   $("grade-balance").value = Math.round(g.balance * 100);
   $("grade-balance-out").textContent = Math.round(g.balance * 100);
-  $("grade-panel").classList.toggle("inactive", !previewSet());
-  $("grade-note").className = state.chan.set === "Zufall" && !gradeNeutral(g) ? "note warn" : "note";
-  $("grade-note").textContent = "";
 }
 
 $("help-open").onclick = () => $("help").showModal();
@@ -1625,42 +1329,13 @@ function renderToneNote() {
       t(!meta.residual ? "tone_unmatched" : state.paramsFromDng || !has ? "tone_matched" : "tone_matched_shot");
 }
 
-// ---- curves of other looks, HDR effects, free space ------------------------------
+// ---- free space -------------------------------------------------------------------
 
-function renderCurveLook() {
-  if (!state.fw) return;
-  const sel = $("curve-look");
-  const looks = [CROSS, ...lookSets()];
-  const changed = (n) => (n === CROSS ? SET_ORDER : [n]).some((x) => chanSet(x).some(chanChanged));
-  sel.innerHTML = looks.map((n) => `<option value="${esc(n)}">${esc(label(n))}${changed(n) ? " •" : ""}</option>`).join("");
-  const cur = state.current === CROSS ? CROSS : curveLook(state.current);
-  sel.value = cur || CROSS;
-  $("chan-variant").hidden = cur !== CROSS;
-  $("curves-lead").innerHTML = cur === CROSS || !cur ? t("curves_lead") : t("curves_lead_look", { look: esc(label(cur)) });
-  $("chan-reset-set").textContent = t(cur === CROSS || !cur ? "reset_variant" : "reset_look");
-  $("hdr-box").hidden = cur !== HDR;
-  $("hdr-off").checked = hdrOff();
-}
-$("curve-look").onchange = (e) => select(e.target.value);
-
-$("hdr-off").onchange = async (e) => {
-  const res = await api("/api/effects", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ effects_off: e.target.checked ? [HDR] : [] }),
-  });
-  if (!res.ok) { e.target.checked = !e.target.checked; return; }
-  const fw = await res.json();
-  Object.assign(state.fw, { looks: fw.looks, effects_off: fw.effects_off });
-  for (const l of fw.looks) state.looks[l.name] = l;
-  update();
-};
-
-// the pool HSL sets and curves share (core: space.rs)
+// the pool HSL sets, curves and the targets' colour sets share (core: space.rs)
 let spaceKey = null, spaceBusy = false, spacePending = false;
 async function requestSpace() {
   if (!state.fw) return;
-  const looks = lookSets().filter((n) => chanSet(n).some(chanChanged));
+  const looks = changedTargets().filter((n) => n !== CROSS && curvesForExport(n).length);
   const body = JSON.stringify({ hsl: hslForExport(), looks });
   if (body === spaceKey) return;
   if (spaceBusy) { spacePending = true; return; }
@@ -1678,10 +1353,12 @@ function renderSpace(r) {
   const kb = (b) => (b / 1024).toFixed(1);
   const text = !r.fits ? t("space_full", { hsl: r.hsl, rgb: r.rgb })
     : t("space_ok", { free: kb(r.free), total: kb(r.total), rgb: r.more_rgb, hsl: r.more_hsl });
-  for (const id of ["space-note", "space-export"]) {
-    $(id).className = r.fits ? "note muted" : "note warn";
-    $(id).textContent = text;
-  }
+  $("space-export").className = r.fits ? "note muted" : "note warn";
+  $("space-export").textContent = text;
+  $("space").classList.toggle("full", !r.fits);
+  $("space").title = text;
+  $("space-bar").style.width = `${Math.min(100, (100 * r.used) / r.total).toFixed(1)}%`;
+  $("space-text").textContent = t("space_meter", { used: kb(r.used), total: kb(r.total) });
 }
 
 // ---- language -----------------------------------------------------------------
@@ -1694,50 +1371,15 @@ function setLang(lang) {
   $("fw-info").textContent = t("firmware", state.build);
   spaceKey = null;
   buildChannelPanel();
-  renderInherit();
   renderToneNote();
   renderVignetteNote();
   renderWb();
   renderHsl();
   update();
-  renderChannelPanel();
   placeSplit();
 }
 for (const b of document.querySelectorAll("#lang button")) b.onclick = () => setLang(b.dataset.lang);
 applyI18n();
-// from the header: the result note sits on the Export tab, so show it when there is a problem
-$("head-preset-file").onchange = async (e) => {
-  const f = e.target.files[0];
-  e.target.value = "";
-  if (f && !(await loadPreset(f))) showTab("export");
-};
-// a look shipped with the editor, to start from
-$("example-preset").onclick = async () => {
-  const res = await fetch("presets/example.looks.json");
-  if (!res.ok) return;
-  if (!(await loadPreset(new File([await res.blob()], t("example_name"))))) showTab("export");
-};
-$("preset-file").onchange = (e) => {
-  if (e.target.files[0]) loadPreset(e.target.files[0]);
-  e.target.value = "";     // the same file again must trigger a reload
-};
-
-$("file").onchange = (e) => {
-  const f = e.target.files[0];
-  if (f) (/\.json$/i.test(f.name) ? loadPreset(f) : loadDng(f));
-  e.target.value = "";
-};
-const wrap = $("wrap");
-wrap.addEventListener("dragover", (e) => { e.preventDefault(); wrap.classList.add("drag"); });
-wrap.addEventListener("dragleave", () => wrap.classList.remove("drag"));
-wrap.addEventListener("drop", (e) => {
-  e.preventDefault();
-  wrap.classList.remove("drag");
-  const f = e.dataTransfer.files[0];
-  if (!f) return;
-  if (/\.json$/i.test(f.name)) loadPreset(f);
-  else loadDng(f);
-});
 
 // ---- start ------------------------------------------------------------------
 
@@ -1747,13 +1389,16 @@ if (/\/beta\//.test(location.pathname)) {
   document.title += " (beta)";
 }
 
-(async () => {
+// after every script has loaded (presets.js holds the export and preset parts)
+window.addEventListener("DOMContentLoaded", async () => {
   try {
     initGL();
     state.fw = await (await api("/api/firmware")).json();
     for (const l of state.fw.looks) state.looks[l.name] = l;
+    // the session starts with every look stock (Cross Process's own set is a
+    // copy of its stock one): the matrices every target starts from
+    state.stock = Object.fromEntries(state.fw.looks.map((l) => [l.name, l]));
     mergeLookSets();
-    state.current = INHERIT_TARGET;
     const build = state.fw.path.split("/").slice(-2, -1)[0] || "";
     state.build = { camera: state.fw.camera, version: state.fw.version, build };
     Object.assign(I18N_VARS, { camera: state.fw.camera, update: state.fw.update_file });
@@ -1764,17 +1409,13 @@ if (/\/beta\//.test(location.pathname)) {
     relink();
     buildWheels();
     initHsl();
+    restoreSections();
     applyI18n();
-    renderWheels();
-    renderHsl();
-    requestHsl();
     update();
     await fetchTone();
     const pre = await api("/api/dng");
     if (pre.status === 200) await show(await pre.json());
-    const tab = store.get("tab");
-    if (tab && document.querySelector(`#tabs [data-tab="${tab}"]`)) showTab(tab);
   } catch (err) {
     $("fw-info").textContent = t("error_prefix", { msg: err.message });
   }
-})();
+});
