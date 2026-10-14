@@ -2,7 +2,7 @@
 //! file the user dropped in, the decoded image and the current look data.
 //! Requests and answers are JSON, routed by editor/static/bridge.js.
 
-use crate::{chan, gamma, grfw, looks, multiaxial, tone};
+use crate::{chan, curvesel, gamma, grfw, looks, multiaxial, space, tone};
 use crate::gamma::{Engine, ToneParams};
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
@@ -51,6 +51,8 @@ pub struct Session {
     /// stock + linear channel curves + inheritance + private Cross Process set
     fw: Vec<u8>,
     inherit: Vec<(String, String)>,
+    /// looks whose own effects are off (only "HdrCuisine"); they get a private colour set
+    effects_off: Vec<String>,
     pub build: &'static Build,
     /// the dropped file's name, and the name the camera expects (FWDC239B.BIN)
     pub filename: String,
@@ -108,7 +110,7 @@ impl Session {
         let name = filename.to_uppercase();
         let base_curves = gamma::base_curves(&stock);
         let mut s = Session {
-            container, fw: vec![], stock, inherit: vec![], build, filename,
+            container, fw: vec![], stock, inherit: vec![], effects_off: vec![], build, filename,
             update_name: if name.is_empty() { format!("{}.BIN", build.name.to_uppercase()) } else { name },
             base_curves,
         };
@@ -126,12 +128,19 @@ impl Session {
             looks::inherit(&mut img, looks::table_of(target).unwrap(), looks::table_of(source).unwrap());
         }
         looks::private_cross(&mut img)?;
+        if self.hdr_off() {
+            looks::private_set(&mut img, looks::HDR_TABLE)?;
+        }
         self.fw = img;
         Ok(())
     }
 
     pub fn image(&self) -> &[u8] {
         &self.fw
+    }
+
+    fn hdr_off(&self) -> bool {
+        self.effects_off.iter().any(|n| n == HDR)
     }
 
     fn inherit_json(&self) -> Value {
@@ -156,6 +165,9 @@ impl Session {
             "channel_sets": sets,
             "channel_linear": chan::linear(),
             "inherit": self.inherit_json(),
+            "effects_off": self.effects_off,
+            "curve_looks": CURVE_LOOKS,
+            "look_channel_sets": Value::Object(look_sets().map(|(n, i)| (n.to_string(), json!(i))).collect()),
             "multiaxial": { "ycc": multiaxial::ycc(img, 11), "circle": multiaxial::CIRCLE },
             "tone_control_base": crate::tonecontrol::base(img),
         })
@@ -194,6 +206,37 @@ impl Session {
         Ok(self.firmware())
     }
 
+    /// POST /api/effects {effects_off: ["HdrCuisine"] | []}
+    pub fn set_effects(&mut self, body: &Value) -> Result<Value, String> {
+        let names: Vec<String> = body.get("effects_off").and_then(|v| v.as_array())
+            .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect()).unwrap_or_default();
+        if let Some(n) = names.iter().find(|n| *n != HDR) {
+            return Err(format!("effects can only be switched off for {HDR}, not {n:?}"));
+        }
+        self.effects_off = if names.is_empty() { vec![] } else { vec![HDR.to_string()] };
+        self.rebuild()?;
+        Ok(self.firmware())
+    }
+
+    /// POST /api/space {hsl, look_curves}: the shared free space for the
+    /// editor's meter, counted as export would place it
+    pub fn space(&self, body: &Value) -> Result<Value, String> {
+        let hsl = body.get("hsl").and_then(|v| v.as_object()).map_or(0, |h| {
+            h.values().filter(|v| !multiaxial::Hsl::from_json(v).is_neutral()).count()
+        });
+        let mut rgb = parse_look_curves(body)?.len();
+        if let Some(names) = body.get("looks").and_then(|v| v.as_array()) {
+            for n in names {
+                let n = n.as_str().unwrap_or("");
+                if !CURVE_LOOKS.contains(&n) {
+                    return Err(format!("no channel curves for {n:?}"));
+                }
+            }
+            rgb += names.len();
+        }
+        Ok(space::report(&self.fw, hsl, rgb))
+    }
+
     fn engine_for(&self, pts: &[[f64; 2]], fams: &[usize]) -> Engine {
         let edit: Vec<(usize, Vec<u16>)> = tone::apply(&self.base_curves, pts, fams)
             .into_iter()
@@ -222,7 +265,10 @@ impl Session {
         let mut out = json!({ "lut": lut, "lut_ref": reference, "transfer": tone::transfer(&pts, 129) });
 
         let chan_req = body.get("chan").cloned().unwrap_or(Value::Null);
-        let original: Vec<Vec<i64>> = chan::read(&self.fw).into_iter().map(|c| c.into_iter().map(i64::from).collect()).collect();
+        let mut original: Vec<Vec<i64>> = chan::read(&self.fw).into_iter().map(|c| c.into_iter().map(i64::from).collect()).collect();
+        // the other looks' curves (look_sets): none in stock, they start linear
+        let lin: Vec<i64> = chan::linear().into_iter().map(i64::from).collect();
+        original.extend(std::iter::repeat_n(lin, 3 * CURVE_LOOKS.len()));
         let edits = chan_req.get("edits").and_then(|v| v.as_object()).cloned().unwrap_or_default();
         let pre = effective_channels(&original, &edits)?;
         let effective = graded_channels(&pre, chan_req.get("grade").unwrap_or(&Value::Null));
@@ -231,10 +277,21 @@ impl Session {
         out["channel_transfer"] = Value::Object(
             edits.iter().map(|(k, e)| (k.clone(), json!(tone::transfer(&points(e.get("points").unwrap_or(&Value::Null)), 129)))).collect(),
         );
-        if let Some(set) = chan_req.get("set").and_then(|v| v.as_array()).filter(|a| !a.is_empty()) {
-            let idx: Vec<usize> = set.iter().filter_map(|v| v.as_u64().map(|x| x as usize)).filter(|&i| i < chan::COUNT).collect();
+        if let Some(cs) = chan_req.get("curves").filter(|v| !v.is_null()) {
+            // the channel curves of any look: [R, G, B]; stock has none there
+            let curves = curve_triplet(cs).map_err(|e| format!("chan.curves: {e}"))?;
+            out["rgb"] = Value::from(curves.iter().map(|c| {
+                let c: Vec<i64> = c.iter().map(|&v| v as i64).collect();
+                json!(chan::compose(&lut, &c))
+            }).collect::<Vec<_>>());
+            out["rgb_ref"] = json!([reference, reference, reference]);
+        } else if let Some(set) = chan_req.get("set").and_then(|v| v.as_array()).filter(|a| !a.is_empty()) {
+            let idx: Vec<usize> = set.iter().filter_map(|v| v.as_u64().map(|x| x as usize)).filter(|&i| i < original.len()).collect();
             out["rgb"] = Value::from(idx.iter().map(|&i| json!(chan::compose(&lut, &effective[i]))).collect::<Vec<_>>());
-            out["rgb_ref"] = Value::from(idx.iter().map(|&i| json!(chan::compose(&reference, &original[i]))).collect::<Vec<_>>());
+            // stock applies no curves to the other looks
+            out["rgb_ref"] = Value::from(idx.iter().map(|&i| {
+                if i < chan::COUNT { json!(chan::compose(&reference, &original[i])) } else { json!(reference) }
+            }).collect::<Vec<_>>());
         }
         Ok(out)
     }
@@ -255,14 +312,43 @@ impl Session {
                 channels.push((i, vals));
             }
         }
+        // indices 12.. are the other looks' curves (look_sets)
+        let mut look_curves = parse_look_curves(body)?;
+        let (own, others): (Vec<_>, Vec<_>) = channels.into_iter().partition(|(i, _)| *i < chan::COUNT);
+        let channels = own;
+        let mut from_channels: Vec<(u32, Vec<Vec<u16>>)> = vec![];
+        for (i, vals) in others {
+            let k = i - chan::COUNT;
+            let Some(name) = CURVE_LOOKS.get(k / 3) else { return Err(format!("channel curve {i}: bad index")) };
+            if vals.len() != 256 {
+                return Err(format!("channel curve {i}: need 256 values"));
+            }
+            let index = look_index(name);
+            if look_curves.iter().any(|(l, _)| *l == index) {
+                return Err(format!("curves for {name} given twice"));
+            }
+            let pos = match from_channels.iter().position(|(l, _)| *l == index) {
+                Some(p) => p,
+                None => {
+                    from_channels.push((index, vec![chan::linear(); 3]));
+                    from_channels.len() - 1
+                }
+            };
+            from_channels[pos].1[k % 3] = vals.iter().map(|&v| crate::addr::clamp_u16(v)).collect();
+        }
+        look_curves.extend(from_channels);
+        look_curves.sort_by_key(|(l, _)| CURVE_LOOKS.iter().position(|n| look_index(n) == *l));
+        if !look_curves.is_empty() && channels.iter().any(|(i, _)| *i < 3) {
+            return Err("the Random curves of Cross Process cannot be combined with curves for other looks".into());
+        }
         // even without edits the export is a new look: Cross Process with
         // linear curves and its own matrix
         let mut img = self.fw.clone();
         looks::patch(&mut img, matrices)?;
         // HSL: a MultiAxial set of its own for each look that has one
         let mut hsl_out = Map::new();
+        let mut sets = vec![];
         if let Some(h) = body.get("hsl").and_then(|v| v.as_object()) {
-            let mut sets = vec![];
             for (name, v) in h {
                 let table = looks::table_of(name).ok_or(format!("HSL for unknown look {name:?}"))?;
                 let parsed = multiaxial::Hsl::from_json(v);
@@ -273,8 +359,10 @@ impl Session {
                 sets.push((table, e));
                 hsl_out.insert(name.clone(), v.clone());
             }
-            multiaxial::patch(&mut img, &sets)?;
         }
+        // one pool for HSL sets and curves (space.rs)
+        let plan = space::plan(&img, sets.len(), 3 * look_curves.len())?;
+        multiaxial::patch(&mut img, &sets, &plan.hsl)?;
         if tone_changed {
             let fams = families(tone_req.get("families").unwrap_or(&Value::Null));
             let edit: Vec<(usize, Vec<u16>)> = tone::apply(&gamma::base_curves(&img), &pts, &fams)
@@ -286,11 +374,30 @@ impl Session {
         if !channels.is_empty() {
             chan::write(&mut img, &channels)?;
         }
+        // curves for other looks: written after Cross Process's, into the pool,
+        // and the selector that picks them
+        if !look_curves.is_empty() {
+            let mut entries = vec![];
+            for ((look, curves), at) in look_curves.iter().zip(plan.curves.chunks(3)) {
+                for (c, &va) in curves.iter().zip(at) {
+                    crate::addr::put_curve(&mut img, va, c);
+                }
+                let e = curvesel::entry(*look, 0).unwrap();
+                entries.push((e, [at[0], at[1], at[2]]));
+            }
+            curvesel::install(&mut img, &entries)?;
+        }
+        if self.hdr_off() {
+            curvesel::hdr_effects_off(&mut img)?;
+        }
         let or_null = |k: &str| match body.get(k) {
             Some(v) if !v.is_null() && v != &json!({}) && v != &json!([]) => v.clone(),
             _ => Value::Null,
         };
-        let channel_json = if channels.is_empty() { Value::Null } else { body["channels"].clone() };
+        let channel_json = match body.get("channels") {
+            Some(c) if c.as_object().is_some_and(|o| !o.is_empty()) => c.clone(),
+            _ => Value::Null,
+        };
         let preset = json!({
             "source": format!("{}/unpackedFW", self.build.name),
             "matrices": matrices,
@@ -306,6 +413,14 @@ impl Session {
             // per-hue adjustments (MultiAxial) per look
             "hsl": if hsl_out.is_empty() { Value::Null } else { Value::Object(hsl_out) },
             "inherit": if self.inherit.is_empty() { Value::Null } else { self.inherit_json() },
+            // channel curves of looks other than Cross Process {look: [R, G, B]}
+            "look_curves": if look_curves.is_empty() { Value::Null } else {
+                Value::Object(look_curves.iter().map(|(l, c)| {
+                    let name = CURVE_LOOKS.iter().find(|n| look_index(n) == *l).unwrap();
+                    (name.to_string(), json!(c))
+                }).collect())
+            },
+            "effects_off": if self.effects_off.is_empty() { Value::Null } else { json!(self.effects_off) },
         });
         let preset_text = serde_json::to_string_pretty(&preset).unwrap();
 
@@ -325,9 +440,62 @@ impl Session {
             "update_file": self.update_name,
             "frames_reencoded": redo,
             "update_sha256": sha256_hex(&packed),
+            "space": space::report(&self.fw, sets.len(), look_curves.len()),
         });
         Ok((result, packed, preset_text))
     }
+}
+
+const HDR: &str = "HdrCuisine";
+
+/// looks that can get channel curves of their own (Cross Process has its
+/// Color Tone sets; monochrome looks have no colour to curve)
+pub const CURVE_LOOKS: [&str; 7] =
+    ["Standard", "Vivid", "PositiveFilm", "BleechBypass_GR", "Retro", "HdrCuisine", "NegativeFilm"];
+
+/// menu index of a look name
+fn look_index(name: &str) -> u32 {
+    looks::LOOKS.iter().find(|l| l.2 == name).unwrap().0
+}
+
+/// channel curve indices of the other looks in the editor: 12 + 3k.. for CURVE_LOOKS[k]
+pub fn look_sets() -> impl Iterator<Item = (&'static str, [usize; 3])> {
+    CURVE_LOOKS.iter().enumerate().map(|(k, &n)| (n, [12 + 3 * k, 13 + 3 * k, 14 + 3 * k]))
+}
+
+/// [R, G, B], 256 values each, 0..65535
+fn curve_triplet(v: &Value) -> Result<Vec<Vec<u16>>, String> {
+    let a = v.as_array().filter(|a| a.len() == 3).ok_or("need three curves (R, G, B)")?;
+    a.iter().map(|c| {
+        let vals: Vec<u16> = c.as_array().map(|x| {
+            x.iter().filter_map(|n| n.as_f64()).filter(|n| n.is_finite())
+                .map(crate::addr::clamp_u16).collect()
+        }).unwrap_or_default();
+        if vals.len() == 256 { Ok(vals) } else { Err("a curve needs 256 values".to_string()) }
+    }).collect()
+}
+
+/// (menu index, [R, G, B])
+type LookCurves = (u32, Vec<Vec<u16>>);
+
+/// body.look_curves {look name: [R, G, B]} -> in CURVE_LOOKS order
+fn parse_look_curves(body: &Value) -> Result<Vec<LookCurves>, String> {
+    let Some(m) = body.get("look_curves").and_then(|v| v.as_object()) else { return Ok(vec![]) };
+    for name in m.keys() {
+        if !CURVE_LOOKS.contains(&name.as_str()) {
+            return Err(match name.as_str() {
+                "CrossProcess" => "Cross Process keeps its Color Tone curves (channels)".into(),
+                _ => format!("no channel curves for {name:?}"),
+            });
+        }
+    }
+    let mut out = vec![];
+    for name in CURVE_LOOKS {
+        let Some(v) = m.get(name).filter(|v| !v.is_null()) else { continue };
+        let curves = curve_triplet(v).map_err(|e| format!("curves for {name}: {e}"))?;
+        out.push((look_index(name), curves));
+    }
+    Ok(out)
 }
 
 /// the 12 channel curves after edits {index: {base: [256] | None, points}}
@@ -361,7 +529,13 @@ fn graded_channels(curves: &[Vec<i64>], grades: &Value) -> Vec<Vec<i64>> {
     let mut out = curves.to_vec();
     let Some(g) = grades.as_object() else { return out };
     for (name, wheels) in g {
-        let Some((_, idx)) = chan::SETS.iter().find(|(n, _)| n == name) else { continue };
+        let idx: Vec<usize> = match chan::SETS.iter().find(|(n, _)| n == name) {
+            Some((_, i)) => i.to_vec(),
+            None => match look_sets().find(|(n, _)| n == name) {
+                Some((_, i)) => i.to_vec(),
+                None => continue,
+            },
+        };
         if chan::grade_is_neutral(wheels) {
             continue;
         }

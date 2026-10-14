@@ -41,6 +41,8 @@ const ops = {
   inherit: ({ body }) => JSON.parse(editor.inherit(body)),
   tone: ({ body }) => JSON.parse(editor.tone(body)),
   hsl: ({ body }) => JSON.parse(editor.hsl(body)),
+  effects: ({ body }) => JSON.parse(editor.effects(body)),
+  space: ({ body }) => JSON.parse(editor.space(body)),
   export({ body }) {
     const e = editor.export(body);
     const update = e.take_update();

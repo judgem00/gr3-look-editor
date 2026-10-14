@@ -48,6 +48,7 @@ const exportKey = () => JSON.stringify([
   state.fw ? changedChannels().map((i) => [i, chanValues(i)]) : [],
   state.fw ? state.fw.inherit : {},
   hslForExport(),
+  state.fw ? state.fw.effects_off : [],
 ]);
 const toneChanged = () => !state.tone.points.every(([x, y]) => Math.abs(x - y) < 1e-4);
 
@@ -618,6 +619,9 @@ function renderChanges() {
   for (const n of SET_ORDER) names.push(`${setLabel(n)}: ` + (sets.has(n)
     ? t(gradedSets().includes(n) ? "ch_curves_wheels" : "ch_curves")
     : t("ch_neutral")));
+  for (const n of lookSets()) if (sets.has(n))
+    names.push(t("ch_look_curves", { look: label(n), what: t(gradedSets().includes(n) ? "ch_curves_wheels" : "ch_curves") }));
+  if (hdrOff()) names.push(t("ch_hdr_off"));
   for (const n of others) names.push(`<span class="warn">${t("ch_other", { look: label(n) })}</span>`);
   for (const n of hslChangedLooks())
     names.push(n === CROSS ? t("ch_hsl") : `<span class="warn">${t("ch_hsl_other", { look: label(n) })}</span>`);
@@ -626,6 +630,7 @@ function renderChanges() {
   const badge = { base: !!baseOf() || !!ext, color: isChanged(CROSS) || others.length > 0 || hslChangedLooks().length > 0,
     curves: sets.size > 0 || toneChanged() };
   for (const b of document.querySelectorAll("#tabs button")) b.classList.toggle("dirty", !!badge[b.dataset.tab]);
+  requestSpace();
 }
 const chanSetOf = (idx) => Object.keys(state.fw.channel_sets).find((n) => state.fw.channel_sets[n].includes(idx));
 
@@ -636,8 +641,9 @@ function showTab(tab) {
   for (const s of document.querySelectorAll("section.tab")) s.hidden = s.dataset.tab !== tab;
   store.set("tab", tab);
   document.querySelector("aside").dataset.tab = tab;
-  // base and curves belong to the user's look: always preview it there
-  if ((tab === "base" || tab === "curves") && state.current !== CROSS) select(CROSS);
+  // base belongs to the user's look; curves to it or to a colour look with curves of its own
+  if (tab === "base" && state.current !== CROSS) select(CROSS);
+  if (tab === "curves" && state.current !== CROSS && !curveLook(state.current)) select(CROSS);
   if (tab === "curves") { chanEditor.draw(); drawChannels(); renderWheels(); toneEditor.draw(); drawEffective(); }
 }
 for (const b of document.querySelectorAll("#tabs button")) b.onclick = () => showTab(b.dataset.tab);
@@ -652,6 +658,7 @@ function renderOtherLook() {
 }
 
 function update() {
+  renderCurveLook();
   renderMatrix();
   renderLooks();
   renderOtherLook();
@@ -660,13 +667,13 @@ function update() {
 }
 
 function select(name) {
-  const wasCross = state.current === CROSS;
   state.current = name;
   renderHsl();
   requestHsl();
   update();
-  if (wasCross !== (name === CROSS)) requestTone();
-  else renderChannelPanel();
+  // the preview's channel curves follow the look
+  chanEditor.deselect();
+  requestTone();
 }
 
 for (const b of document.querySelectorAll("#modes button")) {
@@ -948,10 +955,29 @@ const isIdent = (pts) => pts.every(([x, y]) => Math.abs(x - y) < 1e-4);
 const CH_NAMES = ["R", "G", "B"];
 const CH_COLORS = ["#e0645a", "#6fbf73", "#5b8fe0"];
 
-const chanSet = (name) => state.fw.channel_sets[name || state.chan.set];
+const chanSet = (name) => state.fw.channel_sets[name || curSet()];
+// the other colour looks' curves (core: look_sets), merged into channel_sets at start;
+// Bleach Bypass and HDR variants use their look's curves
+const CURVE_ALIAS = { "BleechBypass_GR · Var. 2": "BleechBypass_GR", "BleechBypass_GR · Var. 3": "BleechBypass_GR",
+  "HdrCuisine · Var.": "HdrCuisine" };
+const lookSets = () => (state.fw && state.fw.curve_looks) || [];
+const curveLook = (name) => {
+  const n = CURVE_ALIAS[name] || name;
+  return lookSets().includes(n) ? n : null;
+};
+// the set the curves tab edits: Cross Process's Color Tone, or the shown look's own
+const curSet = () => (state.current === CROSS ? state.chan.set : curveLook(state.current) || state.chan.set);
+const allSets = () => [...SET_ORDER, ...lookSets()];
+const HDR = "HdrCuisine";
+const hdrOff = () => !!state.fw && (state.fw.effects_off || []).includes(HDR);
+function mergeLookSets() {
+  Object.assign(state.fw.channel_sets, state.fw.look_channel_sets);
+  while (state.fw.channel_curves.length < 12 + 3 * lookSets().length)
+    state.fw.channel_curves.push(state.fw.channel_linear.slice());
+}
 // internal set names stay (presets store them); the camera menu calls them Farbton 1-3
 const SET_LABEL = { "Preset 1": "set_1", "Preset 2": "set_2", "Preset 3": "set_3" };
-const setLabel = (name) => (SET_LABEL[name] ? t(SET_LABEL[name]) : name);
+const setLabel = (name) => (SET_LABEL[name] ? t(SET_LABEL[name]) : LOOK_LABELS[name] ? label(name) : name);
 // "Zufall" cannot be chosen in the camera menu, so the editor leaves it out
 const SET_ORDER = ["Preset 1", "Preset 2", "Preset 3"];
 // state.chan.all: one curve on R, G and B together (a tone curve for the look);
@@ -968,7 +994,7 @@ function linkSet(name, force) {
 function unlinkSet(name) {
   for (const i of chanSet(name)) chanEdit(i).points = chanEdit(i).points.map((p) => p.slice());
 }
-const relink = () => { if (state.chan.all) for (const n of SET_ORDER) linkSet(n); };
+const relink = () => { if (state.chan.all) for (const n of allSets()) linkSet(n); };
 function chanEdit(idx) {
   if (!state.chan.edits[idx]) state.chan.edits[idx] = { base: null, points: IDENT.map((p) => p.slice()) };
   return state.chan.edits[idx];
@@ -989,7 +1015,7 @@ const chanChanged = (idx) => {
   if (e.base && e.base.some((v, k) => v !== state.fw.channel_curves[idx][k])) return true;
   return !isIdent(e.points);
 };
-const changedChannels = () => [...Array(12).keys()].filter(chanChanged);
+const changedChannels = () => [...Array(state.fw.channel_curves.length).keys()].filter(chanChanged);
 const chanLabel = (idx) => {
   for (const [name, set] of Object.entries(state.fw.channel_sets)) {
     const k = set.indexOf(idx);
@@ -997,8 +1023,8 @@ const chanLabel = (idx) => {
   }
   return t("curve_n", { n: idx });
 };
-// the set the preview applies: only Cross Process uses channel curves
-const previewSet = () => (state.current === "CrossProcess" ? chanSet() : null);
+// the set the preview applies: Cross Process's Color Tone or the look's own curves
+const previewSet = () => (state.current === CROSS || curveLook(state.current) ? chanSet() : null);
 
 let toneBusy = false, tonePending = false;
 function requestTone() {
@@ -1211,7 +1237,8 @@ function renderChannelPanel() {
     ? t("chan_all")
     : t("chan_one", { ch: CH_NAMES[state.chan.channel], up: t(["red", "green", "blue"][state.chan.channel]),
                        down: ["Cyan", "Magenta", LANG === "de" ? "Gelb" : "Yellow"][state.chan.channel] });
-  $("chan-panel").classList.toggle("inactive", state.current !== "CrossProcess");
+  $("chan-panel").classList.toggle("inactive", !previewSet());
+  renderCurveLook();
   renderWheels();
   $("chan-note").textContent = "";
 }
@@ -1230,12 +1257,12 @@ function buildChannelPanel() {
     if (k) b.style.color = CH_COLORS[k - 1];
     b.onclick = () => {
       if (k === 0 && !state.chan.all) {
-        if (!linkSet(state.chan.set) &&
+        if (!linkSet(curSet()) &&
             !confirm(t("link_confirm"))) return;
-        linkSet(state.chan.set, true);
+        linkSet(curSet(), true);
         state.chan.all = true;
       } else if (k > 0) {
-        if (state.chan.all) for (const n of SET_ORDER) unlinkSet(n);
+        if (state.chan.all) for (const n of allSets()) unlinkSet(n);
         state.chan.all = false;
         state.chan.channel = k - 1;
       }
@@ -1244,7 +1271,7 @@ function buildChannelPanel() {
   });
   const src = $("chan-source");
   src.innerHTML = "";
-  for (const name of SET_ORDER.filter((n) => state.fw.channel_sets[n])) {
+  for (const name of allSets().filter((n) => state.fw.channel_sets[n])) {
     const set = state.fw.channel_sets[name];
     const og = document.createElement("optgroup");
     og.label = setLabel(name);
@@ -1257,7 +1284,7 @@ function buildChannelPanel() {
     src.appendChild(og);
   }
   const srcSet = $("chan-source-set");
-  srcSet.innerHTML = SET_ORDER.filter((n) => state.fw.channel_sets[n])
+  srcSet.innerHTML = allSets().filter((n) => state.fw.channel_sets[n])
     .map((n) => `<option value="${n}">${setLabel(n)}</option>`).join("");
 }
 
@@ -1289,7 +1316,7 @@ $("chan-reset").onclick = () => {
 };
 $("chan-reset-set").onclick = () => {
   for (const idx of chanSet()) delete state.chan.edits[idx];
-  delete state.grade[state.chan.set];
+  delete state.grade[curSet()];
   relink();
   chanEditor.deselect();
   requestTone();
@@ -1310,7 +1337,7 @@ async function loadPreset(file) {
   try {
     let p;
     try { p = JSON.parse(await file.text()); } catch { throw new Error(t("e_json")); }
-    if (!p || typeof p !== "object" || !["matrices", "matrix_edits", "tone", "channel_curves", "channel_edits", "inherit", "hsl"].some((k) => k in p))
+    if (!p || typeof p !== "object" || !["matrices", "matrix_edits", "tone", "channel_curves", "channel_edits", "inherit", "hsl", "look_curves", "effects_off"].some((k) => k in p))
       throw new Error(t("e_preset"));
     const warn = [];
 
@@ -1328,6 +1355,22 @@ async function loadPreset(file) {
       const fw = await res.json();
       Object.assign(state.fw, { looks: fw.looks, inherit: fw.inherit });
       for (const l of fw.looks) state.looks[l.name] = l;
+    }
+
+    // HDR with its effects off has a matrix of its own: before the matrices
+    const effects = Array.isArray(p.effects_off) ? p.effects_off : [];
+    if (JSON.stringify(effects) !== JSON.stringify(state.fw.effects_off || [])) {
+      const res = await api("/api/effects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ effects_off: effects }),
+      });
+      if (!res.ok) warn.push(await errorText(res));
+      else {
+        const fw = await res.json();
+        Object.assign(state.fw, { looks: fw.looks, effects_off: fw.effects_off });
+        for (const l of fw.looks) state.looks[l.name] = l;
+      }
     }
 
     state.edits = {};
@@ -1380,7 +1423,7 @@ async function loadPreset(file) {
       // newer presets keep the points, so the curves stay editable
       for (const [idx, e] of Object.entries(p.channel_edits)) {
         const i = +idx;
-        if (!(i >= 0 && i < 12) || !e || !(e.base == null || curve(e.base)) || !validPoints(e.points)) {
+        if (!(i >= 0 && i < state.fw.channel_curves.length) || !e || !(e.base == null || curve(e.base)) || !validPoints(e.points)) {
           warn.push(t("e_channel", { idx })); continue;
         }
         state.chan.edits[i] = {
@@ -1393,10 +1436,21 @@ async function loadPreset(file) {
       // older presets: only the finished curves, which become the base under straight points
       for (const [idx, vals] of Object.entries((pre ? p.channel_curves_pre : p.channel_curves) || {})) {
         const i = +idx;
-        if (!(i >= 0 && i < 12) || !curve(vals)) { warn.push(t("e_channel", { idx })); continue; }
+        if (!(i >= 0 && i < state.fw.channel_curves.length) || !curve(vals)) { warn.push(t("e_channel", { idx })); continue; }
         state.chan.edits[i] = { base: vals.map((v) => Math.round(v)), points: IDENT.map((q) => q.slice()) };
         channels++;
       }
+    }
+
+    // curves of other looks given only as finished curves: they become the base
+    for (const [name, rgb] of Object.entries(p.look_curves || {})) {
+      const set = (state.fw.look_channel_sets || {})[name];
+      if (!set || !Array.isArray(rgb) || rgb.length !== 3 || !rgb.every(curve)) { warn.push(t("e_set", { name })); continue; }
+      if (set.some((i) => state.chan.edits[i])) continue;
+      set.forEach((i, k) => {
+        state.chan.edits[i] = { base: rgb[k].map((v) => Math.round(v)), points: IDENT.map((q) => q.slice()) };
+        channels++;
+      });
     }
 
     warn.push(...hslLoad(p.hsl));
@@ -1418,6 +1472,7 @@ async function loadPreset(file) {
       channels && t("p_channels", { n: channels }),
       gradedSets().length && t("p_wheels", { list: gradedSets().map(setLabel).join(", ") }),
       hslChangedLooks().length && t("p_hsl", { list: hslChangedLooks().map(label).join(", ") }),
+      hdrOff() && t("p_hdr_off"),
       Object.keys(inherit).length && Object.entries(inherit).map(([t, s]) => `${t} ← ${s}`).join(", "),
     ].filter(Boolean);
     msg.className = warn.length ? "note warn" : "note";
@@ -1500,7 +1555,7 @@ function buildWheels() {
     const at = (e) => {
       const r = cv.getBoundingClientRect();
       const dx = (e.clientX - r.left) / r.width * 2 - 1, dy = 1 - (e.clientY - r.top) / r.height * 2;
-      const w = gradeOf(state.chan.set)[key];
+      const w = gradeOf(curSet())[key];
       w.amount = Math.min(1, Math.hypot(dx, dy) / ((r.width / 2 - 2) / (r.width / 2)));
       w.hue = (Math.atan2(dy, dx) * 180 / Math.PI + 360) % 360;
       gradeChanged();
@@ -1512,19 +1567,19 @@ function buildWheels() {
     });
     cv.addEventListener("pointermove", (e) => drag && at(e));
     cv.addEventListener("pointerup", () => { drag = false; });
-    cv.addEventListener("dblclick", () => { Object.assign(gradeOf(state.chan.set)[key], neutralWheel()); gradeChanged(); });
-    lum.oninput = () => { gradeOf(state.chan.set)[key].lum = +lum.value / 100; gradeChanged(); };
-    lum.ondblclick = () => { gradeOf(state.chan.set)[key].lum = 0; gradeChanged(); };
+    cv.addEventListener("dblclick", () => { Object.assign(gradeOf(curSet())[key], neutralWheel()); gradeChanged(); });
+    lum.oninput = () => { gradeOf(curSet())[key].lum = +lum.value / 100; gradeChanged(); };
+    lum.ondblclick = () => { gradeOf(curSet())[key].lum = 0; gradeChanged(); };
     wheelUI[key] = { el, cv, lum, out: el.querySelector("output") };
   }
-  $("grade-balance").oninput = (e) => { gradeOf(state.chan.set).balance = +e.target.value / 100; gradeChanged(); };
-  $("grade-reset").onclick = () => { delete state.grade[state.chan.set]; gradeChanged(); };
+  $("grade-balance").oninput = (e) => { gradeOf(curSet()).balance = +e.target.value / 100; gradeChanged(); };
+  $("grade-reset").onclick = () => { delete state.grade[curSet()]; gradeChanged(); };
 }
 
 function renderWheels() {
   if (!state.fw || !wheelUI.global) return;
-  const g = state.grade[state.chan.set] || normGrade({});
-  $("grade-set").textContent = setLabel(state.chan.set);
+  const g = state.grade[curSet()] || normGrade({});
+  $("grade-set").textContent = setLabel(curSet());
   for (const [key] of WHEELS) {
     const { el, cv, lum, out } = wheelUI[key], w = g[key];
     const ctx = cv.getContext("2d"), n = cv.width, c = n / 2, R = c - 2;
@@ -1544,7 +1599,7 @@ function renderWheels() {
   }
   $("grade-balance").value = Math.round(g.balance * 100);
   $("grade-balance-out").textContent = Math.round(g.balance * 100);
-  $("grade-panel").classList.toggle("inactive", state.current !== "CrossProcess");
+  $("grade-panel").classList.toggle("inactive", !previewSet());
   $("grade-note").className = state.chan.set === "Zufall" && !gradeNeutral(g) ? "note warn" : "note";
   $("grade-note").textContent = "";
 }
@@ -1570,6 +1625,65 @@ function renderToneNote() {
       t(!meta.residual ? "tone_unmatched" : state.paramsFromDng || !has ? "tone_matched" : "tone_matched_shot");
 }
 
+// ---- curves of other looks, HDR effects, free space ------------------------------
+
+function renderCurveLook() {
+  if (!state.fw) return;
+  const sel = $("curve-look");
+  const looks = [CROSS, ...lookSets()];
+  const changed = (n) => (n === CROSS ? SET_ORDER : [n]).some((x) => chanSet(x).some(chanChanged));
+  sel.innerHTML = looks.map((n) => `<option value="${esc(n)}">${esc(label(n))}${changed(n) ? " •" : ""}</option>`).join("");
+  const cur = state.current === CROSS ? CROSS : curveLook(state.current);
+  sel.value = cur || CROSS;
+  $("chan-variant").hidden = cur !== CROSS;
+  $("curves-lead").innerHTML = cur === CROSS || !cur ? t("curves_lead") : t("curves_lead_look", { look: esc(label(cur)) });
+  $("chan-reset-set").textContent = t(cur === CROSS || !cur ? "reset_variant" : "reset_look");
+  $("hdr-box").hidden = cur !== HDR;
+  $("hdr-off").checked = hdrOff();
+}
+$("curve-look").onchange = (e) => select(e.target.value);
+
+$("hdr-off").onchange = async (e) => {
+  const res = await api("/api/effects", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ effects_off: e.target.checked ? [HDR] : [] }),
+  });
+  if (!res.ok) { e.target.checked = !e.target.checked; return; }
+  const fw = await res.json();
+  Object.assign(state.fw, { looks: fw.looks, effects_off: fw.effects_off });
+  for (const l of fw.looks) state.looks[l.name] = l;
+  update();
+};
+
+// the pool HSL sets and curves share (core: space.rs)
+let spaceKey = null, spaceBusy = false, spacePending = false;
+async function requestSpace() {
+  if (!state.fw) return;
+  const looks = lookSets().filter((n) => chanSet(n).some(chanChanged));
+  const body = JSON.stringify({ hsl: hslForExport(), looks });
+  if (body === spaceKey) return;
+  if (spaceBusy) { spacePending = true; return; }
+  spaceKey = body;
+  spaceBusy = true;
+  try {
+    const res = await api("/api/space", { method: "POST", headers: { "Content-Type": "application/json" }, body });
+    if (res.ok) renderSpace(await res.json());
+  } finally {
+    spaceBusy = false;
+    if (spacePending) { spacePending = false; requestSpace(); }
+  }
+}
+function renderSpace(r) {
+  const kb = (b) => (b / 1024).toFixed(1);
+  const text = !r.fits ? t("space_full", { hsl: r.hsl, rgb: r.rgb })
+    : t("space_ok", { free: kb(r.free), total: kb(r.total), rgb: r.more_rgb, hsl: r.more_hsl });
+  for (const id of ["space-note", "space-export"]) {
+    $(id).className = r.fits ? "note muted" : "note warn";
+    $(id).textContent = text;
+  }
+}
+
 // ---- language -----------------------------------------------------------------
 
 function setLang(lang) {
@@ -1578,6 +1692,7 @@ function setLang(lang) {
   applyI18n();
   if (!state.fw) return;
   $("fw-info").textContent = t("firmware", state.build);
+  spaceKey = null;
   buildChannelPanel();
   renderInherit();
   renderToneNote();
@@ -1637,6 +1752,7 @@ if (/\/beta\//.test(location.pathname)) {
     initGL();
     state.fw = await (await api("/api/firmware")).json();
     for (const l of state.fw.looks) state.looks[l.name] = l;
+    mergeLookSets();
     state.current = INHERIT_TARGET;
     const build = state.fw.path.split("/").slice(-2, -1)[0] || "";
     state.build = { camera: state.fw.camera, version: state.fw.version, build };
