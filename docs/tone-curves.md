@@ -16,6 +16,9 @@ REA/Ghidra and Capstone.
   Unicorn). Edited base curves go through the same arithmetic as in the
   camera; with the same sliders the preview is bit-exact with the camera
   curve.
+- Per channel (R, G, B) only Cross Process applies curves in stock
+  firmware. A small selector patch lets every colour image control have its
+  own ([below](#channel-curves-for-every-colour-look-selector)).
 
 ## Data
 
@@ -138,16 +141,71 @@ camera.
 
 Open: preset 1 lifts blue in the shadows (curve 5 starts at 1920); in
 original shots with Color Tone 1, however, the blacks were not blue. The
-preview of the shadows of Color Tone 1 is therefore not certain. Other image
-controls do not use the channel curves — that would need a code patch.
+preview of the shadows of Color Tone 1 is therefore not certain. In stock
+firmware no other image control uses the channel curves; the editor's
+selector changes that (next section).
 
 The editor reproduces `0x536e8660` in `chan::compose` (`core/src/chan.rs`);
 it is checked to be bit-identical against the emulated original code for all
 four sets.
 
+## Channel curves for every colour look (selector)
+
+The coordinator does not care which look is active: it only needs the
+variant and reads the curve pointers from the library table, which lives in
+RAM (`.data`). So one small code patch gives every colour look curves of its
+own ([plan-look-curves.md](plan-look-curves.md); `core/src/curvesel.rs`).
+
+**Where.** At the end of the context fill (`0x536dd270`), `0x536dd444`
+compares the look (r1, menu index) with 21 and writes the variant
+SI+0x38A98: 2/3/4 for Cross Process Color Tone 1/2/3 (SI+0x797), 0
+otherwise. The editor replaces the word at `0x536dd450` with `b 0x53003d00`.
+The stub there (26 words) returns through the context fill's own epilogue
+(`ldm sp, {r3-sl, fp, sp, pc}`), which also restores the registers it uses.
+
+**What it does.**
+
+```
+entry = look - 11                 looks 11..22
+Cross Process: entry = 12 + Color Tone (0..2); Color Tone > 2 -> variant 0, as stock
+table[entry] = [R, G, B] pointers  (0x53003d80, 15 entries x 12 bytes)
+R != 0:  0x55037604[9..11] = R, G, B;  variant = 4
+else:    variant = 0
+```
+
+Variant 4 makes the flag routine (`0x536db130`) set `setting+0x9b`, and the
+selection takes slots 9–11. The three Cross Process entries point at the
+stock storage of slots 3–5, 6–8 and 9–11, so Cross Process behaves exactly
+as before. Variants 1 (Random) and 5–8 are never set again; the Random
+storage (3 × 512 bytes) becomes free space. Monochrome looks (13–16) keep
+empty entries.
+
+**Verified in Unicorn** (`tools/verify-tuning.py`, ImageTuning Make for
+still and live view; harness adapted from gr3-film-mods):
+
+- The context fill runs before the flag, the selection and the channel fill
+  in the same Make; the channel fill runs on every Make, even when
+  GammaTuning reuses its cached curve.
+- Without an entry the result is byte-identical to stock for every colour
+  look and variant; with entries only the gamma LUTs (info `0x2688–0x5088`)
+  change, and R, G, B equal `compose(tone curve, curve)`.
+- Switching looks back and forth (A → B → A, curves → Cross Process →
+  curves) gives the same result as a fresh start. The flag routine raises
+  `info+0x82af` when the filter goes from on to off, as stock does after
+  Cross Process.
+- The selection writes the same targets for Standard with variant 4 as for
+  Cross Process Color Tone 3 and nothing in the shooting info.
+- `--patched IMAGE` runs an exported image with the real stub against that
+  model, all looks in one history.
+
+**Space.** Curves for the other looks share one pool with the HSL sets
+(`core/src/space.rs`): the Random storage first, then whatever the HSL sets
+leave of the padding. With no HSL all seven colour looks fit; with five HSL
+sets one does.
+
 ## Cross Process as a carrier for RGB curves
 
-Since only Cross Process applies channel curves, it can serve as a "look with
+Before the selector, only Cross Process applied channel curves, so it can serve as a "look with
 RGB curves":
 
 1. **Take over look data.** The setting filler selects the look data via

@@ -34,6 +34,14 @@ pub fn diff(a: &Value, b: &Value, path: &str, tol: f64) -> Option<String> {
     }
 }
 
+/// newer than the reference answers: the curves of the other looks (12..)
+fn cross_only(mut v: Value) -> Value {
+    for k in ["channel_curves", "channel_curves_pre"] {
+        v[k].as_array_mut().unwrap().truncate(12);
+    }
+    v
+}
+
 fn session() -> Option<Session> {
     Some(Session::open(common::update_file()?, "fwdc239b.bin").unwrap())
 }
@@ -47,14 +55,14 @@ fn firmware_tone_inherit_export() {
     // the web version names the build, not a path on disk
     fw["path"] = json!("work/fwdc239b/unpackedFW");
     // which camera the file is for: newer than the reference answers
-    for k in ["camera", "version", "update_file", "multiaxial", "tone_control_base"] {
+    for k in ["camera", "version", "update_file", "multiaxial", "tone_control_base", "effects_off", "curve_looks", "look_channel_sets"] {
         fw.as_object_mut().unwrap().remove(k);
     }
     if let Some(d) = diff(&fw, &g["firmware"], "firmware", 1e-12) {
         panic!("{d}");
     }
     for (n, t) in g["tone"].as_array().unwrap().iter().enumerate() {
-        let got = s.tone(&t["request"]).unwrap();
+        let got = cross_only(s.tone(&t["request"]).unwrap());
         if let Some(d) = diff(&got, &t["response"], &format!("tone[{n}]"), 1e-12) {
             panic!("{d}");
         }
@@ -62,13 +70,13 @@ fn firmware_tone_inherit_export() {
     let mut inh = s.set_inherit(&json!({"target": "CrossProcess", "source": "NegativeFilm"})).unwrap();
     inh["path"] = json!("work/fwdc239b/unpackedFW");
     // which camera the file is for: newer than the reference answers
-    for k in ["camera", "version", "update_file", "multiaxial", "tone_control_base"] {
+    for k in ["camera", "version", "update_file", "multiaxial", "tone_control_base", "effects_off", "curve_looks", "look_channel_sets"] {
         inh.as_object_mut().unwrap().remove(k);
     }
     if let Some(d) = diff(&inh, &g["inherit"]["NegativeFilm"], "inherit", 1e-12) {
         panic!("{d}");
     }
-    let tone = s.tone(&g["tone"][1]["request"]).unwrap();
+    let tone = cross_only(s.tone(&g["tone"][1]["request"]).unwrap());
     assert!(diff(&tone, &g["tone_inherited"], "tone_inherited", 1e-12).is_none());
 
     for (n, e) in g["export"].as_array().unwrap().iter().enumerate() {
@@ -82,7 +90,10 @@ fn firmware_tone_inherit_export() {
         preset["source"] = json!(null);
         want["source"] = json!(null);
         // newer than the reference answers: HSL (none in these requests)
-        assert_eq!(preset.as_object_mut().unwrap().remove("hsl"), Some(Value::Null));
+        // and per-look curves, effects off (none either)
+        for k in ["hsl", "look_curves", "effects_off"] {
+            assert_eq!(preset.as_object_mut().unwrap().remove(k), Some(Value::Null), "{k}");
+        }
         if let Some(d) = diff(&preset, &want, &format!("preset[{n}]"), 1e-12) {
             panic!("{d}");
         }

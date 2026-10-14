@@ -16,8 +16,9 @@ camera, and what it cannot rule out.
 The safeguards come in four layers:
 
 1. **Input.** Only two known, byte-exact Ricoh files are accepted.
-2. **Patching.** Only known data is changed, never code, and every write
-   lands in a known place.
+2. **Patching.** Only known data is changed, and every write lands in a
+   known place. Code changes only for curves on other image controls or HDR
+   effects off: four single words at checked sites and one fixed stub.
 3. **Packing.** The file is rebuilt with minimal change and verified the way
    the camera's decoder verifies it.
 4. **Use.** The flash itself is a stock Ricoh update, and going back works
@@ -52,9 +53,12 @@ an export patches both images at the same bytes.
 
 ## 2. Patching: data only, at known places
 
-The editor never changes machine code. It writes only colour data: look
-matrices, MultiAxial (HSL) parameter sets, tone curves and channel curves.
-The pointers to that data are the only other bytes it changes.
+By default the editor writes only colour data: look matrices, MultiAxial
+(HSL) parameter sets, tone curves and channel curves, plus the pointers to
+that data. Machine code changes only if you ask for one of two features:
+channel curves on an image control other than Cross Process, or HDR effects
+off. Without them the code is byte-identical to Ricoh's (checked in
+`core/tests/look_curves.rs`).
 
 | What | Where | Safeguard |
 |---|---|---|
@@ -63,6 +67,9 @@ The pointers to that data are the only other bytes it changes.
 | HSL sets (`multiaxial::patch`) | read-only padding no pointer leads into | Each slot is checked to be all zero before writing. The number of slots is fixed, and asking for more is an error. All slider values are clamped to the ranges the stage supports. |
 | Channel curves (`chan::write`) | the 12 existing 256-entry tables | Index must be 0–11, exactly 256 values, each clamped to 0…65535. |
 | Base tone curves (`gamma::with_curves`) | the existing base curves | Values clamped to 0…65535. This is an advanced option, and the UI warns that it changes every image control. |
+| Curves of other image controls (`space::plan`) | the Random curve storage and the HSL padding | Shared pool with the HSL sets; padding is checked to be all zero, HSL and curves never overlap (tested for every combination), a full pool is an error. |
+| Curve selector (`curvesel::install`) | one word at `0x536dd450` (→ `b 0x53003d00`); stub and table in zero padding `0x53003d00…` | Only with curves on other image controls. The nine stock words around the site are checked first, the stub area must be all zero. The stub is 26 fixed instruction words (no generated code); it is run in the core's ARM interpreter for every look and Color Tone, and the whole image-tuning step is run in Unicorn against the stock firmware ([tone-curves.md](tone-curves.md#channel-curves-for-every-colour-look-selector)). |
+| HDR effects off (`curvesel::hdr_effects_off`) | five words in the HDR branches and the local processing fill | Only when switched on. Each stock word is checked first. HDR gets a private colour set at `0x53003e40` (same checks as Cross Process). |
 
 What stays untouched:
 
@@ -153,6 +160,17 @@ before it writes. They do not prove what happens after that.
 - **Little hardware testing.** The modified update has been flashed on one GR
   III and one GR IIIx. Other units, or other settings, may behave
   differently.
+- **The curve selector is new.** It is the editor's first code patch and
+  runs on every live view frame. It has been checked in emulation only: the
+  stub alone, and the camera's whole image-tuning step for still and live
+  view. Not yet on a camera with this editor (the same approach worked on a
+  GR III in gr3-film-mods). Camera test 2026-10-14 (GR III): curves on all
+  looks, live view, power cycle and return to stock as expected; HDR effects
+  off needed two more patches for in-camera RAW development, confirmed
+  with a second flash. Not yet tried on a GR IIIx. For a first try, flash a file with curves on one look
+  and compare against Standard. Flashing Ricoh's original file removes the
+  patch completely: the curve library table is reloaded from the image at
+  every start.
 - **Recovery unconfirmed.** The firmware contains signs of a recovery path
   (an SD boot mode of the M0 supervisor, a service dump/restore, a factory
   full update). None of them has been confirmed on a real camera

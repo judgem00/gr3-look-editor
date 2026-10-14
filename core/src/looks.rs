@@ -67,31 +67,43 @@ pub fn inherit(img: &mut [u8], target: u32, source: u32) {
 // (0x54 bytes, the spacing of the sets in .data); words 8..16 are pointers too.
 // Copying only the first 8 put matrix bytes where those pointers belong, and
 // the camera did not start.
+// HDR shares its set with Standard; with its effects off it can be a look of
+// its own and gets a private set in the selector's reserved block (space.rs).
 const CROSS_TABLE: u32 = 21;
-const PRIVATE_SET: u32 = 0x5300_2080;
-const PRIVATE_MATRIX: u32 = 0x5300_20d4;
+pub const HDR_TABLE: u32 = 20;
+/// (table, set, matrix)
+const PRIVATE: [(u32, u32, u32); 2] = [
+    (CROSS_TABLE, 0x5300_2080, 0x5300_20d4),
+    (HDR_TABLE, 0x5300_3e40, 0x5300_3e94),
+];
 const SET_WORDS: u32 = 21;
 
-pub fn private_cross(img: &mut [u8]) -> Result<(), String> {
-    let entry = file_offset(CM_TABLE + 4 * CROSS_TABLE);
+/// give the look `table` a ColorMatrix set and matrix of its own
+pub fn private_set(img: &mut [u8], table: u32) -> Result<(), String> {
+    let &(_, set, mat) = PRIVATE.iter().find(|p| p.0 == table).ok_or(format!("no private set for table {table}"))?;
+    let entry = file_offset(CM_TABLE + 4 * table);
     let cur = crate::addr::u32_at(img, entry);
-    if cur != PRIVATE_SET {
-        let (lo, hi) = (file_offset(PRIVATE_SET), file_offset(PRIVATE_MATRIX) + 18);
+    if cur != set {
+        let (lo, hi) = (file_offset(set), file_offset(mat) + 18);
         if img[lo..hi].iter().any(|&b| b != 0) {
-            return Err("free area for the Cross Process copy is not empty".into());
+            return Err(format!("free area for the private colour set of table {table} is not empty"));
         }
         let mut words: Vec<u32> = (0..SET_WORDS).map(|k| word(img, cur + 4 * k)).collect();
         let m = file_offset(words[1]);
         let matrix: Vec<u8> = img[m..m + 18].to_vec();
-        let pm = file_offset(PRIVATE_MATRIX);
+        let pm = file_offset(mat);
         img[pm..pm + 18].copy_from_slice(&matrix);
-        words[1] = PRIVATE_MATRIX;
+        words[1] = mat;
         for (k, w) in words.iter().enumerate() {
-            put_u32(img, file_offset(PRIVATE_SET) + 4 * k, *w);
+            put_u32(img, file_offset(set) + 4 * k, *w);
         }
-        put_u32(img, entry, PRIVATE_SET);
+        put_u32(img, entry, set);
     }
     Ok(())
+}
+
+pub fn private_cross(img: &mut [u8]) -> Result<(), String> {
+    private_set(img, CROSS_TABLE)
 }
 
 fn matrix(img: &[u8], va: u32) -> Vec<f64> {
