@@ -6,7 +6,7 @@ const I18N = {
   en: {
     // firmware screen (web version)
     gate_title: "Load the camera firmware",
-    gate_text: "The editor builds your look into Ricoh's official update file for the GR III, <b>version 2.10</b> (<code>fwdc239b.bin</code>). Drop that file here.",
+    gate_text: "The editor builds your look into Ricoh's official update file for your camera: GR III <b>version 2.10</b> (<code>fwdc239b.bin</code>) or GR IIIx <b>version 1.60</b> (<code>fwdc243b.bin</code>). Drop that file here.",
     gate_pick: "Choose firmware file …",
     gate_drop: "… or drop it onto this window.",
     gate_where: "Not at hand? Download it from <a href=\"https://www.ricoh-imaging.co.jp/english/products/gr-3/firmup/index.html\" target=\"_blank\" rel=\"noopener\">Ricoh's firmware page</a>.",
@@ -19,7 +19,7 @@ const I18N = {
     loading_fw: "Loading firmware …",
     help_open: "How it works",
     open_photo: "Open photo",
-    firmware: "Firmware {version} ({build})",
+    firmware: "{camera} firmware {version} ({build})",
     // preview toolbar
     mode_edit: "Edited", mode_edit_t: "Your look",
     mode_ab: "Before / After", mode_ab_t: "Left the base, right your look",
@@ -28,7 +28,7 @@ const I18N = {
     label_camera: "Camera JPEG", label_base: "Base", label_original: "Original",
     label_look: "Your look", label_edited: "Edited",
     // empty state
-    empty_title: "Open a DNG from your GR III",
+    empty_title: "Open a DNG from your {camera}",
     empty_drop: "Drop a photo here or click <b>Open photo</b> above.",
     empty_s1: "Choose a <b>base</b> for your look",
     empty_s2: "Adjust <b>Colour</b> and <b>Curves</b>; the preview shows the result",
@@ -113,11 +113,11 @@ const I18N = {
     ch_base: "Base: {look}", ch_colors: "Colours adjusted", ch_curves: "curves", ch_curves_wheels: "curves and colour wheels",
     ch_neutral: "neutral", ch_other: "Original image control {look} changed", ch_tone: "Tone curve for all image controls changed",
     create_update: "Create update file", creating: "Creating update file …",
-    dl_update: "Download FWDC239B.BIN", dl_preset: "Save preset (to continue editing later)",
+    dl_update: "Download {update}", dl_preset: "Save preset (to continue editing later)",
     preset_name: "my-look.looks.json",
     flash: "Put it on the camera",
     flash_1: "Fully charge the battery.",
-    flash_2: "Copy <code>FWDC239B.BIN</code> unchanged to the top-level folder of the SD card.",
+    flash_2: "Copy <code>{update}</code> unchanged to the top-level folder of the SD card.",
     flash_3: "Insert the card and start the firmware update from the camera menu, as with an official update. Do not switch the camera off meanwhile.",
     flash_4: "Then select the image control <b>Cross Process</b>: that is now your look.",
     flash_5: "Back to the original: install Ricoh's original file the same way.",
@@ -133,8 +133,8 @@ const I18N = {
     e_set: "unknown variant {name}", e_channel: "channel curve {idx}: 256 values expected", e_source: "made for {source}",
     error: "Error {status}", no_webgl: "WebGL2 not available", error_prefix: "Error: {msg}",
     // help
-    help_intro: "With this editor you build an image control of your own for your GR III. In the camera it replaces the <b>Cross Process</b> image control; all other image controls stay as they are.",
-    help_1: "<b>Open a photo.</b> A DNG from your GR III. The preview renders it the way the camera would.",
+    help_intro: "With this editor you build an image control of your own for your {camera}. In the camera it replaces the <b>Cross Process</b> image control; all other image controls stay as they are.",
+    help_1: "<b>Open a photo.</b> A DNG from your {camera}. The preview renders it the way the camera would.",
     help_2: "<b>Choose a base,</b> e.g. Standard or Negative Film.",
     help_3: "Adjust <b>Colour</b> (saturation, hue, primaries) and <b>Curves</b>. Under Curves you set up to three variants, which you select in the camera via “Color Tone 1–3”.",
     help_4: "<b>Export:</b> create the update file and put it on the camera. Saved as a preset you can continue later.",
@@ -145,7 +145,7 @@ const I18N = {
   de: {
     // Firmware-Bildschirm (Web-Version)
     gate_title: "Kamera-Firmware laden",
-    gate_text: "Der Editor baut deinen Look in Ricohs offizielle Update-Datei für die GR III ein, <b>Version 2.10</b> (<code>fwdc239b.bin</code>). Zieh diese Datei hier hinein.",
+    gate_text: "Der Editor baut deinen Look in Ricohs offizielle Update-Datei für deine Kamera ein: GR III <b>Version 2.10</b> (<code>fwdc239b.bin</code>) oder GR IIIx <b>Version 1.60</b> (<code>fwdc243b.bin</code>). Zieh diese Datei hier hinein.",
     gate_pick: "Firmware-Datei wählen …",
     gate_drop: "… oder auf dieses Fenster ziehen.",
     gate_where: "Nicht zur Hand? Du bekommst sie auf <a href=\"https://www.ricoh-imaging.co.jp/english/products/gr-3/firmup/index.html\" target=\"_blank\" rel=\"noopener\">Ricohs Firmware-Seite</a>.",
@@ -157,14 +157,14 @@ const I18N = {
     loading_fw: "Firmware wird geladen …",
     help_open: "So funktioniert's",
     open_photo: "Foto öffnen",
-    firmware: "Firmware {version} ({build})",
+    firmware: "Firmware {version} für {camera} ({build})",
     mode_edit: "Bearbeitet", mode_edit_t: "Dein Look",
     mode_ab: "Vorher / Nachher", mode_ab_t: "Links die Grundlage, rechts dein Look",
     mode_camera: "Vergleich Kamera", mode_camera_t: "Links das JPEG aus der Kamera, rechts die Vorschau",
     mode_jpeg: "Kamera-JPEG", mode_jpeg_t: "Das in der DNG eingebettete Kamera-JPEG",
     label_camera: "Kamera-JPEG", label_base: "Grundlage", label_original: "Original",
     label_look: "Dein Look", label_edited: "Bearbeitet",
-    empty_title: "Öffne ein DNG deiner GR III",
+    empty_title: "Öffne ein DNG deiner {camera}",
     empty_drop: "Foto hierher ziehen oder oben auf <b>Foto öffnen</b> klicken.",
     empty_s1: "<b>Grundlage</b> für deinen Look wählen",
     empty_s2: "<b>Farbe</b> und <b>Kurven</b> anpassen, die Vorschau zeigt das Ergebnis",
@@ -243,11 +243,11 @@ const I18N = {
     ch_base: "Grundlage: {look}", ch_colors: "Farben angepasst", ch_curves: "Kurven", ch_curves_wheels: "Kurven und Farbräder",
     ch_neutral: "neutral", ch_other: "Original-Bildstil {look} geändert", ch_tone: "Tonkurve für alle Bildstile geändert",
     create_update: "Update-Datei erstellen", creating: "Erstelle Update-Datei …",
-    dl_update: "FWDC239B.BIN herunterladen", dl_preset: "Preset speichern (zum späteren Weiterbearbeiten)",
+    dl_update: "{update} herunterladen", dl_preset: "Preset speichern (zum späteren Weiterbearbeiten)",
     preset_name: "mein-look.looks.json",
     flash: "Auf die Kamera spielen",
     flash_1: "Akku voll laden.",
-    flash_2: "<code>FWDC239B.BIN</code> unverändert ins oberste Verzeichnis der SD-Karte kopieren.",
+    flash_2: "<code>{update}</code> unverändert ins oberste Verzeichnis der SD-Karte kopieren.",
     flash_3: "Karte einlegen und das Firmware-Update im Menü der Kamera starten, wie bei einem offiziellen Update. Kamera dabei nicht ausschalten.",
     flash_4: "Danach Bildstil <b>Cross Process</b> wählen: Das ist jetzt dein Look.",
     flash_5: "Zurück zum Original: die Originaldatei von Ricoh genauso aufspielen.",
@@ -262,8 +262,8 @@ const I18N = {
     e_look: "unbekannter Bildstil {name}", e_matrix: "Matrix {name}: 9 Zahlen erwartet", e_tone: "Tonkurve unlesbar",
     e_set: "unbekannte Variante {name}", e_channel: "Kanalkurve {idx}: 256 Werte erwartet", e_source: "erstellt für {source}",
     error: "Fehler {status}", no_webgl: "WebGL2 nicht verfügbar", error_prefix: "Fehler: {msg}",
-    help_intro: "Mit diesem Editor baust du einen eigenen Bildstil für deine GR III. Er ersetzt in der Kamera den Bildstil <b>Cross Process</b>; alle anderen Bildstile bleiben, wie sie sind.",
-    help_1: "<b>Foto öffnen.</b> Ein DNG deiner GR III. Die Vorschau rechnet es so, wie die Kamera es rechnen würde.",
+    help_intro: "Mit diesem Editor baust du einen eigenen Bildstil für deine {camera}. Er ersetzt in der Kamera den Bildstil <b>Cross Process</b>; alle anderen Bildstile bleiben, wie sie sind.",
+    help_1: "<b>Foto öffnen.</b> Ein DNG deiner {camera}. Die Vorschau rechnet es so, wie die Kamera es rechnen würde.",
     help_2: "<b>Grundlage wählen,</b> z. B. Standard oder Negative Film.",
     help_3: "<b>Farbe</b> (Sättigung, Farbton, Primärfarben) und <b>Kurven</b> anpassen. Unter Kurven legst du bis zu drei Varianten an, die du in der Kamera über „Farbton 1–3“ auswählst.",
     help_4: "<b>Export:</b> Update-Datei erstellen und auf die Kamera spielen. Als Preset gespeichert kannst du später weiterarbeiten.",
@@ -277,10 +277,14 @@ let LANG = (() => {
   return "en";
 })();
 
+// camera and update file name in every text; app.js sets them from the
+// loaded firmware
+const I18N_VARS = { camera: "GR III / GR IIIx", update: "FWDC239B.BIN / FWDC243B.BIN" };
+
 function t(key, vars) {
-  let s = (I18N[LANG] && I18N[LANG][key]) ?? I18N.en[key] ?? key;
-  if (vars) s = s.replace(/\{(\w+)\}/g, (m, k) => (k in vars ? vars[k] : m));
-  return s;
+  const s = (I18N[LANG] && I18N[LANG][key]) ?? I18N.en[key] ?? key;
+  const all = { ...I18N_VARS, ...vars };
+  return s.replace(/\{(\w+)\}/g, (m, k) => (k in all ? all[k] : m));
 }
 
 // fill every element that carries a key

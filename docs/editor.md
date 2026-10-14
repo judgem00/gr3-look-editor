@@ -1,10 +1,11 @@
 # Look Editor
 
-Edits the colour matrices and tone curves of the GR III image controls with a
-live preview on a GR III DNG, and writes a flashable update file.
+Edits the colour matrices and tone curves of the GR III and GR IIIx image
+controls with a live preview on a DNG from the camera, and writes a flashable
+update file.
 
-Runs entirely in the browser: drop in Ricoh's update file `fwdc239b.bin`,
-then a DNG. The Rust core (`core/`, as WebAssembly) reads the firmware and the
+Runs entirely in the browser: drop in Ricoh's update file (`fwdc239b.bin` for
+the GR III, `fwdc243b.bin` for the GR IIIx), then a DNG. The Rust core (`core/`, as WebAssembly) reads the firmware and the
 DNG, including the shot's image control and settings from the makernote.
 Nothing is uploaded.
 
@@ -110,11 +111,12 @@ its own ColorMatrix set and its own matrix in the free area `0x53002080…`
 
 ## Export
 
-Builds the update file `FWDC239B.BIN` with recomputed checksums
+Builds the update file (`FWDC239B.BIN` or `FWDC243B.BIN`) with recomputed checksums
 ([docs/firmware-packing.md](firmware-packing.md)), verifies it the way the
 camera's decoder does and offers it for **download** together with a preset
-(`*.looks.json`). The update file is named `FWDC239B.BIN`, as the camera
-expects it in the root directory of the SD card. If you keep editing
+(`*.looks.json`). The update file keeps the name of Ricoh's file in
+capitals (`FWDC239B.BIN` for the GR III, `FWDC243B.BIN` for the GR IIIx), as
+the camera expects it in the root directory of the SD card. If you keep editing
 afterwards, the download disappears until you export again. Before flashing:
 sort out the recovery path.
 
