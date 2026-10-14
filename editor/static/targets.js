@@ -37,7 +37,7 @@ const sourceOf = (name) => targetSpec(name).source;
 const sourceLook = (name) => state.stock[sourceOf(name)];
 // Looks that are not offered as a source for another target: their colours
 // do not make a good base. As its own source each stays a target.
-const NO_SOURCE = ["Retro", "BleechBypass_GR", "BleechBypass_GR · Var. 2", "BleechBypass_GR · Var. 3", "CrossProcess"];
+const NO_SOURCE = ["Retro", "BleechBypass_GR", "BleechBypass_GR · Var. 2", "BleechBypass_GR · Var. 3", "HdrCuisine", "CrossProcess"];
 const sourcesFor = (name) => state.fw.sources.filter((n) => n === name || !NO_SOURCE.includes(n));
 
 // the matrix the target starts from: its source's, or the extra base's

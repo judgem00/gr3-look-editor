@@ -39,8 +39,8 @@ screen between the controls.
   takes its data from a source shares the source's matrix (see below).
 - Monochrome image controls are not offered as targets for now.
 - (Phase 2 review) HDR Tone as a target always has its effects off; there
-  is no switch for them. Retro, Bleach Bypass (all three variants) and
-  Cross Process are not offered as a source for another target: their
+  is no switch for them. Retro, Bleach Bypass (all three variants), HDR
+  Tone and Cross Process are not offered as a source for another target: their
   colours do not make a good base. As targets they keep their own colours
   as the starting point.
 
@@ -305,7 +305,7 @@ the hero box, the tone-curve panel and the "other image controls" and
 - *Rules in the UI* (after the user's review): HDR Tone as a target always
   has its effects off, so it always has a matrix of its own and the
   editor has no HDR section; an HDR Tone that is not changed stays stock.
-  The source picker leaves out Retro, Bleach Bypass 1–3 and Cross Process
+  The source picker leaves out Retro, Bleach Bypass 1–3, HDR Tone and Cross Process
   for every target but the look itself (`NO_SOURCE` in `targets.js`); a
   preset that names one keeps the target's own colours and says so. The
   core still accepts them. Bleach Bypass as its own source applies the sliders
@@ -346,7 +346,7 @@ Checklist against `docs/editor.md` (features of the earlier editor):
 | Free space meter, export refused when full | pinned meter (all targets), dialog repeats it |
 | HDR effects off | always off for HDR Tone as a target, no switch |
 | Colour wheels | own section; Cross Process per variant |
-| Cross Process with another look's data | Source picker (any target; Retro, Bleach Bypass, Cross Process not offered as sources) |
+| Cross Process with another look's data | Source picker (any target; Retro, Bleach Bypass, HDR Tone, Cross Process not offered as sources) |
 | Extra bases, removed with untouched curves, recognised in presets | Source picker, "Extra bases"; leaving one removes its untouched curves; v1 detection kept |
 | Camera settings drawer, Load preview settings from DNG, white balance | unchanged |
 | Export: update file + preset, stale downloads hidden after an edit | Export dialog from the header |
