@@ -17,7 +17,8 @@ recomputed.
 > your warranty and can, in the worst case, leave the camera unusable. There
 > is no known recovery procedure yet. The modified update has been tested on
 > one GR III only, and **not yet on any GR IIIx**. You use this at your own
-> risk.
+> risk. What the editor does to lower that risk, and what remains open, is in
+> [docs/flash-safety.md](docs/flash-safety.md).
 
 This is an independent project. It is not affiliated with or endorsed by
 Ricoh Imaging. "Ricoh" and "GR" are trademarks of their respective owners.
@@ -141,6 +142,7 @@ cargo run --release --example golden --manifest-path core/Cargo.toml
 
 | | |
 |---|---|
+| [flash-safety.md](docs/flash-safety.md) | safeguards against a bricked camera, and the residual risk |
 | [firmware-packing.md](docs/firmware-packing.md) | update file format and checksums |
 | [firmware-update-security.md](docs/firmware-update-security.md) | what the camera verifies (a checksum, no signature) |
 | [look-mapping.md](docs/look-mapping.md) | where the look matrices live and how they are combined |
