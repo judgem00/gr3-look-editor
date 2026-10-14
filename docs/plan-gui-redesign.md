@@ -10,7 +10,7 @@ The editor follows one fixed order:
    (Standard, Vivid, Positive Film, Negative Film, Bleach Bypass, Retro,
    HDR Tone, Cross Process).
 2. **Source**: the look it starts from (any of the eight, or an extra base
-   such as Positive Film (GR 1)). Source = target means "start from the
+   such as Oldschool Positive Film). Source = target means "start from the
    target's own stock look".
 3. **Edit**: every edit for that target in one vertically scrolling column.
 
@@ -318,13 +318,13 @@ the hero box, the tone-curve panel and the "other image controls" and
   `look_curves`, `channel_grade`, `hsl` are mapped to their targets;
   monochrome looks and variants are left out with a note, a tone curve is
   ignored with a note. The example preset comes back as Cross Process from
-  Positive Film (GR 1) with the same nine Color Tone curves and matrix as
+  Oldschool Positive Film with the same nine Color Tone curves and matrix as
   the earlier editor exported (difference 0).
 - *Browser test* (MR024661, fwdc239b): Standard ← Vivid, Vivid ← Negative
   Film then Retro (curve, HSL, wheel, saturation), Positive Film ← Bleach
   Bypass 3 (calibration), Bleach Bypass ← Standard, Retro ← Retro
   (saturation), HDR ← Standard (effects off), Cross Process ←
-  Positive Film (GR 1), Negative Film ← Positive Film; each changes the
+  Oldschool Positive Film, Negative Film ← Positive Film; each changes the
   preview from stock. Switching targets and changing Vivid's source kept its
   edits byte for byte. The export of all eight gave `FWDC239B.BIN` (checks
   ok) and a v2 preset; the session then held all eight targets, space
@@ -378,7 +378,7 @@ Standard as the control):
 | Retro | Retro | own matrix (Retro's vignette must stay) |
 | Bleach Bypass | Standard | own matrix; all three variants the same |
 | HDR Tone | Standard | own matrix (effects always off) |
-| Cross Process | Positive Film (GR 1) | as today |
+| Cross Process | Oldschool Positive Film | as today |
 
 Shots of the grey ramp and the MultiAxial target per target, compared with
 the preview; then live view while switching, power cycle, return to stock.
