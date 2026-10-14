@@ -689,7 +689,7 @@ $("notice-close").onclick = () => notice("");
 // tone curve for the channel curves.
 const BUILTIN_BASES = [{
   id: "positive-film-classic",
-  label: {"en": "Positive Film (GR 1)", "de": "Positive Film (GR 1)"},
+  label: {"en": "Oldschool Positive Film", "de": "Oldschool Positive Film"},
   hint: {"en": "rich red, muted green and yellow, deep blacks", "de": "kräftiges Rot, gedämpftes Grün und Gelb, tiefe Schwärzen"},
   tip: {"en": "Colour as a matrix, tone as curves on R, G and B. In the camera: the target's controls at 0.", "de": "Farbe als Matrix, Ton als Kurven auf R, G und B. In der Kamera: Regler des Ziels auf 0."},
   matrix_from: "Standard",
