@@ -7,12 +7,13 @@
 # Beta: the branch in BETA_BRANCH is published under /beta/ next to master.
 # Only master may deploy (environment github-pages), so the site is always
 # built from a master run, which also checks out the beta branch; a push to
-# the beta branch runs its tests and then starts that master run.
+# the beta branch runs its tests and then starts that master run. To start a
+# beta, put its branch into BETA_BRANCH and into the push branches below.
 name: Pages
 
 on:
   push:
-    branches: [master, multiaxial-hsl]
+    branches: [master]
   pull_request:
   workflow_dispatch:
 
@@ -20,7 +21,7 @@ permissions:
   contents: read
 
 env:
-  BETA_BRANCH: multiaxial-hsl   # empty: no beta
+  BETA_BRANCH: ''   # empty: no beta
 
 concurrency:
   group: pages-${{ github.ref }}
@@ -74,10 +75,11 @@ jobs:
       - id: deployment
         uses: actions/deploy-pages@v4
 
-  # a push to the beta branch: after its tests, rebuild the site from master
+  # a push to the beta branch (the only other push branch): after its tests,
+  # rebuild the site from master
   beta:
     needs: build
-    if: github.event_name == 'push' && github.ref == 'refs/heads/multiaxial-hsl'
+    if: github.event_name == 'push' && github.ref != 'refs/heads/master'
     runs-on: ubuntu-latest
     permissions:
       actions: write
