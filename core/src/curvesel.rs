@@ -155,13 +155,19 @@ pub fn install(img: &mut [u8], curves: &[(usize, [u32; 3])]) -> Result<(), Strin
 }
 
 /// HDR without its own effects: (site, stock word, patched word)
-pub const HDR_OFF: [(u32, u32, u32); 3] = [
+pub const HDR_OFF: [(u32, u32, u32); 5] = [
     // local tone mapping: beq 0x53513274 -> beq 0x53513218 (the Standard path)
     (0x5351_31fc, 0x0a00_001c, 0x0a00_0005),
     // HDR strength to the pipeline: ldrb sb, [r3, #0x788] -> mov sb, #0
     (0x536d_beb4, 0xe5d3_9788, 0xe3a0_9000),
     // monochrome variant (table 24): beq 0x536dc818 -> nop, always table 20
     (0x536d_c27c, 0x0a00_0165, 0xe320_f000),
+    // HDR level to the look context (ctx+0x1fa): ldrb r2, [r3, #0x796] -> mov r2, #0
+    (0x536d_bebc, 0xe5d3_2796, 0xe3a0_2000),
+    // HDR level into the local processing parameters (0x5350304c, param +6), which
+    // in-camera RAW development fills without the gate at 0x535131c0:
+    // ldrb r3, [r5, #0x796] -> mov r3, #0
+    (0x5350_3188, 0xe5d5_3796, 0xe3a0_3000),
 ];
 
 pub fn hdr_effects_off(img: &mut [u8]) -> Result<(), String> {

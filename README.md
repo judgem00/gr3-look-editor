@@ -150,14 +150,21 @@ cargo run --release --example golden --manifest-path core/Cargo.toml
 | [firmware-packing.md](docs/firmware-packing.md) | update file format and checksums |
 | [firmware-update-security.md](docs/firmware-update-security.md) | what the camera verifies (a checksum, no signature) |
 | [look-mapping.md](docs/look-mapping.md) | where the look matrices live and how they are combined |
-| [tone-curves.md](docs/tone-curves.md) | base curves, sliders, Cross Process channel curves |
+| [tone-curves.md](docs/tone-curves.md) | base curves, sliders, channel curves and the per-look selector |
 | [image-pipeline.md](docs/image-pipeline.md) | the whole RAW→YCbCr pipeline of the image processor |
 | [editor.md](docs/editor.md) | the editor in detail |
+| [plan-look-curves.md](docs/plan-look-curves.md) | curves and HSL for every colour look: plan and verification |
 
 ## Credits
 
 Builds on the firmware exploration in
 [hhornbacher/gr3x-fw-hack](https://github.com/hhornbacher/gr3x-fw-hack).
+
+The per-look curve selector follows
+[idontknownihil/gr3-film-mods](https://github.com/idontknownihil/gr3-film-mods),
+which found the variant patch, the RAM pointer rewrite of the curve library
+and the HDR effect switches and tested them on a GR III; `tools/emu.py` is
+adapted from its Unicorn harness (MIT). Its film fits are not used here.
 
 ## License
 

@@ -1,6 +1,6 @@
 # Plan: RGB curves and HSL for every colour look
 
-Status: Phases 0–2 done (2026-10-14), Phase 3 (docs) next. Firmware `fwdc239b` (GR III
+Status: done (2026-10-14). Curves for every colour look and HDR effects off confirmed on a GR III, shots and in-camera RAW development. Firmware `fwdc239b` (GR III
 2.10); the GR IIIx 1.60 image uses the same addresses.
 
 ## Goal
@@ -234,6 +234,11 @@ preset.
 shared matrices), `editor.md` (usage), `flash-safety.md` (first code patch:
 what it changes; a stock update removes it completely).
 
+**Result (2026-10-14): done.** `tone-curves.md` (selector section),
+`look-mapping.md` (private sets, HDR without its effects), `editor.md`
+(image-control selector, meter, HDR switch, presets), `flash-safety.md`
+(the code patches and their checks, residual risk), README (credit, links).
+
 ### Phase 4: one test flash
 
 Build one file and check exactly that image with the Unicorn tool; flashing is
@@ -252,6 +257,37 @@ exact control:
 Shots: same subject and exposure, grey ramp in the frame. Also: live view
 while switching looks, in-camera RAW development, power off/on, one return to
 stock firmware. Then compare the shots with the preview.
+
+**Built (2026-10-14), not yet flashed.** `core/examples/look_curves_flash.rs`
+writes `work/look-curves-test/` (FWDC239B.BIN, the decoded image, the
+preset). Markers: Positive Film red raised, Vivid blue in the shadows,
+Negative Film green raised + blue desaturated (HSL), HDR effects off with
+green lowered, Cross Process Color Tone 1 yellow, 2 cyan, 3 blue raised;
+Positive Film, Vivid and Negative Film take Standard's colour data. Checked
+on exactly that image: `fw-pack.py check` ok; `verify-tuning.py --patched`
+65/65; in Make every test look differs from Standard only in the gamma LUTs
+(Negative Film also in MultiAxial), still and live view, HDR at strength 0
+and 1.
+
+**Shots (2026-10-14, MR029269–278, GR III 2.10 with the test file):** all
+markers as built. On the ten grey patches of the MultiAxial target (camera
+JPEG, patches found by template match per shot) every test look matches the
+prediction from the flashed curves: tint error 0.7–1.3 8-bit steps with the
+curves, 4.7–13.8 without. Cross Process Color Tone 1–3 and HDR use the
+Standard shot as the tone reference (sliders 0, HDR's fixed); Positive Film,
+Vivid and Negative Film had other sliders stored in the camera and take
+their tone position from their linear channel. HDR with effects off follows
+Standard's tone curve to 2.6 steps, dark patches included, so no HDR
+lifting. Negative Film's HSL band shows as a hard-edged drop of chroma to
+0.3–0.6 × Standard over the blues (≈190°–265°) only. Bleach Bypass and
+Retro (no curves) look stock. User: live view while switching looks,
+power cycle and return to stock firmware fine; in-camera RAW development
+gives the same colours for every look except HDR, where the tone mapping
+came back. Cause: the local processing fill `0x5350304c` takes HDR's level
+(SI+0x796) for any look, and RAW development reaches it without the gate.
+Two more HDR patches (`0x536dbebc`, `0x53503188`, see look-mapping.md);
+test file 2 (`work/look-curves-test2/`) flashed: HDR stays without tone
+mapping in RAW development too (user, 2026-10-14).
 
 ## Risks
 
