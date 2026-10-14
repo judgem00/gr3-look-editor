@@ -2,6 +2,7 @@
 //
 // The preview runs the colour part of ColorMatrixTuning on the GPU:
 //   camera RGB -> white balance -> sensor CCM -> look matrix -> (mono mix)
+//   -> MultiAxial (HSL, hsl.js)
 // followed by the camera's tone curve. That curve comes from the core (worker), which
 // runs the camera's own GammaTuning code on the (edited) base curves; a small
 // residual fitted from the camera JPEG stands in for its image-dependent shadow
@@ -23,8 +24,9 @@ const state = {
   wbShot: null,        // { k, gm } closest to the shot's white balance
   shot: null,          // /api/dng meta
   tone: { points: [[0, 0], [1, 1]], families: [0, 1, 2] },
-  params: { key: 0, contrast: 0, highlight: 0, shadow: 0, saturation: 0, hue: 0 },
+  params: { key: 0, contrast: 0, highlight: 0, shadow: 0, saturation: 0, hue: 0, shadowcorr: 0 },
   residual: true,
+  vignette: true,      // the camera's lens shading correction in the preview
   curves: null,        // last /api/tone answer
   chan: { edits: {}, set: "Preset 1", channel: 0, all: true },   // the look's channel curves (Farbton 1-3)
   extBases: [],        // extra bases from _local/bases.json (not in the repo)
@@ -45,6 +47,7 @@ const exportKey = () => JSON.stringify([
   toneChanged() ? state.tone : null,
   state.fw ? changedChannels().map((i) => [i, chanValues(i)]) : [],
   state.fw ? state.fw.inherit : {},
+  hslForExport(),
 ]);
 const toneChanged = () => !state.tone.points.every(([x, y]) => Math.abs(x - y) < 1e-4);
 
@@ -173,11 +176,16 @@ precision highp float;
 in vec2 uv; out vec4 o;
 uniform sampler2D uImg, uLut, uLutRef, uRes, uCam;
 uniform mat3 uM, uMRef, uHue;
-uniform bool uMono, uResidual;
+uniform bool uMono, uResidual, uVigOn, uChromaOn, uTcOn;
+uniform sampler2D uTc;       // the camera's shadow correction: gain per 12-bit value / 4 (1024)
+uniform float uChroma[16];   // the camera's chroma roll-off: factor per 16 levels of Y
+uniform vec3 uVig;     // lens shading correction: 1 + a r2 + b r4 + c r6
+uniform vec2 uSize;
 uniform vec3 uWb;
 uniform float uExp, uScale, uSplit;
 uniform int uMode;   // 0 edit, 1 original|edit, 2 camera|edit, 3 camera
 
+${HSL_GLSL}
 float lut(sampler2D t, float f) {   // single-channel table (residual), 256 texels
   f = clamp(f, 0., 255.);
   int i = int(min(floor(f), 254.));
@@ -196,15 +204,35 @@ vec3 lut3(sampler2D t, vec3 f) {
     mix(texelFetch(t, ivec2(i.b, 0), 0).b, texelFetch(t, ivec2(i.b + 1, 0), 0).b, u.b));
 }
 
-vec3 render(mat3 m, sampler2D curve) {
-  vec3 c = texture(uImg, uv).rgb * uWb;
+vec3 render(mat3 m, sampler2D curve, bool ma) {
+  // where the sensor clipped, white balance would invent a colour: cut all
+  // channels at the level of the smallest gain, as the camera does (fit.rs)
+  vec3 c = min(texture(uImg, uv).rgb * uWb, vec3(min(uWb.r, min(uWb.g, uWb.b))));
+  if (uVigOn) {
+    vec2 d = (uv - .5) * uSize;
+    float r2 = dot(d, d) / (.25 * dot(uSize, uSize));
+    c *= 1. + r2 * (uVig.x + r2 * (uVig.y + r2 * uVig.z));
+  }
   c = max(m * c, 0.);
   if (uMono) c = vec3((c.r + c.g + c.b) / 3.);
-  vec3 g = lut3(curve, c * uScale * uExp / 16.) / 16384.;
+  c *= uExp;
+  if (ma && uMa) c = multiaxial(c);
+  if (uTcOn) {   // indexed by the largest channel, see tonecontrol.rs
+    vec3 v = c * uScale;
+    int i = int(clamp(max(v.r, max(v.g, v.b)) / 4., 0., 1023.));
+    c *= texelFetch(uTc, ivec2(i, 0), 0).r;
+  }
+  vec3 g = lut3(curve, c * uScale / 16.) / 16384.;
   g = uHue * g;
   if (uResidual) g = vec3(lut(uRes, clamp(g.r, 0., 1.) * 255.),
                           lut(uRes, clamp(g.g, 0., 1.) * 255.),
                           lut(uRes, clamp(g.b, 0., 1.) * 255.));
+  if (uChromaOn) {
+    float y = dot(clamp(g, 0., 1.), vec3(.299, .587, .114));
+    float f = clamp(y * 16. - .5, 0., 15.);
+    int i = int(min(floor(f), 14.));
+    g = y + (g - y) * mix(uChroma[i], uChroma[i + 1], f - float(i));
+  }
   return g;
 }
 
@@ -213,9 +241,9 @@ void main() {
   bool left = uv.x < uSplit;
   vec3 c;
   if (uMode == 3) c = cam;
-  else if (uMode == 1 && left) c = render(uMRef, uLutRef);
+  else if (uMode == 1 && left) c = render(uMRef, uLutRef, false);
   else if (uMode == 2 && left) c = cam;
-  else c = render(uM, uLut);
+  else c = render(uM, uLut, true);
   o = vec4(c, 1);
 }`;
 
@@ -277,11 +305,21 @@ function draw() {
   gl.uniformMatrix3fv(uni("uHue"), false, transpose(hueMatrix(look)));
   gl.uniform1i(uni("uMono"), look.mono_mix ? 1 : 0);
   gl.uniform1i(uni("uResidual"), state.residual && state.shot.residual ? 1 : 0);
+  // part of the fine match: fitted on the camera JPEG like the residual
+  gl.uniform1i(uni("uChromaOn"), state.residual && state.shot.highlight_chroma ? 1 : 0);
+  if (state.shot.highlight_chroma) gl.uniform1fv(uni("uChroma"), state.shot.highlight_chroma);
+  const vig = state.shot.vignette;
+  gl.uniform1i(uni("uVigOn"), state.vignette && vig ? 1 : 0);
+  gl.uniform3fv(uni("uVig"), vig ? vig.coef : [0, 0, 0]);
+  gl.uniform2fv(uni("uSize"), [state.shot.width, state.shot.height]);
   gl.uniform3fv(uni("uWb"), wbGains());
   gl.uniform1f(uni("uExp"), Math.pow(2, state.ev));
   gl.uniform1f(uni("uScale"), state.shot.scale);
   gl.uniform1f(uni("uSplit"), state.mode === "edit" || state.mode === "jpeg" ? -1 : state.split);
   gl.uniform1i(uni("uMode"), { edit: 0, ab: 1, camera: 2, jpeg: 3 }[state.mode]);
+  hslUniforms();
+  gl.uniform1i(uni("uTc"), 5);
+  gl.uniform1i(uni("uTcOn"), tex.tc && state.params.shadowcorr > 0 ? 1 : 0);
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   placeSplit();
 }
@@ -581,9 +619,11 @@ function renderChanges() {
     ? t(gradedSets().includes(n) ? "ch_curves_wheels" : "ch_curves")
     : t("ch_neutral")));
   for (const n of others) names.push(`<span class="warn">${t("ch_other", { look: label(n) })}</span>`);
+  for (const n of hslChangedLooks())
+    names.push(n === CROSS ? t("ch_hsl") : `<span class="warn">${t("ch_hsl_other", { look: label(n) })}</span>`);
   if (toneChanged()) names.push(`<span class="warn">${t("ch_tone")}</span>`);
   $("changes").innerHTML = names.map((n) => `<li>${n}</li>`).join("");
-  const badge = { base: !!baseOf() || !!ext, color: isChanged(CROSS) || others.length > 0,
+  const badge = { base: !!baseOf() || !!ext, color: isChanged(CROSS) || others.length > 0 || hslChangedLooks().length > 0,
     curves: sets.size > 0 || toneChanged() };
   for (const b of document.querySelectorAll("#tabs button")) b.classList.toggle("dirty", !!badge[b.dataset.tab]);
 }
@@ -622,6 +662,8 @@ function update() {
 function select(name) {
   const wasCross = state.current === CROSS;
   state.current = name;
+  renderHsl();
+  requestHsl();
   update();
   if (wasCross !== (name === CROSS)) requestTone();
   else renderChannelPanel();
@@ -675,6 +717,21 @@ for (const k of COLOR_KEYS) {
   };
 }
 $("residual").onchange = (e) => { state.residual = e.target.checked; draw(); };
+// the camera's shadow correction table (tonecontrol.rs): 1 + S (base - 1) on
+// the first 256 of 1024 entries, S = 0.25 / 0.5 / 1 for Low / Medium / Strong
+function setShadowCorr(level) {
+  state.params.shadowcorr = level;
+  $("p-shadowcorr").value = level;
+  const base = state.fw && state.fw.tone_control_base;
+  if (!base || !gl) return;
+  const s = [0, 256, 512, 1024][level] || 0;
+  const t = new Float32Array(1024).fill(1);
+  base.forEach((b, i) => { t[i] = (4096 + Math.trunc(s * (b - 4096) / 1024)) / 4096; });
+  if (tex.tc) gl.deleteTexture(tex.tc);
+  tex.tc = texture(5, () => gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, 1024, 1, 0, gl.RED, gl.FLOAT, t));
+}
+$("p-shadowcorr").onchange = (e) => { setShadowCorr(+e.target.value); draw(); };
+$("vignette").onchange = (e) => { state.vignette = e.target.checked; draw(); };
 for (const cb of document.querySelectorAll(".fam")) {
   cb.onchange = () => {
     state.tone.families = [...document.querySelectorAll(".fam:checked")].map((x) => +x.value);
@@ -762,6 +819,7 @@ $("export").onclick = async () => {
         })),
       channels_pre: gradedSets().length ? Object.fromEntries(changedChannels().map((i) => [i, chanPre(i)])) : null,
       grade: gradedSets().length ? Object.fromEntries(gradedSets().map((n) => [n, state.grade[n]])) : null,
+      hsl: hslForExport(),
     }),
   });
   if (res.ok) {
@@ -827,6 +885,9 @@ function applyShotParams(fromDng) {
     $(`p-${k}`).value = state.params[k];
     $(`p-${k}-out`).textContent = signed(state.params[k]);
   }
+  // the shadow correction level (makernote 1..3; 4 = Auto in the menu, off in the firmware)
+  const sc = fromDng && meta ? meta.shadow_correction : 0;
+  setShadowCorr([1, 2, 3].includes(sc) ? sc : 0);
   state.paramsFromDng = fromDng;
   if (fromDng && meta.shot_look === "CrossProcess" && p.cross_variant) {
     state.chan.set = `Preset ${p.cross_variant}`;
@@ -875,6 +936,7 @@ async function show(meta) {
   // white balance comes from the DNG ("Load preview settings from DNG" takes the rest)
   applyShotParams(false);
   $("residual").disabled = !meta.residual;
+  renderVignetteNote();
   await fetchTone();
   update();
 }
@@ -983,6 +1045,7 @@ async function fetchTone() {
   drawChannels();
   renderChannelPanel();
   renderChanges();
+  drawHslCurve();
   draw();
 }
 
@@ -1247,7 +1310,7 @@ async function loadPreset(file) {
   try {
     let p;
     try { p = JSON.parse(await file.text()); } catch { throw new Error(t("e_json")); }
-    if (!p || typeof p !== "object" || !["matrices", "matrix_edits", "tone", "channel_curves", "channel_edits", "inherit"].some((k) => k in p))
+    if (!p || typeof p !== "object" || !["matrices", "matrix_edits", "tone", "channel_curves", "channel_edits", "inherit", "hsl"].some((k) => k in p))
       throw new Error(t("e_preset"));
     const warn = [];
 
@@ -1336,6 +1399,10 @@ async function loadPreset(file) {
       }
     }
 
+    warn.push(...hslLoad(p.hsl));
+    renderHsl();
+    requestHsl();
+
     detectExtBase();
     relink();
     toneEditor.deselect();
@@ -1350,6 +1417,7 @@ async function loadPreset(file) {
       pts && !isIdent(pts) && t("p_tone"),
       channels && t("p_channels", { n: channels }),
       gradedSets().length && t("p_wheels", { list: gradedSets().map(setLabel).join(", ") }),
+      hslChangedLooks().length && t("p_hsl", { list: hslChangedLooks().map(label).join(", ") }),
       Object.keys(inherit).length && Object.entries(inherit).map(([t, s]) => `${t} ← ${s}`).join(", "),
     ].filter(Boolean);
     msg.className = warn.length ? "note warn" : "note";
@@ -1483,6 +1551,16 @@ function renderWheels() {
 
 $("help-open").onclick = () => $("help").showModal();
 
+function renderVignetteNote() {
+  const v = state.shot && state.shot.vignette;
+  const el = $("vignette-note");
+  $("vignette").disabled = !v;
+  if (!v) { el.textContent = ""; return; }
+  // gain at 80 % of the way from the centre to a corner (r = 1 is the corner)
+  const r2 = 0.64, c = v.coef, corner = 1 + r2 * (c[0] + r2 * (c[1] + r2 * c[2]));
+  el.textContent = t(v.source === "fitted" ? "vignette_fitted" : "vignette_default", { corner: corner.toFixed(2) });
+}
+
 function renderToneNote() {
   const meta = state.shot;
   const has = meta && Object.keys(meta.params || {}).length;
@@ -1503,7 +1581,9 @@ function setLang(lang) {
   buildChannelPanel();
   renderInherit();
   renderToneNote();
+  renderVignetteNote();
   renderWb();
+  renderHsl();
   update();
   renderChannelPanel();
   placeSplit();
@@ -1561,8 +1641,11 @@ wrap.addEventListener("drop", (e) => {
     buildChannelPanel();
     relink();
     buildWheels();
+    initHsl();
     applyI18n();
     renderWheels();
+    renderHsl();
+    requestHsl();
     update();
     await fetchTone();
     const pre = await api("/api/dng");

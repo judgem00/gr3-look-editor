@@ -40,6 +40,7 @@ const ops = {
   firmware: () => JSON.parse(editor.firmware()),
   inherit: ({ body }) => JSON.parse(editor.inherit(body)),
   tone: ({ body }) => JSON.parse(editor.tone(body)),
+  hsl: ({ body }) => JSON.parse(editor.hsl(body)),
   export({ body }) {
     const e = editor.export(body);
     const update = e.take_update();
