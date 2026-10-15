@@ -227,6 +227,9 @@ Everything stays editable afterwards; the fit only sets the start.
    "before" side (LUT on the shot's Standard render or linear data), so the
    user sees how close the fit is on their own photo. `edit.lut` survives
    load and export. Docs: `editor.md` (English), i18n for the dialog.
+   (The "Compare LUT" view was built and later removed again at the
+   user's request: the report and the camera test say enough. The source
+   picker shows the LUT instead.)
 
    **Done 2026-10-15.** `editor/static/lut.js`: button under the source
    (disabled with a hint on targets that cannot take a LUT), dialog (file,
@@ -344,8 +347,9 @@ flat 6×6 blocks of the camera JPEG (10 000–30 000 per shot), mean / p95:
   looks in scene A (0.75 → 1.14), whose output values differ. The table
   uses the plain model for them.
 - The tone gain differs per scene (6545 and 4037 against the fitter's
-  6144); the evaluation maps the LUT's exposure as "Compare LUT" does. The
-  film error does not grow with the larger gain difference (scene B).
+  6144); the evaluation maps the LUT's exposure through the shot's curve
+  and back through Standard's. The film error does not grow with the
+  larger gain difference (scene B).
 
 ## Open points
 

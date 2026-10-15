@@ -120,7 +120,7 @@ const api = (() => {
     }
   }
 
-  // the LUT fitter (lutfit.rs): not fetch-like, the LUT's values travel as a typed array
+  // the LUT fitter (lutfit.rs): not fetch-like, the fit reports its progress
   web.lut = async (text) => { await gate(); return call("lut", { text }); };
   web.lutFit = async (text, body, onProgress) => {
     await gate();

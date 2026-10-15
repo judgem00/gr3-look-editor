@@ -215,21 +215,14 @@ impl Session {
         Ok(out)
     }
 
-    /// POST /api/lut {cube}: what a .cube holds, and what the preview needs
-    /// to show it next to the edit: the LUT's values (R fastest) and the
-    /// fitter's camera (scale of its scene colours, Standard's tone curve
-    /// and matrix, for display-referred LUTs). From the stock image.
-    pub fn lut_info(&self, text: &str) -> Result<(Value, Vec<f32>), String> {
+    /// POST /api/lut {cube}: what a .cube holds (the fit dialog shows it)
+    pub fn lut_info(&self, text: &str) -> Result<Value, String> {
         let lut = lutfit::parse_cube(text)?;
-        let cam = lutfit::Camera::new(&self.stock, "Standard")?;
-        let data = lut.data.iter().flat_map(|v| v.map(|x| x as f32)).collect();
-        let info = json!({
+        Ok(json!({
             "size": lut.size, "title": lut.title, "min": lut.min, "max": lut.max,
             "input": lut.input.map(|i| i.to_json()),
-            "scale": cam.scale, "tone": cam.tone, "standard": cam.standard,
             "targets": lutfit::TARGETS,
-        });
-        Ok((info, data))
+        }))
     }
 
     /// POST /api/lut/fit {name, target, input, post, hsl} with the .cube:

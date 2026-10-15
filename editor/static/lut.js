@@ -1,30 +1,26 @@
 // Fit to a LUT (docs/plan-spektrafilm-fitter.md): the core fits the selected
 // target's look -- matrix, RGB curves, HSL and the post matrix -- to a 3D LUT
 // (.cube, lutfit.rs), and the editor takes the result like a preset's target:
-// source Standard, every part editable afterwards. The LUT itself stays in
-// memory for the "Compare LUT" view; the preset only records which one it was
-// (edit.lut: name, title, sha256, input, report).
+// source Standard (the picker shows the LUT), every part editable afterwards.
+// The preset records which LUT it was (edit.lut: name, title, sha256, input,
+// report), not the LUT itself.
 //
 // The fit blocks the worker for some seconds; the core reports each pass.
 
 const LUT_TARGETS = ["Standard", "Vivid", "PositiveFilm", "Retro", "NegativeFilm"];
 const LUT_STEPS = { "matrix and curves": "lut_s_curves", "HSL and post matrix": "lut_s_hsl", "HSL encoded": "lut_s_encoded" };
 const lut = {
-  name: null, text: null, info: null, data: null,   // the chosen .cube
-  shown: {},        // target -> { name, info, data, input }: the LUT the preview compares with
+  name: null, text: null, info: null,   // the chosen .cube
   busy: false,
 };
 
-// the pick panel's button and the preview's LUT mode follow the selected target
+// the pick panel's button follows the selected target
 function renderLutButton() {
   const T = state.current;
   const b = $("lut-open");
   b.hidden = !T;
   b.disabled = !T || !LUT_TARGETS.includes(T);
   b.title = T && b.disabled ? t("lut_not_here") : t("lut_open_t");
-  const m = document.querySelector('#modes [data-mode="lut"]');
-  m.disabled = !(T && lut.shown[T] && state.shot);
-  if (m.disabled && state.mode === "lut") $("modes").querySelector("button").click();
 }
 
 // the input select: grlog keeps the file's own range ("grlog -8 12")
@@ -59,17 +55,17 @@ $("lut-file").onchange = async (e) => {
   const f = e.target.files[0];
   e.target.value = "";
   if (!f) return;
-  Object.assign(lut, { name: null, text: null, info: null, data: null });
+  Object.assign(lut, { name: null, text: null, info: null });
   renderLutDialog();
   lutMsg(t("lut_reading"));
   try {
     const text = await f.text();
-    const r = await api.lut(text);
-    Object.assign(lut, { name: f.name, text, info: r.meta, data: r.data });
-    const inp = r.meta.input || "display";
+    const info = await api.lut(text);
+    Object.assign(lut, { name: f.name, text, info });
+    const inp = info.input || "display";
     $("lut-input").value = inp.startsWith("grlog") ? "grlog" : inp;
-    lutMsg(t("lut_ready", { size: r.meta.size, title: r.meta.title || f.name }) +
-      (r.meta.input ? " " + t("lut_input_file") : ""));
+    lutMsg(t("lut_ready", { size: info.size, title: info.title || f.name }) +
+      (info.input ? " " + t("lut_input_file") : ""));
   } catch (err) {
     lutMsg(t("lut_bad", { msg: err.message }), "warn");
   }
@@ -80,7 +76,6 @@ $("lut-fit").onclick = async () => {
   const T = state.current;
   if (!T || !lut.text || lut.busy) return;
   const body = { name: lut.name, target: T, input: lutInput(), post: $("lut-post").checked, hsl: $("lut-hsl").checked };
-  const chosen = { name: lut.name, info: lut.info, data: lut.data, input: body.input };
   lut.busy = true;
   renderLutDialog();
   $("lut-report").hidden = true;
@@ -92,10 +87,8 @@ $("lut-fit").onclick = async () => {
   try {
     const r = await api.lutFit(lut.text, body, (s) => { step = LUT_STEPS[s] ? t(LUT_STEPS[s]) : s; tick(); });
     applyLutFit(T, r.spec);
-    lut.shown[T] = chosen;
     renderLutReport(r.report);
     lutMsg(t("lut_done", { look: label(T), s: Math.round((performance.now() - t0) / 1000) }), "ok");
-    if (state.shot) { state.mode = "lut"; markMode(); }
   } catch (err) {
     lutMsg(t("lut_failed", { msg: err.message }), "warn");
   } finally {
@@ -133,63 +126,4 @@ function renderLutReport(r) {
     "</tbody>";
   $("lut-report").hidden = false;
   $("lut-report-note").hidden = false;
-}
-
-// ---- the preview's LUT side -------------------------------------------------------
-
-let cubeTex = null, cubeOf = null, remapOf = null;
-
-// tone index of the photo's curve -> the index where Standard's default curve
-// (the fitter's) gives the same value; 256 entries
-function remapTable(shot, std) {
-  const out = new Float32Array(256);
-  let j = 0;
-  for (let k = 0; k < 256; k++) {
-    const y = shot[k];
-    while (j < 254 && std[j + 1] < y) j++;
-    const a = std[j], b = std[j + 1];
-    out[k] = y <= a ? j : y >= b ? j + 1 : j + (y - a) / (b - a);
-  }
-  return out;
-}
-
-// samplers on their own units, always (a sampler3D left on unit 0 would clash
-// with the photo); the LUT and Standard's tone curve once per chosen LUT
-function lutUniforms() {
-  gl.uniform1i(uni("uCube"), 6);
-  gl.uniform1i(uni("uStd"), 7);
-  gl.uniform1i(uni("uRemap"), 8);
-  const L = state.current && lut.shown[state.current];
-  if (!L) return;
-  const shot = state.curves && state.curves.lut;
-  if (shot && (remapOf !== shot || cubeOf !== L)) {
-    const r = remapTable(shot, L.info.tone);
-    if (tex.remap) gl.deleteTexture(tex.remap);
-    tex.remap = texture(8, () => gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, 256, 1, 0, gl.RED, gl.FLOAT, r));
-    remapOf = shot;
-  }
-  const n = L.info.size;
-  if (cubeOf !== L) {
-    gl.activeTexture(gl.TEXTURE6);
-    if (!cubeTex) cubeTex = gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_3D, cubeTex);
-    for (const p of [gl.TEXTURE_MIN_FILTER, gl.TEXTURE_MAG_FILTER]) gl.texParameteri(gl.TEXTURE_3D, p, gl.LINEAR);
-    for (const p of [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T, gl.TEXTURE_WRAP_R]) gl.texParameteri(gl.TEXTURE_3D, p, gl.CLAMP_TO_EDGE);
-    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
-    gl.texImage3D(gl.TEXTURE_3D, 0, gl.RGB16F, n, n, n, 0, gl.RGB, gl.FLOAT, L.data);
-    const tone = new Float32Array(256 * 4);
-    L.info.tone.forEach((v, i) => tone.set([v, v, v, 1], 4 * i));
-    if (tex.std) gl.deleteTexture(tex.std);
-    tex.std = texture(7, () => gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, 256, 1, 0, gl.RGBA, gl.FLOAT, tone));
-    cubeOf = L;
-  }
-  const g = /^grlog\s+(\S+)\s+(\S+)/.exec(L.input);
-  gl.uniform1i(uni("uCubeIn"), L.input === "display" ? 0 : L.input === "linear" ? 1 : 2);
-  gl.uniform2fv(uni("uCubeLog"), g ? [+g[1], +g[2]] : [-8, 12]);
-  gl.uniform1f(uni("uCubeN"), n);
-  gl.uniform1f(uni("uCubeScale"), L.info.scale);
-  gl.uniform3fv(uni("uCubeMin"), L.info.min);
-  gl.uniform3fv(uni("uCubeMax"), L.info.max);
-  gl.uniformMatrix3fv(uni("uSensor"), false, transpose(state.fw.sensor_ccm));
-  gl.uniformMatrix3fv(uni("uStdM"), false, transpose(L.info.standard));
 }

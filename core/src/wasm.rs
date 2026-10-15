@@ -72,24 +72,6 @@ extern "C" {
 }
 
 #[wasm_bindgen]
-pub struct LutInfo {
-    meta: String,
-    data: Vec<f32>,
-}
-
-#[wasm_bindgen]
-impl LutInfo {
-    #[wasm_bindgen(getter)]
-    pub fn meta(&self) -> String {
-        self.meta.clone()
-    }
-    /// the LUT's values, R fastest, 3 per point
-    pub fn take_data(&mut self) -> Vec<f32> {
-        std::mem::take(&mut self.data)
-    }
-}
-
-#[wasm_bindgen]
 impl Editor {
     /// check, decode and self-test the update file the user dropped in
     #[wasm_bindgen(constructor)]
@@ -130,9 +112,8 @@ impl Editor {
         Ok(Export { result: r.to_string(), update, preset })
     }
 
-    pub fn lut_info(&self, text: &str) -> Result<LutInfo, JsError> {
-        let (meta, data) = self.session.lut_info(text).map_err(js)?;
-        Ok(LutInfo { meta: meta.to_string(), data })
+    pub fn lut_info(&self, text: &str) -> Result<String, JsError> {
+        Ok(self.session.lut_info(text).map_err(js)?.to_string())
     }
 
     /// blocks the worker for some seconds; progress goes to lutFitProgress

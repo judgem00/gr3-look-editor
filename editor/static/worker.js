@@ -51,14 +51,8 @@ const ops = {
     e.free();
     return [out, [update.buffer]];
   },
-  // a .cube: what it holds, and its values for the preview
-  lut({ text }) {
-    const i = editor.lut_info(text);
-    const data = i.take_data();
-    const out = { meta: JSON.parse(i.meta), data };
-    i.free();
-    return [out, [data.buffer]];
-  },
+  // a .cube: what it holds
+  lut: ({ text }) => JSON.parse(editor.lut_info(text)),
   // the LUT fitter: blocks this worker for some seconds, reporting each step
   lut_fit: ({ text, body }) => JSON.parse(editor.lut_fit(text, body)),
   async dng({ bytes, name }) {

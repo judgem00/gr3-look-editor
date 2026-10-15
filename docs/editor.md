@@ -84,8 +84,7 @@ come from the firmware ([docs/look-mapping.md](look-mapping.md)).
   desaturation.
 
 Views: **Edited**, **Before / After** (firmware original against the edit,
-colour and tone curve), **Compare camera**, **Camera JPEG**, **Compare LUT**
-(the LUT a target was fitted to, see below).
+colour and tone curve), **Compare camera**, **Camera JPEG**.
 
 ## Editing
 
@@ -211,16 +210,9 @@ its own ColorMatrix set and its own matrix in the free area `0x53002080…`
   The source picker then shows the LUT (its title, else the file name),
   and so do the target list, the export list and the preset notice; the
   look still computes on Standard's tone curve. Picking another source
-  keeps the fitted values and drops the LUT's name.
-  **Compare LUT** shows the LUT on the photo next to the edit while the
-  LUT is loaded. The photo's tone curve has its own gain (fitted per shot,
-  as the camera sets it at runtime), the fitter assumes Standard's default
-  curve: the LUT side gets its exposure through the photo's curve and back
-  through Standard's, on luminance, so both sides mean the same grey. The
-  camera does the same with a fitted look: it inherits the shot's gain like
-  any look. On MR029360 (Portra 400 on Negative Film, fine match off) the
-  two sides differ by 4.0 levels on average, with the same mean brightness
-  (without the gain mapping: 10.2, the LUT side 9 levels brighter).
+  keeps the fitted values and drops the LUT's name. The fitted look sits
+  on Standard's curve at the default gain; the camera sets the gain per
+  shot at runtime, and the look follows it like any look does.
 
 ## Export
 
