@@ -30,6 +30,12 @@ function targetSpec(name) {
   return state.targets[name];
 }
 
+// the LUT the target was fitted to (lut.js): its title, or the file name
+const lutName = (name) => {
+  const l = state.targets[name] && state.targets[name].lut;
+  return l ? l.title || String(l.name || "LUT").replace(/\.cube$/i, "") : null;
+};
+
 const extOf = (name) => {
   const id = state.targets[name] && state.targets[name].ext;
   return (id && state.extBases.find((x) => x.id === id)) || null;
@@ -125,6 +131,7 @@ const changedTargets = () => targetNames().filter(targetChanged);
 function targetState(name) {
   const s = targetSpec(name), x = extOf(name);
   if (x) return extText(x.label);
+  if (lutName(name)) return t("tg_lut", { name: lutName(name) });
   if (s.source !== name) return t("tg_from", { look: label(s.source) });
   return targetChanged(name) ? t("tg_own") : t("tg_stock");
 }

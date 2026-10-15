@@ -409,10 +409,13 @@ function renderPickers() {
   const looks = sourcesFor(T).map((n) =>
     opt(`look:${n}`, n === T ? t("src_own", { look: label(n) }) : label(n), SOURCE_HINTS[n] && t(SOURCE_HINTS[n])));
   const exts = state.extBases.map((x) => opt(`ext:${x.id}`, extText(x.label), extText(x.hint)));
-  ssel.innerHTML = `<optgroup label="${esc(t("src_looks"))}">${looks.join("")}</optgroup>` +
+  // a target fitted to a LUT shows the LUT (it computes on Standard's tone curve)
+  const fitted = lutName(T);
+  ssel.innerHTML = (fitted ? `<optgroup label="${esc(t("src_lut_group"))}">${opt("lut", fitted, t("src_lut_t"))}</optgroup>` : "") +
+    `<optgroup label="${esc(t("src_looks"))}">${looks.join("")}</optgroup>` +
     (exts.length ? `<optgroup label="${esc(t("src_extra"))}">${exts.join("")}</optgroup>` : "");
-  ssel.value = s.ext ? `ext:${s.ext}` : `look:${s.source}`;
-  ssel.title = s.ext ? extText(extOf(T).tip) : "";
+  ssel.value = fitted ? "lut" : s.ext ? `ext:${s.ext}` : `look:${s.source}`;
+  ssel.title = fitted ? t("src_lut_t") : s.ext ? extText(extOf(T).tip) : "";
 
   // at most one line about the target's rules
   const note = $("pick-note");
@@ -428,11 +431,14 @@ $("source").onchange = (e) => setSource(state.current, e.target.value);
 
 // switch the target's base; curves, wheels, HSL and the sliders stay
 function setSource(T, value) {
-  if (!T) return;
+  if (!T || value === "lut") return;
   const s = targetSpec(T);
   const ext = value.startsWith("ext:") ? value.slice(4) : null;
   const source = ext ? T : value.slice(5);
-  if (s.ext === ext && s.source === source) return;
+  // another source: the fitted values stay, the target no longer says it is the LUT
+  const wasLut = !!s.lut;
+  s.lut = null;
+  if (s.ext === ext && s.source === source) { if (wasLut) update(); return; }
   clearExtCurves(T, extOf(T));
   s.source = source;
   s.ext = ext;

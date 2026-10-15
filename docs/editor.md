@@ -208,6 +208,10 @@ its own ColorMatrix set and its own matrix in the free area `0x53002080…`
   LUT on test colours the fit did not see, for matrix + curves, the model
   with HSL and P, and the result as exported. The preset keeps
   `edit.lut` (file name, title, SHA-256, input, report), not the LUT.
+  The source picker then shows the LUT (its title, else the file name),
+  and so do the target list, the export list and the preset notice; the
+  look still computes on Standard's tone curve. Picking another source
+  keeps the fitted values and drops the LUT's name.
   **Compare LUT** shows the LUT on the photo next to the edit while the
   LUT is loaded. The photo's tone curve has its own gain (fitted per shot,
   as the camera sets it at runtime), the fitter assumes Standard's default
