@@ -2,16 +2,19 @@
 //! fits a look to a .cube for one image control and prints a v2 preset.
 //!
 //!     cargo run --release --example lut_fit --manifest-path core/Cargo.toml -- \
-//!         film.cube[=Target] ... [--no-post] [--no-hsl] [--input display|linear|grlog] > film.looks.json
+//!         film.cube[=Target] ... [--no-post] [--no-hsl] [--input display|linear|grlog] [--out DIR] > film.looks.json
 //!
 //! Several cubes go into one preset, each on its own target (default
 //! NegativeFilm, then PositiveFilm, Vivid). The report goes to stderr and
-//! into each target's edit.lut. The update file comes from GR_UPDATE or
-//! work/fwdc239b.bin.
+//! into each target's edit.lut. With --out the preset is exported too:
+//! DIR/FWDC239B.BIN, unpackedFW and the preset, and the same without any P
+//! (unpackedFW-noP, the reference for tools/verify-tuning.py --post-base).
+//! The update file comes from GR_UPDATE or work/fwdc239b.bin.
 
 use std::path::PathBuf;
 use std::time::Instant;
 
+use grlook::grfw::Container;
 use grlook::lutfit::{self, Camera, Input, Options};
 use grlook::session::Session;
 use serde_json::json;
@@ -20,12 +23,14 @@ use sha2::{Digest, Sha256};
 fn main() {
     let mut opt = Options::default();
     let mut cubes = vec![];
+    let mut out: Option<PathBuf> = None;
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
         match a.as_str() {
             "--no-post" => opt.post = false,
             "--no-hsl" => opt.hsl = false,
             "--input" => opt.input = Some(Input::parse(&args.next().expect("--input needs a value")).unwrap()),
+            "--out" => out = Some(PathBuf::from(args.next().expect("--out needs a directory"))),
             _ => cubes.push(a),
         }
     }
@@ -56,4 +61,18 @@ fn main() {
     }
     let preset = json!({ "version": 2, "firmware": name, "targets": targets });
     println!("{}", serde_json::to_string_pretty(&preset).unwrap());
+    if let Some(dir) = out {
+        std::fs::create_dir_all(&dir).unwrap();
+        let (r, packed, written) = session.export(&json!({ "targets": targets })).unwrap();
+        std::fs::write(dir.join("FWDC239B.BIN"), &packed).unwrap();
+        std::fs::write(dir.join("unpackedFW"), Container::parse(packed.clone()).unwrap().decode().unwrap()).unwrap();
+        std::fs::write(dir.join("preset.looks.json"), written).unwrap();
+        let mut plain = targets.clone();
+        for spec in plain.values_mut() {
+            spec.as_object_mut().unwrap().remove("post");
+        }
+        let (_, packed_ref, _) = session.export(&json!({ "targets": plain })).unwrap();
+        std::fs::write(dir.join("unpackedFW-noP"), Container::parse(packed_ref).unwrap().decode().unwrap()).unwrap();
+        eprintln!("exported to {}: space {}", dir.display(), r["space"]);
+    }
 }

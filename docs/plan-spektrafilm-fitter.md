@@ -10,9 +10,10 @@ exported as usual (v2 preset, `"targets"`). Two kinds of LUT feed it:
 
 Status 2026-10-15: plan agreed (fit in the core against a LUT, spektrafilm
 only makes LUTs, normalised like a print scan, test flash Portra 400 full /
-without P / without HSL). Phases 0–4 done: the LUT costs nothing
+without P / without HSL). Phases 0–6 done: the LUT costs nothing
 measurable; tool, core fitter, CLI and the editor's "Fit to a LUT" built
-and tested. Open: checks on an exported image (5), test firmware (6).
+and tested; exported images pass the Unicorn checks; the test firmware is
+built. Open: flashing and shooting (user), then the evaluation.
 
 Background: [spektrafilm-fit.md](spektrafilm-fit.md) (offline prototype,
 mean ΔE2000 1.68 with everything), [plan-post-matrix.md](plan-post-matrix.md)
@@ -249,10 +250,35 @@ Everything stays editable afterwards; the fit only sets the start.
    --post IMAGE PRESET` and `tools/verify-targets.py --patched`; three
    complete films fit into the pool, a fourth is refused with the core's
    space error.
+   **Done 2026-10-15** for the test firmware (Portra full / without P /
+   without HSL) and for three films in one export (Portra 400 on Negative
+   Film, Ektar 100 on Positive Film, Vision3 250D on Vivid; `lut_fit
+   --out`, 812 bytes free):
+   - `fw-pack.py check`: container ok;
+   - `verify-tuning.py --post IMAGE PRESET --post-base IMAGE_WITHOUT_P`
+     (new): every look, still and live view, hue −4/0/+4, one history,
+     against the same preset exported without P. Only the nine YCbCr
+     registers may differ, and those are H(k)·B·P within 1 with rows
+     256/0/0. The old form (against the source in stock) cannot take
+     targets with their own matrix, curves and HSL. Negative control: the
+     image without P against itself fails on every target with P;
+   - `verify-tuning.py --patched`: the curve selector; R, G, B = the tone
+     curve composed with the target's curves;
+   - `verify-targets.py --patched`: every look that is not a target equals
+     stock.
+
+   The fitted matrix and HSL themselves are checked by the core's tests
+   and earlier phases (`plan-look-curves.md`, `multiaxial.md`); here the
+   new part is P together with them.
 6. **Test firmware** `core/examples/film_flash.rs` → `work/film-test/`
    (FWDC239B.BIN, unpackedFW, preset, HOW_TO_SHOOT.txt), checked with
    `fw-pack.py check`, `verify-tuning.py --post`, `verify-targets.py
    --patched`. Flashing and shooting is the user's.
+
+   **Done 2026-10-15:** `work/film-test/` (FWDC239B.BIN SHA-256
+   `6a423e25…e2dc36`, 3.5 KB free), checked as above, HOW_TO_SHOOT.txt in
+   German. Model, held out against the LUT: Negative Film 1.61, Positive
+   Film (no P) 2.02, Vivid (no HSL) 1.79.
 
 ## Test flash (phase 6)
 
@@ -266,10 +292,11 @@ One flash, Portra 400 on Portra Endura (print-scan normalised):
 | Vivid | M + curves + P, fitted without HSL | what HSL buys on top of P |
 
 Shots: handheld is fine (alignment with ORB + RANSAC), same light, Daylight
-WB, fixed exposure, RAW + JPEG, every slider at 0, grain off, shadow
-correction as in the last test; a grey ramp, the ColorChecker if at hand,
-skin, a saturated scene. Order: Standard, Negative Film, Positive Film,
-Vivid, Standard.
+WB, fixed exposure, RAW + JPEG, every slider at 0, grain off, highlight and
+shadow correction off (they change the tone curve per shot); two scenes (a
+test chart with grey ramp, and an everyday scene with skin, saturated
+colours and a bright sky), each in the order Standard, Negative Film,
+Positive Film, Vivid, Standard.
 
 Evaluation (as `tools/eval-post-matrix.py`): each camera JPEG against the
 LUT applied to the Standard DNG's linear data, and against the core's model

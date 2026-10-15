@@ -5,7 +5,9 @@ as data only. It is needed for spektrafilm film looks
 ([spektrafilm-fit.md](spektrafilm-fit.md): mean ΔE2000 2.20 → 1.68 with P).
 Status 2026-10-15: phases 0–2 done (emulation, core, check of an exported
 image), 3 (preview); **phase 4 confirmed on the GR III**: P acts after the
-tone curve, exactly as modelled. The fitter (5) is still to do.
+tone curve, exactly as modelled. The fitter (5) is built: a LUT fitter
+in the core and the editor ([plan-spektrafilm-fitter.md](plan-spektrafilm-fitter.md)),
+its test firmware waits for the camera.
 
 ## Findings
 
@@ -140,6 +142,8 @@ have 32× finer steps than the registers, so this costs no accuracy.
 4. **Flash test** (below).
 5. **Fitter in the editor**: target → matrix + curves + HSL + P (port of
    `tools/spektrafilm-fit.py`). Its own plan after the camera test.
+
+   **Built 2026-10-15** as a LUT fitter: [plan-spektrafilm-fitter.md](plan-spektrafilm-fitter.md).
 
 Also fix `docs/image-pipeline.md`: CCA1 sits before the gamma (camera-tested
 in gr3-film-mods §22l), its matrix defaults to identity 0x200, and the real

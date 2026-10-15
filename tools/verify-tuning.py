@@ -6,6 +6,7 @@ as ARM code.
     .venv/bin/python tools/verify-tuning.py            # all checks and questions
     .venv/bin/python tools/verify-tuning.py --only q2
     .venv/bin/python tools/verify-tuning.py --patched IMAGE   # an exported image
+    .venv/bin/python tools/verify-tuning.py --post IMAGE PRESET [--post-base IMAGE_WITHOUT_P]
 
 The selector is modelled in Python: a hook at 0x536dd450 (the site the stub
 will branch from) does what the stub will do -- for an assigned look it
@@ -523,24 +524,31 @@ TARGET_NAMES = {11: "Standard", 12: "Vivid", 17: "PositiveFilm", 18: "BleechBypa
                 20: "HdrCuisine", 21: "CrossProcess", 22: "NegativeFilm"}
 
 
-def check_post(path, preset_path, r):
+def check_post(path, preset_path, r, base_path=None):
     """an exported image with post matrices (docs/plan-post-matrix.md, Phase 2): every
-    target with P against its source in stock, every other look against stock"""
-    print(f"\n[post] {path}: post matrices against the preset {preset_path}")
+    target with P against its source in stock, every other look against stock.
+
+    With base_path (the same preset exported without P): every look against the
+    same look there, so targets with their own matrix, curves and HSL (a fitted
+    film, docs/plan-spektrafilm-fitter.md) can be checked -- only the nine YCbCr
+    registers may differ, and those must be H(k) B P."""
+    print(f"\n[post] {path}: post matrices against the preset {preset_path}"
+          + (f", reference without P {base_path}" if base_path else ""))
     with open(preset_path) as f:
         targets = json.load(f)["targets"]
     rtos, stock = emu.load_rtos(path), emu.load_rtos(emu.IMAGE)
+    reference = emu.load_rtos(base_path) if base_path else stock
     probe = Run(stock)
     base = rows(i32s(probe.e, YCC_BASE))
     hue = [rows(i32s(probe.e, probe.e.r32(HUE_TABLE + 4 * k))) for k in range(9)]
     looks = {v: k for k, v in TARGET_NAMES.items()}
     for live in (False, True):
-        real, ref = Run(rtos), Run(stock)            # one history each
+        real, ref = Run(rtos), Run(reference)        # one history each
         for name, look, st in CASES + CASES[::-1]:
             spec = targets.get(TARGET_NAMES[look])
             src_look, src_st = look, st
             source = spec.get("source") if spec else None
-            if source and source != TARGET_NAMES[look]:
+            if source and source != TARGET_NAMES[look] and not base_path:
                 if source not in looks:
                     raise SystemExit(f"--post: source {source!r} is not modelled here")
                 # a look built from another one computes as that look's first case
@@ -562,7 +570,8 @@ def check_post(path, preset_path, r):
                         bad.append(f"hue {k - 4:+d}: registers {regs}")
                 elif regs != csp_regs(want[0]):
                     bad.append(f"hue {k - 4:+d}: registers changed")
-            what = f"P {[round(v, 3) for v in p]}" if p else ("as its source" if spec else "stock")
+            what = f"P {[round(v, 3) for v in p]}" if p else \
+                ("as without P" if base_path else "as its source" if spec else "stock")
             r.check(not bad, f"{'live ' if live else 'still'} {name}: {what}", "; ".join(bad[:3]))
 
 
@@ -627,10 +636,12 @@ def main():
     ap.add_argument("--patched", help="exported image with the selector: check it against the model")
     ap.add_argument("--post", nargs=2, metavar=("IMAGE", "PRESET"),
                     help="exported image with post matrices and its preset (export v2)")
+    ap.add_argument("--post-base", metavar="IMAGE",
+                    help="with --post: the same preset exported without P, the reference for every look")
     args = ap.parse_args()
     r = Report()
     if args.post:
-        check_post(*args.post, r)
+        check_post(*args.post, r, args.post_base)
     elif args.patched:
         check_patched(args.patched, r)
     else:
