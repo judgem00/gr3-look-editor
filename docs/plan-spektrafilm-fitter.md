@@ -13,7 +13,9 @@ only makes LUTs, normalised like a print scan, test flash Portra 400 full /
 without P / without HSL). Phases 0–6 done: the LUT costs nothing
 measurable; tool, core fitter, CLI and the editor's "Fit to a LUT" built
 and tested; exported images pass the Unicorn checks; the test firmware is
-built. Open: flashing and shooting (user), then the evaluation.
+built and **confirmed on the GR III** (MR029370–388): the camera renders
+the fitted looks as the core models them (0.6–1.2 ΔE2000), and the full
+film look comes within 1.1–1.7 ΔE2000 of the film.
 
 Background: [spektrafilm-fit.md](spektrafilm-fit.md) (offline prototype,
 mean ΔE2000 1.68 with everything), [plan-post-matrix.md](plan-post-matrix.md)
@@ -303,6 +305,47 @@ LUT applied to the Standard DNG's linear data, and against the core's model
 of that look; ΔE2000 per variant. Expected: Negative Film < Vivid <
 Positive Film against the LUT, and model vs camera near the floor
 (≈ 0.7–1.0 ΔE).
+
+### Result (MR029370–388, 2026-10-15)
+
+Flashed and shot handheld, every slider at 0, highlight and shadow
+correction off, grain off. Scene A (MR029370–379): screen chart, Daylight
+WB, ISO 100. Scene B (MR029380–388): everyday scene, Auto WB (the shots'
+white balance agrees within 0.4 %), ISO 200. Other image controls were
+shot too and are not part of the test.
+
+`tools/eval-film.py` with `core/examples/film_eval.rs`: every shot is
+rendered from its own DNG (own white balance; input scale, tone gain and
+lens shading fitted on the scene's Standard shot as the editor does), so
+render and camera JPEG are the same frame and need no alignment. ΔE2000 on
+flat 6×6 blocks of the camera JPEG (10 000–30 000 per shot), mean / p95:
+
+| Shot | Look | camera vs model | camera vs film (LUT) | model vs film |
+|---|---|---|---|---|
+| A MR029370 | Standard (control) | 1.17 / 2.4 | 4.43 / 8.4 | – |
+| A MR029372 | Negative Film: full | 0.75 / 2.0 | **1.74** / 5.0 | 1.23 / 3.9 |
+| A MR029373 | Positive Film: without P | 0.81 / 2.0 | 1.93 / 5.7 | 1.42 / 4.5 |
+| A MR029371 | Vivid: without HSL | 1.19 / 2.6 | 2.01 / 4.5 | 1.23 / 3.8 |
+| B MR029380 | Standard (control) | 0.71 / 1.4 | 5.79 / 8.6 | – |
+| B MR029382 | Negative Film: full | 0.63 / 1.2 | **1.08** / 1.7 | 1.01 / 1.6 |
+| B MR029383 | Positive Film: without P | 0.72 / 1.3 | 1.32 / 2.0 | 1.50 / 2.0 |
+| B MR029381 | Vivid: without HSL | 0.62 / 1.3 | 1.44 / 2.3 | 1.27 / 2.2 |
+
+- **The camera does what the model says.** The fitted looks are as close
+  to their model as Standard is to its own (0.6–1.2 against 0.7–1.2): P,
+  HSL, curves and matrix reach the image as written.
+- **The full look is the closest to the film** in both scenes (1.74 and
+  1.08); without P or without HSL it is 0.2–0.4 further away. Standard is
+  4.4–5.8 away, so the looks clearly move to the film. On these scenes P
+  and HSL count about the same (the synthetic samples had HSL as the
+  smaller lever).
+- The fine match (residual, highlight chroma) is fitted on the Standard
+  shot; it helps Standard (1.17 → 0.95, 0.71 → 0.53) but not the film
+  looks in scene A (0.75 → 1.14), whose output values differ. The table
+  uses the plain model for them.
+- The tone gain differs per scene (6545 and 4037 against the fitter's
+  6144); the evaluation maps the LUT's exposure as "Compare LUT" does. The
+  film error does not grow with the larger gain difference (scene B).
 
 ## Open points
 

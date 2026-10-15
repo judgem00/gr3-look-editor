@@ -1091,6 +1091,34 @@ impl Renderer<'_, '_> {
 }
 
 impl Fit {
+    /// a target as a v2 preset holds it (`spec`), back as a Fit: its own
+    /// matrix (else `default_matrix`), curves (else linear), HSL and P
+    pub fn from_spec(target: &str, spec: &Value, default_matrix: M3) -> Result<Fit, String> {
+        let nums = |v: &Value| -> Option<Vec<f64>> { v.as_array().map(|a| a.iter().filter_map(|x| x.as_f64()).collect()) };
+        let matrix = match nums(&spec["matrices"][target]) {
+            Some(m) if m.len() == 9 => std::array::from_fn(|k| m[k]),
+            Some(_) => return Err(format!("{target}: a matrix needs nine values")),
+            None => default_matrix,
+        };
+        let curves: [Vec<u16>; 3] = match spec["curves"].as_array() {
+            Some(c) if c.len() == 3 => {
+                let mut out: [Vec<u16>; 3] = Default::default();
+                for (k, v) in c.iter().enumerate() {
+                    let vals = nums(v).filter(|v| v.len() == 256).ok_or(format!("{target}: a curve needs 256 values"))?;
+                    out[k] = vals.iter().map(|&x| x.round().clamp(0.0, 65535.0) as u16).collect();
+                }
+                out
+            }
+            _ => [chan::linear(), chan::linear(), chan::linear()],
+        };
+        let post = match nums(&spec["post"]) {
+            Some(p) if p.len() == 9 => Some(std::array::from_fn(|k| p[k])),
+            _ => None,
+        };
+        let hsl = spec.get("hsl").filter(|h| !h.is_null()).cloned();
+        Ok(Fit { target: target.into(), input: Input::Display, matrix, curves, hsl, post, report: Value::Null })
+    }
+
     pub fn renderer<'a, 'c>(&self, cam: &'a Camera<'c>) -> Result<Renderer<'a, 'c>, String> {
         let hsl = match &self.hsl {
             Some(v) => Some(multiaxial::encode(&Hsl::from_json(v), &cam.ycc)?),
