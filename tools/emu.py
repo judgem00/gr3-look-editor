@@ -12,7 +12,7 @@ from unicorn import (Uc, UcError, UC_ARCH_ARM, UC_MODE_ARM, UC_HOOK_CODE,
 from unicorn import arm_const as A
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-IMAGE = os.path.join(REPO, "work", "fwdc239b", "unpackedFW")
+IMAGE = os.environ.get("GR_IMAGE") or os.path.join(REPO, "work", "fwdc239b", "unpackedFW")
 
 BIAS = 0x52FEF790
 BASE = 0x53000000

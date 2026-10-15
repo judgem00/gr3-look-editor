@@ -21,6 +21,7 @@ Compared per Make: the info block (R2Y register image at +0x120 and the
 LUT tables) and GammaTuning's four 256-entry tables (R, G, B, luma).
 """
 import argparse
+import json
 import struct
 import sys
 
@@ -517,6 +518,54 @@ def q5_post(rtos, r):
             r.check(not others, f"{tag}: every other look unchanged, also right after it", "; ".join(others[:3]))
 
 
+# menu index -> target name in an export v2 preset
+TARGET_NAMES = {11: "Standard", 12: "Vivid", 17: "PositiveFilm", 18: "BleechBypass_GR", 19: "Retro",
+                20: "HdrCuisine", 21: "CrossProcess", 22: "NegativeFilm"}
+
+
+def check_post(path, preset_path, r):
+    """an exported image with post matrices (docs/plan-post-matrix.md, Phase 2): every
+    target with P against its source in stock, every other look against stock"""
+    print(f"\n[post] {path}: post matrices against the preset {preset_path}")
+    with open(preset_path) as f:
+        targets = json.load(f)["targets"]
+    rtos, stock = emu.load_rtos(path), emu.load_rtos(emu.IMAGE)
+    probe = Run(stock)
+    base = rows(i32s(probe.e, YCC_BASE))
+    hue = [rows(i32s(probe.e, probe.e.r32(HUE_TABLE + 4 * k))) for k in range(9)]
+    looks = {v: k for k, v in TARGET_NAMES.items()}
+    for live in (False, True):
+        real, ref = Run(rtos), Run(stock)            # one history each
+        for name, look, st in CASES + CASES[::-1]:
+            spec = targets.get(TARGET_NAMES[look])
+            src_look, src_st = look, st
+            source = spec.get("source") if spec else None
+            if source and source != TARGET_NAMES[look]:
+                if source not in looks:
+                    raise SystemExit(f"--post: source {source!r} is not modelled here")
+                # a look built from another one computes as that look's first case
+                src_look, src_st = next((l, s) for _, l, s in CASES if l == looks[source])
+            p = spec.get("post") if spec else None
+            bad = []
+            for k in (0, 4, 8):
+                got = real.make(look, {**st, HUE: k}, live)
+                want = ref.make(src_look, {**src_st, HUE: k}, live)
+                runs = diff_runs(want[0], got[0])
+                outside = [d for d in runs if d[0] < CSP[0] or d[0] + d[1] > CSP[1]]
+                if outside or want[1] != got[1]:
+                    bad.append(f"hue {k - 4:+d}: {fmt_runs(outside) or 'gamma tables'}")
+                regs = csp_regs(got[0])
+                if p:
+                    ideal = mat_mul(mat_mul([[v / 8192 for v in row] for row in hue[k]], base), rows(p))
+                    if any(abs(regs[3 * i + j] - ideal[i][j]) > 1 for i in range(3) for j in range(3)) or \
+                            [sum(regs[0:3]), sum(regs[3:6]), sum(regs[6:9])] != [256, 0, 0]:
+                        bad.append(f"hue {k - 4:+d}: registers {regs}")
+                elif regs != csp_regs(want[0]):
+                    bad.append(f"hue {k - 4:+d}: registers changed")
+            what = f"P {[round(v, 3) for v in p]}" if p else ("as its source" if spec else "stock")
+            r.check(not bad, f"{'live ' if live else 'still'} {name}: {what}", "; ".join(bad[:3]))
+
+
 # the selector as exported (core/src/curvesel.rs)
 STUB, STUB_TABLE, ENTRIES = 0x53003D00, 0x53003D80, 15
 SITE_STOCK = 0x159632D0
@@ -576,9 +625,13 @@ def main():
     ap.add_argument("--image", default=emu.IMAGE, help="unpacked firmware image")
     ap.add_argument("--only", choices=STEPS, action="append")
     ap.add_argument("--patched", help="exported image with the selector: check it against the model")
+    ap.add_argument("--post", nargs=2, metavar=("IMAGE", "PRESET"),
+                    help="exported image with post matrices and its preset (export v2)")
     args = ap.parse_args()
     r = Report()
-    if args.patched:
+    if args.post:
+        check_post(*args.post, r)
+    elif args.patched:
         check_patched(args.patched, r)
     else:
         rtos = emu.load_rtos(args.image)

@@ -3,8 +3,9 @@
 Goal: a 3×3 colour matrix after the tone curve for one image control, written
 as data only. It is needed for spektrafilm film looks
 ([spektrafilm-fit.md](spektrafilm-fit.md): mean ΔE2000 2.20 → 1.68 with P).
-Status 2026-10-15: analysis done (static, on fw 2.10); phases 0 and 1 done
-(emulation and core). Preview and test flash are still to do.
+Status 2026-10-15: analysis done (static, on fw 2.10); phases 0–2 done
+(emulation, core, check of an exported image). Test firmware built, not yet
+flashed. Preview still to do.
 
 ## Findings
 
@@ -106,6 +107,15 @@ have 32× finer steps than the registers, so this costs no accuracy.
    with or without P.
 2. **Verification of an exported image** (`--patched`): all 9 hue steps of
    the target and every other look against stock in Unicorn.
+
+   **Done 2026-10-15:** `tools/verify-tuning.py --post IMAGE PRESET`. Every
+   look in one history, still and live view, hue −4/0/+4. A target with P
+   must equal its source in stock except for the nine registers, and those
+   must be within 1 of H·B·P with rows 256/0/0. Every other look must equal
+   stock. On the unpatched image it fails, as it should.
+   `tools/verify-targets.py --patched` now leaves the YCbCr registers out
+   for targets with P. `GR_IMAGE` points `tools/emu.py` at the stock image
+   from elsewhere (a worktree).
 3. **Preview** (`app.js`): after the tone curve, before the hue rotation,
    `rgb ← P rgb` for a target with P. Already modelled this way:
    `hueMatrix = YCC⁻¹ H YCC`.
@@ -119,31 +129,36 @@ post-gamma stage is this CSP matrix.
 
 ## Flash test (one flash)
 
+Built 2026-10-15: `cargo run --release --example post_matrix_flash` →
+`work/post-matrix-test/` (FWDC239B.BIN SHA-256 `677773fb…586cb01`, unpackedFW,
+preset, HOW_TO_SHOOT.txt). Checked: `fw-pack.py check`, `verify-tuning.py
+--post`, `verify-targets.py --patched`.
+
 Following the test protocol: one variant per image control, all on
-Standard's colour data, so Standard is the exact control. Bleach Bypass and
-HDR Tone stay out.
+Standard's colour data, so Standard is the exact control. This flash tests
+only P. The comparison of a complete film with and without P needs matrix,
+curves and HSL from the fitter, so it moves to the flash after phase 5.
 
 | Image control | Content | Shows |
 |---|---|---|
 | Standard | unchanged | control |
-| Positive Film | Standard + P = R/B swap marker `[0 0 1; 0 1 0; 1 0 0]` | path works at all (yellow → cyan, unmistakable) |
-| Vivid | Standard + P = strong mix towards luma, `0.5 I + 0.5 [luma rows]` | position: after the curve (mid tones desaturate as predicted after, not before, gamma) |
-| Negative Film | Portra 400 complete: matrix + curves + HSL + P | the film with P |
-| Cross Process | Portra 400 without P: matrix + curves + HSL (Color Tone 1–3 identical) | the same film without P |
+| Positive Film | Standard + P = R/B swap `[0 0 1; 0 1 0; 1 0 0]` | path works at all (yellow → cyan, unmistakable) |
+| Vivid | Standard + P = halfway to grey, `0.5 I + 0.5 [luma rows]` | position: the model after vs before the curve predicts other colours |
+| Negative Film | Standard + P = Portra 400 fit | a real, small P as predicted |
 
-Shots: tripod, same light, Daylight WB, fixed exposure, RAW + JPEG; a grey
-ramp and a colour chart (the hue chart) in the picture. One frame per image
-control at hue 0. Positive Film and Negative Film once more at hue +4, to check
-that P survives the hue setting.
+Shots: tripod, same light, Daylight WB, fixed exposure, RAW + JPEG, every
+slider at 0 in the four image controls, grain off; a grey ramp and the hue
+chart in the picture. Order: Standard, Positive Film, Vivid, Negative Film,
+then Positive Film, Negative Film and Standard at hue +4, Standard again.
 
 Evaluation on the flashed image (`unpackedFW`), not the build script:
 
-- Standard and the variants: camera JPEG vs the preview model from the DNG.
-  The variant's error should stay at Standard's level (≈ 0.7 ΔE).
-- Positive Film / Vivid: the predicted pattern (swap, mid-tone
-  desaturation) and grey unchanged.
-- Negative vs Cross Process: both against the spektrafilm target. The
-  difference should come out close to the model's (Portra: 2.19 → 1.67).
+- each variant: camera JPEG vs the Standard model from the DNG with P
+  applied after the curve. Its error should stay at Standard's level
+  (≈ 0.7 ΔE).
+- Positive Film / Vivid: the predicted pattern, grey unchanged. Vivid also
+  against "P before the curve": that model must fit clearly worse.
+- hue +4: the same P on top of the rotation.
 
 Risk: one ROM pointer per target in `.data` and 364 bytes in the pool.
 Everything else is unchanged. A wrong value shows up as a colour shift, not
