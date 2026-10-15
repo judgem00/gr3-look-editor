@@ -3,9 +3,9 @@
 Goal: a 3×3 colour matrix after the tone curve for one image control, written
 as data only. It is needed for spektrafilm film looks
 ([spektrafilm-fit.md](spektrafilm-fit.md): mean ΔE2000 2.20 → 1.68 with P).
-Status 2026-10-15: analysis done (static, on fw 2.10); phases 0–2 done
-(emulation, core, check of an exported image). Test firmware built, not yet
-flashed. Preview still to do.
+Status 2026-10-15: phases 0–2 done (emulation, core, check of an exported
+image); **phase 4 confirmed on the GR III**: P acts after the tone curve,
+exactly as modelled. Preview (3) and fitter (5) still to do.
 
 ## Findings
 
@@ -163,3 +163,26 @@ Evaluation on the flashed image (`unpackedFW`), not the build script:
 Risk: one ROM pointer per target in `.data` and 364 bytes in the pool.
 Everything else is unchanged. A wrong value shows up as a colour shift, not
 as a crash (the writer masks every coefficient to 9 bits).
+
+### Result (MR029360–369, 2026-10-15)
+
+Flashed and shot handheld (no tripod), hue 0, every slider at 0, shadow
+correction level 3 in all shots. The hue +4 shots were not taken.
+`tools/eval-post-matrix.py`: the embedded camera JPEGs at 1/4 size, each
+test frame aligned to the Standard frame (ORB + RANSAC homography, residual
+≈ 0.6 px), compared on about 15 000 flat 6×6 blocks (alignment varies between runs by about ±0.01 ΔE):
+
+| Look (P) | fitted 3×3 vs intended P | ΔE2000 P after curve | P before curve | without P | free 3×3 |
+|---|---|---|---|---|---|
+| Positive Film (R/B swap) | max \|diff\| 0.026 | **0.88** | 0.88 | 16.48 | 0.84 |
+| Vivid (halfway to grey) | 0.013 | **0.63** | 2.62 | 5.55 | 0.60 |
+| Negative Film (Portra 400) | 0.012 | **0.97** | 1.91 | 2.18 | 0.93 |
+
+- P acts on the camera, with the values written. A freely fitted 3×3 is no
+  better than the intended P, so the rest is the measurement floor
+  (alignment, JPEG).
+- P sits after the tone curve: Vivid's mix fits 0.63 after and 2.62 before
+  the curve. A swap cannot tell the two apart (a permutation commutes with
+  equal channel curves).
+- Not checked on the camera: other hue steps (Unicorn covers all nine) and
+  the stock looks against a stock firmware (Unicorn: byte-identical).
