@@ -13,6 +13,7 @@ pub mod fit;
 pub mod gamma;
 pub mod grfw;
 pub mod looks;
+pub mod lutfit;
 pub mod multiaxial;
 pub mod postmatrix;
 pub mod session;
