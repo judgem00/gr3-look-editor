@@ -4,8 +4,8 @@ Goal: a 3×3 colour matrix after the tone curve for one image control, written
 as data only. It is needed for spektrafilm film looks
 ([spektrafilm-fit.md](spektrafilm-fit.md): mean ΔE2000 2.20 → 1.68 with P).
 Status 2026-10-15: phases 0–2 done (emulation, core, check of an exported
-image); **phase 4 confirmed on the GR III**: P acts after the tone curve,
-exactly as modelled. Preview (3) and fitter (5) still to do.
+image), 3 (preview); **phase 4 confirmed on the GR III**: P acts after the
+tone curve, exactly as modelled. The fitter (5) is still to do.
 
 ## Findings
 
@@ -119,6 +119,24 @@ have 32× finer steps than the registers, so this costs no accuracy.
 3. **Preview** (`app.js`): after the tone curve, before the hue rotation,
    `rgb ← P rgb` for a target with P. Already modelled this way:
    `hueMatrix = YCC⁻¹ H YCC`.
+
+   **Done 2026-10-15:** shader uniform `uPost` (edited render only),
+   `state.targets[T].post`, a 3×3 field under Advanced (a typed value off
+   the diagonal moves the diagonal, so rows stay at 1), preset import and
+   export, `/api/target` keeps P (space meter). The per-shot fits undo P on
+   the camera JPEG first. Checked in the browser against the camera JPEGs of
+   the test shots (RMS in 8-bit levels over the whole frame, clipped pixels
+   left out):
+
+   | Shot | with P, fine match on / off | without P |
+   |---|---|---|
+   | MR029360 Standard (control) | 8.37 / 9.89 | – |
+   | MR029361 Vivid | 6.69 / 9.01 | 25.57 |
+   | MR029362 Negative Film | 7.30 / 9.00 | 12.96 |
+   | MR029363 Positive Film | 8.81 / 10.28 | 63.18 |
+
+   Before the fit undid P, Vivid with fine match came out at 11.0: the
+   highlight roll-off had learnt P's desaturation.
 4. **Flash test** (below).
 5. **Fitter in the editor**: target → matrix + curves + HSL + P (port of
    `tools/spektrafilm-fit.py`). Its own plan after the camera test.

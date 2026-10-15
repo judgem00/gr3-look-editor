@@ -14,7 +14,7 @@ Nothing is uploaded.
 ```
 camera RGB -> WB (AsShotNeutral or colour temperature), clipped at the smallest gain -> lens shading correction -> sensor CCM -> look matrix -> A[saturation] -> (mono mix)
            -> MultiAxial (colour ranges) -> shadow correction -> camera tone curve (per channel for Cross Process)
-           -> hue rotation (YCbCr) -> (residual correction, highlight chroma roll-off)
+           -> post matrix P (a target's) -> hue rotation (YCbCr) -> (residual correction, highlight chroma roll-off)
 ```
 
 Saturation and hue are the camera's image control settings; their matrices
@@ -74,6 +74,14 @@ come from the firmware ([docs/look-mapping.md](look-mapping.md)).
   It is part of "Fine-match to camera JPEG". Error above Y 176: MR024685
   5.1 → 3.0, MR024661 7.6 → 4.8, MR022009 5.9 → 4.4 levels. Where the
   camera does it is not known; the CSP block's chroma limits are a candidate.
+
+- **Post matrix P:** a target can have a 3×3 after the tone curve
+  ([plan-post-matrix.md](plan-post-matrix.md)), set under Advanced or from a
+  preset. The preview applies it to the tone-mapped RGB before the hue
+  rotation, as the camera's YCbCr stage does. When a shot was taken with a
+  look that has P, the fits against the camera JPEG first undo P on the JPEG
+  (`postmatrix::undo`); otherwise the highlight roll-off would learn P's
+  desaturation.
 
 Views: **Edited**, **Before / After** (firmware original against the edit,
 colour and tone curve), **Compare camera**, **Camera JPEG**.

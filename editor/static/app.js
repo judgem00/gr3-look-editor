@@ -152,7 +152,7 @@ const FS = `#version 300 es
 precision highp float;
 in vec2 uv; out vec4 o;
 uniform sampler2D uImg, uLut, uLutRef, uRes, uCam;
-uniform mat3 uM, uMRef, uHue;
+uniform mat3 uM, uMRef, uHue, uPost;
 uniform bool uMono, uResidual, uVigOn, uChromaOn, uTcOn;
 uniform sampler2D uTc;       // the camera's shadow correction: gain per 12-bit value / 4 (1024)
 uniform float uChroma[16];   // the camera's chroma roll-off: factor per 16 levels of Y
@@ -200,6 +200,9 @@ vec3 render(mat3 m, sampler2D curve, bool ma) {
     c *= texelFetch(uTc, ivec2(i, 0), 0).r;
   }
   vec3 g = lut3(curve, c * uScale / 16.) / 16384.;
+  // the target's post matrix P, then the hue setting: the camera's YCbCr
+  // stage computes H B P (postmatrix.rs); the stock look has no P
+  if (ma) g = uPost * g;
   g = uHue * g;
   if (uResidual) g = vec3(lut(uRes, clamp(g.r, 0., 1.) * 255.),
                           lut(uRes, clamp(g.g, 0., 1.) * 255.),
@@ -271,10 +274,10 @@ function previewLooks() {
   const T = state.current;
   if (!T) {
     const l = state.stock[(state.shot && state.shot.shot_look) || "Standard"] || state.stock.Standard;
-    return { m: l.matrix, look: l, ref: l.matrix, refLook: l, mono: l.mono_mix };
+    return { m: l.matrix, look: l, ref: l.matrix, refLook: l, mono: l.mono_mix, post: ident() };
   }
   const own = state.stock[T];
-  return { m: effective(T), look: sourceLook(T), ref: own.matrix, refLook: own, mono: false };
+  return { m: effective(T), look: sourceLook(T), ref: own.matrix, refLook: own, mono: false, post: postOf(T) || ident() };
 }
 
 function draw() {
@@ -292,6 +295,7 @@ function draw() {
   gl.uniformMatrix3fv(uni("uM"), false, transpose(m));
   gl.uniformMatrix3fv(uni("uMRef"), false, transpose(mRef));
   gl.uniformMatrix3fv(uni("uHue"), false, transpose(hueMatrix(p.look)));
+  gl.uniformMatrix3fv(uni("uPost"), false, transpose(p.post));
   gl.uniform1i(uni("uMono"), p.mono ? 1 : 0);
   gl.uniform1i(uni("uResidual"), state.residual && state.shot.residual ? 1 : 0);
   // part of the fine match: fitted on the camera JPEG like the residual
@@ -426,7 +430,7 @@ function sectionDirty(sec, T) {
     case "curves": return curvesEdited(T);
     case "wheels": return gradedOf(T).length > 0;
     case "hsl": return hslChangedOf(T);
-    case "adv": return matrixTyped(T);
+    case "adv": return matrixTyped(T) || !!postOf(T);
   }
   return false;
 }
@@ -453,7 +457,7 @@ function resetSection(sec) {
   const e = editOf(T);
   switch (sec) {
     case "base": Object.assign(e, { sat: 1, hue: 0, calib: neutralCalib() }); break;
-    case "adv": e.base = null; break;
+    case "adv": e.base = null; targetSpec(T).post = null; break;
     case "curves":
       for (const i of targetChannels(T)) delete state.chan.edits[i];
       applyExtCurves(T, extOf(T));
@@ -532,6 +536,36 @@ function renderAdvanced() {
     .join(" · ") + (sums.some((s) => Math.abs(s - 1) > 0.001) ? ` <span class="bad">${t("cast")}</span>` : "");
   const look = state.looks[T];
   $("addr").textContent = look ? `0x${look.address.toString(16)}` : "";
+  renderPost(T);
+}
+
+// the post matrix P (after the tone curve, docs/plan-post-matrix.md): typed in
+// or from a preset; the core refuses rows that do not sum to 1 and values the
+// camera's registers cannot hold
+function renderPost(T) {
+  const p = postOf(T) || ident();
+  const box = $("post");
+  box.innerHTML = "";
+  p.forEach((v, i) => {
+    const inp = document.createElement("input");
+    inp.type = "number";
+    inp.step = "0.01";
+    inp.value = v.toFixed(4);
+    if (Math.abs(v - (i % 4 === 0 ? 1 : 0)) > 1e-9) inp.classList.add("diff");
+    inp.onchange = () => {
+      const val = parseFloat(inp.value);
+      if (Number.isNaN(val)) return renderPost(T);
+      const cur = (postOf(T) || ident()).slice();
+      cur[i] = val;
+      // keep the row summing to 1: the diagonal takes up the difference
+      const r = Math.floor(i / 3);
+      if (i !== 4 * r) cur[4 * r] = 1 - (cur[3 * r] + cur[3 * r + 1] + cur[3 * r + 2] - cur[4 * r]);
+      targetSpec(T).post = cur;
+      update();
+    };
+    box.appendChild(inp);
+    if (i % 3 === 2) box.appendChild(document.createElement("span"));
+  });
 }
 
 // the header's export button and the list in the export dialog

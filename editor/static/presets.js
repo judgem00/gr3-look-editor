@@ -24,6 +24,7 @@ function targetExport(T) {
     for (const v of BLEACH_VARIANTS) m[v] = variantEffective(v);
   if (Object.keys(m).length) out.matrices = m;
   if (hslChangedOf(T)) out.hsl = hsl.looks[T];
+  if (postOf(T)) out.post = postOf(T);
   const idx = targetChannels(T);
   if (T === CROSS) {
     const ch = idx.filter(chanChanged);
@@ -186,6 +187,13 @@ function applyPreset(p, warn) {
     if (ed.ext) {
       if (state.extBases.some((x) => x.id === ed.ext)) Object.assign(s, { ext: ed.ext, source: T });
       else warn.push(t("e_ext", { name: ed.ext }));
+    }
+
+    // the post matrix: nine numbers with rows summing to 1 (the core checks the range)
+    if (spec.post != null) {
+      const ok = isMatrix(spec.post) && [0, 1, 2].every((r) => Math.abs(spec.post[3 * r] + spec.post[3 * r + 1] + spec.post[3 * r + 2] - 1) <= 1e-3);
+      if (ok) s.post = spec.post.slice();
+      else warn.push(t("e_post", { name: label(T) }));
     }
 
     // colour: sliders and the base if typed in; otherwise the exported matrix as the base

@@ -215,11 +215,22 @@ impl Session {
         Ok(out)
     }
 
-    /// POST /api/target {target, source, effects_off}: make `target` a look of
-    /// the user's built from `source` (default: itself); `remove: true` gives it
+    /// the post matrix a target keeps when a request changes something else
+    fn post_of(&self, name: &str) -> Option<[f64; 9]> {
+        self.target(name).and_then(|t| t.post)
+    }
+
+    /// POST /api/target {target, source, effects_off, post}: make `target` a
+    /// look of the user's built from `source` (default: itself), with a post
+    /// matrix (9 values or null; default: as it had); `remove: true` gives it
     /// back to stock (Cross Process goes back to its own data)
     pub fn set_target(&mut self, body: &Value) -> Result<Value, String> {
         let name = body.get("target").and_then(|v| v.as_str()).unwrap_or("");
+        let post = match body.get("post") {
+            Some(v) if v.is_null() => None,
+            Some(v) => Some(crate::postmatrix::parse(v)?),
+            None => self.post_of(name),
+        };
         let mut list: Vec<Target> = self.targets.iter().filter(|t| t.name != name).cloned().collect();
         if body.get("remove").and_then(|v| v.as_bool()) == Some(true) {
             if name == CROSS {
@@ -230,7 +241,7 @@ impl Session {
         } else {
             let source = body.get("source").and_then(|v| v.as_str());
             let off = body.get("effects_off").and_then(|v| v.as_bool()).unwrap_or(false);
-            list.push(Target::new(name, source, off)?);
+            list.push(Target::new(name, source, off)?.with_post(post));
         }
         self.set_targets(list)?;
         Ok(self.firmware())
@@ -245,9 +256,10 @@ impl Session {
             return Err("unknown look".into());
         }
         let off = self.target(name).is_some_and(|t| t.effects_off);
+        let post = self.post_of(name);
         let mut list: Vec<Target> = self.targets.iter().filter(|t| t.name != name).cloned().collect();
-        if source.is_some() || off || name == CROSS {
-            list.push(Target::new(name, source, off)?);
+        if source.is_some() || off || post.is_some() || name == CROSS {
+            list.push(Target::new(name, source, off)?.with_post(post));
         } else if !targets::TARGETS.contains(&name) {
             return Err("unknown look".into());
         }
@@ -264,9 +276,10 @@ impl Session {
         }
         let off = !names.is_empty();
         let source = self.target(HDR).map(|t| t.source.clone());
+        let post = self.post_of(HDR);
         let mut list: Vec<Target> = self.targets.iter().filter(|t| t.name != HDR).cloned().collect();
-        if off || source.as_deref().is_some_and(|s| s != HDR) {
-            list.push(Target::new(HDR, source.as_deref(), off)?);
+        if off || post.is_some() || source.as_deref().is_some_and(|s| s != HDR) {
+            list.push(Target::new(HDR, source.as_deref(), off)?.with_post(post));
         }
         self.set_targets(list)?;
         Ok(self.firmware())
@@ -742,9 +755,14 @@ impl Session {
         use crate::{dng, fit};
         let tone_label = shot.image_tone.and_then(looks::image_tone_look);
         let shot_look = tone_label.map(|t| t.1);
-        let camera: Option<Vec<f32>> = camera_rgba
+        let mut camera: Option<Vec<f32>> = camera_rgba
             .filter(|c| c.len() == shot.width * shot.height * 4)
             .map(|c| c.chunks_exact(4).flat_map(|p| [p[0], p[1], p[2]]).map(|v| v as f32 / 255.0).collect());
+        // the fits below render the look without its post matrix: take it out
+        // of the camera JPEG too (the shot is taken as made with this look)
+        if let (Some(cam), Some(p)) = (camera.as_mut(), shot_look.and_then(|n| self.post_of(n))) {
+            crate::postmatrix::undo(&p, cam);
+        }
 
         let (mut gain, mut scale, mut residual) = (0x1800, 4000.0, None);
         // Retro and HDR Tone change the edges themselves: their shots show the

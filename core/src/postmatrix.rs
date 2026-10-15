@@ -124,6 +124,18 @@ fn wanted(hue: &[I3], base: &I3, p: &M3) -> Vec<I3> {
     }).collect()
 }
 
+/// undo P on camera JPEG pixels (RGB, 0..1): the camera applies P to the
+/// gamma-encoded RGB, so P^-1 there gives what the look renders without it
+pub fn undo(p: &M3, rgb: &mut [f32]) {
+    let inv = inverse(p);
+    for px in rgb.chunks_exact_mut(3) {
+        let c = [px[0] as f64, px[1] as f64, px[2] as f64];
+        for r in 0..3 {
+            px[r] = (inv[3 * r] * c[0] + inv[3 * r + 1] * c[1] + inv[3 * r + 2] * c[2]).clamp(0.0, 1.0) as f32;
+        }
+    }
+}
+
 /// the nine Q13 matrices for `p` on `table`'s hue matrices in `img`
 pub fn encode(img: &[u8], table: u32, p: &M3) -> Result<Vec<I3>, String> {
     let base = base(img);
@@ -193,6 +205,17 @@ mod tests {
     fn identity_p_keeps_hue_zero() {
         let w = &wanted(&[ID], &BASE, &[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0])[0];
         assert_eq!(*w, BASE);
+    }
+
+    #[test]
+    fn undo_inverts_p() {
+        let p = [0.65, 0.293, 0.057, 0.15, 0.793, 0.057, 0.15, 0.293, 0.557];
+        let g = [0.2f64, 0.5, 0.7];
+        let mut cam: Vec<f32> = (0..3).map(|r| (0..3).map(|k| p[3 * r + k] * g[k]).sum::<f64>() as f32).collect();
+        undo(&p, &mut cam);
+        for k in 0..3 {
+            assert!((cam[k] as f64 - g[k]).abs() < 1e-6);
+        }
     }
 
     #[test]

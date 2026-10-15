@@ -4,8 +4,9 @@
 // changing its source keeps them; only the base underneath changes.
 //
 // Per target the editor keeps
-//   state.targets[name]  { source, ext, effects_off }  (ext: id of an extra base;
-//                        effects_off: HDR Tone only, always on for it)
+//   state.targets[name]  { source, ext, effects_off, post }  (ext: id of an extra
+//                        base; effects_off: HDR Tone only, always on for it;
+//                        post: 3x3 after the tone curve or null, postmatrix.rs)
 //   state.edits[name]    { base | null, sat, hue, calib }  (base null: the source's matrix)
 //   state.chan.edits / state.grade  by channel index / set name, as before
 //   hsl.looks[name]      HSL curves (hsl.js)
@@ -24,7 +25,7 @@ const isTarget = (name) => targetNames().includes(name);
 function targetSpec(name) {
   // HDR Tone as a target always has its effects off (no local tone mapping):
   // the modified firmware never carries them, and only then is its matrix its own
-  if (!state.targets[name]) state.targets[name] = { source: name, ext: null, effects_off: name === HDR };
+  if (!state.targets[name]) state.targets[name] = { source: name, ext: null, effects_off: name === HDR, post: null };
   return state.targets[name];
 }
 
@@ -106,11 +107,16 @@ function clearExtCurves(name, x) {
 // ---- what is changed -----------------------------------------------------------
 
 const hslChangedOf = (name) => !hslNeutral(hsl.looks[name]);
+// the post matrix (after the tone curve): null or identity = none
+const postOf = (name) => {
+  const p = state.targets[name] && state.targets[name].post;
+  return p && !same(p, ident()) ? p : null;
+};
 function targetChanged(name) {
   if (!state.fw || !state.stock[name]) return false;
   const s = targetSpec(name);
   return s.source !== name || !!s.ext || !same(effective(name), state.stock[name].matrix) ||
-    curvesForExport(name).length > 0 || hslChangedOf(name);
+    curvesForExport(name).length > 0 || hslChangedOf(name) || !!postOf(name);
 }
 const changedTargets = () => targetNames().filter(targetChanged);
 
@@ -131,6 +137,7 @@ function changesOf(name) {
   if (sets.size) out.push(name === CROSS ? t("ex_curves_sets", { list: SET_ORDER.filter((n) => sets.has(n)).map(setLabel).join(", ") }) : t("ex_curves"));
   if (gradedOf(name).length) out.push(t("ex_wheels"));
   if (hslChangedOf(name)) out.push(t("ex_hsl"));
+  if (postOf(name)) out.push(t("ex_post"));
   if (targetSpec(name).effects_off) out.push(t("ex_hdr_off"));
   return out;
 }
@@ -156,10 +163,12 @@ async function runSync() {
   try {
     for (const name of targetNames()) {
       const s = targetSpec(name);
-      const want = targetChanged(name) ? { source: s.source, effects_off: s.effects_off } : null;
+      const want = targetChanged(name) ? { source: s.source, effects_off: s.effects_off, post: postOf(name) } : null;
       const have = (state.fw.targets || []).find((x) => x.name === name);
-      const ok = want ? have && have.source === want.source && have.effects_off === want.effects_off
-        : !have || (name === CROSS && have.source === CROSS && !have.effects_off);
+      const samePost = (a, b) => (!a && !b) || (!!a && !!b && a.every((v, k) => v === b[k]));
+      const ok = want ? have && have.source === want.source && have.effects_off === want.effects_off &&
+          samePost(have.post, want.post)
+        : !have || (name === CROSS && have.source === CROSS && !have.effects_off && !have.post);
       if (ok) continue;
       const res = await api("/api/target", {
         method: "POST",
