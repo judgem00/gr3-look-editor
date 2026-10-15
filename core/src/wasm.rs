@@ -65,6 +65,31 @@ impl Prepared {
 }
 
 #[wasm_bindgen]
+extern "C" {
+    /// worker.js: one step of a running LUT fit
+    #[wasm_bindgen(js_name = lutFitProgress)]
+    fn lut_fit_progress(step: &str);
+}
+
+#[wasm_bindgen]
+pub struct LutInfo {
+    meta: String,
+    data: Vec<f32>,
+}
+
+#[wasm_bindgen]
+impl LutInfo {
+    #[wasm_bindgen(getter)]
+    pub fn meta(&self) -> String {
+        self.meta.clone()
+    }
+    /// the LUT's values, R fastest, 3 per point
+    pub fn take_data(&mut self) -> Vec<f32> {
+        std::mem::take(&mut self.data)
+    }
+}
+
+#[wasm_bindgen]
 impl Editor {
     /// check, decode and self-test the update file the user dropped in
     #[wasm_bindgen(constructor)]
@@ -103,6 +128,17 @@ impl Editor {
     pub fn export(&self, body: &str) -> Result<Export, JsError> {
         let (r, update, preset) = self.session.export(&parse(body)?).map_err(js)?;
         Ok(Export { result: r.to_string(), update, preset })
+    }
+
+    pub fn lut_info(&self, text: &str) -> Result<LutInfo, JsError> {
+        let (meta, data) = self.session.lut_info(text).map_err(js)?;
+        Ok(LutInfo { meta: meta.to_string(), data })
+    }
+
+    /// blocks the worker for some seconds; progress goes to lutFitProgress
+    pub fn lut_fit(&self, text: &str, body: &str) -> Result<String, JsError> {
+        let r = self.session.lut_fit(text, &parse(body)?, &mut |s| lut_fit_progress(s)).map_err(js)?;
+        Ok(r.to_string())
     }
 
     /// decode a DNG; afterwards decode `dng_jpeg()` to RGBA at

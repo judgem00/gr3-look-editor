@@ -10,8 +10,9 @@ exported as usual (v2 preset, `"targets"`). Two kinds of LUT feed it:
 
 Status 2026-10-15: plan agreed (fit in the core against a LUT, spektrafilm
 only makes LUTs, normalised like a print scan, test flash Portra 400 full /
-without P / without HSL). Phases 0–2 done: the LUT costs nothing
-measurable; tool, core fitter and CLI built and tested (no editor UI yet).
+without P / without HSL). Phases 0–4 done: the LUT costs nothing
+measurable; tool, core fitter, CLI and the editor's "Fit to a LUT" built
+and tested. Open: checks on an exported image (5), test firmware (6).
 
 Background: [spektrafilm-fit.md](spektrafilm-fit.md) (offline prototype,
 mean ΔE2000 1.68 with everything), [plan-post-matrix.md](plan-post-matrix.md)
@@ -207,6 +208,15 @@ Everything stays editable afterwards; the fit only sets the start.
 3. **Session / WASM**: `fit_lut(lut bytes, {target, input, post, hsl})` →
    the target spec (as a v2 preset's target) + report; progress through the
    worker.
+
+   **Done 2026-10-15.** `Session::lut_info` (what a .cube holds, its values
+   and the fitter's camera for the preview) and `Session::lut_fit` (from the
+   stock image, so a target on Standard does not change the model); in
+   wasm.rs `lut_info` / `lut_fit`, progress through `lutFitProgress`, which
+   worker.js posts as `{id, progress}` and bridge.js hands to the caller
+   (`api.lut`, `api.lutFit`, not fetch-like: the values go as a typed
+   array). The fit runs in 22 s in the browser (native 6.5 s), same
+   numbers as the CLI.
 4. **Editor**: in a target's Advanced section, "Fit to LUT…": file, input
    space (pre-set from `GR-INPUT`), with P / with HSL, run, report, apply.
    Apply sets source Standard and the parts above, so preview, space meter
@@ -214,6 +224,25 @@ Everything stays editable afterwards; the fit only sets the start.
    "before" side (LUT on the shot's Standard render or linear data), so the
    user sees how close the fit is on their own photo. `edit.lut` survives
    load and export. Docs: `editor.md` (English), i18n for the dialog.
+
+   **Done 2026-10-15.** `editor/static/lut.js`: button under the source
+   (disabled with a hint on targets that cannot take a LUT), dialog (file,
+   input pre-set from `GR-INPUT`, P and HSL switches, progress with
+   seconds, report table), the fit applied through presets.js'
+   `applyTarget` (split out of `applyPreset`) after the target's edits are
+   cleared, `hslLoad(…, keep)` for one target. "Compare LUT": a 3D texture
+   (RGB16F, trilinear) in the preview shader, input as in the fit. First
+   check showed the LUT side 9 levels brighter: the photo's tone curve has
+   its own gain (7689 on MR029360, the fitter 6144). The LUT side now gets
+   its exposure through the photo's curve and back through Standard's (on
+   luminance): 4.0 levels mean difference, equal mean brightness. In the
+   browser: fit, compare, export (space ok), preset round trip (same
+   export after load), refusals (1D LUT, Cross Process), German texts.
+   Session test `session_lut_requests`.
+
+   Finding for the camera: a fitted look sits on Standard's curve at the
+   default gain. When the camera picks another gain for a shot, the look
+   shifts in brightness the way Standard does.
 5. **Checks** (done when all pass): `cargo test`; a spektrafilm LUT fitted
    in the browser loads, previews plausibly (grey ramp, skin, saturated
    colours, checked in the browser) and exports; `tools/verify-tuning.py

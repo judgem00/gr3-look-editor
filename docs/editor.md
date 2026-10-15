@@ -84,7 +84,8 @@ come from the firmware ([docs/look-mapping.md](look-mapping.md)).
   desaturation.
 
 Views: **Edited**, **Before / After** (firmware original against the edit,
-colour and tone curve), **Compare camera**, **Camera JPEG**.
+colour and tone curve), **Compare camera**, **Camera JPEG**, **Compare LUT**
+(the LUT a target was fitted to, see below).
 
 ## Editing
 
@@ -192,6 +193,30 @@ its own ColorMatrix set and its own matrix in the free area `0x53002080…`
   ([docs/look-mapping.md](look-mapping.md)). The sliders show their effect as
   a colour gradient; a low colour temperature renders the photo blue, a high
   one warm. Not exported, not stored in presets.
+- **Fit to a LUT** (button under the source; Standard, Vivid, Positive
+  Film, Retro, Negative Film): the core fits the target's look to a 3D LUT
+  (`.cube`, up to 65³) -- look matrix, RGB curves, HSL and post matrix,
+  each optional except matrix and curves -- on the camera's own encodings
+  (`core/src/lutfit.rs`, [plan-spektrafilm-fitter.md](plan-spektrafilm-fitter.md)).
+  The LUT's input is asked for: **a finished image** (the LUT applied to the
+  camera's Standard rendering, the usual "creative LUT"), **linear sRGB**,
+  or **GR log** (`tools/spektrafilm-lut.py` writes it into the file as
+  `# GR-INPUT: grlog -8 12`; spektrafilm films normalised like a print
+  scan). The fit takes about 20 s in the browser (the worker reports each
+  pass) and replaces the target's source (Standard), colour, curves, wheels
+  and HSL; everything stays editable. The dialog shows ΔE2000 against the
+  LUT on test colours the fit did not see, for matrix + curves, the model
+  with HSL and P, and the result as exported. The preset keeps
+  `edit.lut` (file name, title, SHA-256, input, report), not the LUT.
+  **Compare LUT** shows the LUT on the photo next to the edit while the
+  LUT is loaded. The photo's tone curve has its own gain (fitted per shot,
+  as the camera sets it at runtime), the fitter assumes Standard's default
+  curve: the LUT side gets its exposure through the photo's curve and back
+  through Standard's, on luminance, so both sides mean the same grey. The
+  camera does the same with a fitted look: it inherits the shot's gain like
+  any look. On MR029360 (Portra 400 on Negative Film, fine match off) the
+  two sides differ by 4.0 levels on average, with the same mean brightness
+  (without the gain mapping: 10.2, the LUT side 9 levels brighter).
 
 ## Export
 

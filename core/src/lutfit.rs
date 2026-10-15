@@ -40,7 +40,7 @@ pub const TARGETS: [&str; 5] = ["Standard", "Vivid", "PositiveFilm", "Retro", "N
 pub enum Input {
     /// sRGB-encoded image: the LUT on the camera's Standard rendering
     Display,
-    /// linear sRGB, 0..1
+    /// linear sRGB, in the LUT's domain (clamped to it)
     Linear,
     /// u = (log2(L / 0.18) - lo) / span (tools/spektrafilm-lut.py: -8, 12)
     GrLog { lo: f64, span: f64 },
@@ -178,11 +178,6 @@ impl Lut {
         let v3 = at([1, 1, 1]);
         let (f1, f2, f3) = (f[ax[0]], f[ax[1]], f[ax[2]]);
         std::array::from_fn(|c| (1.0 - f1) * v0[c] + (f1 - f2) * v1[c] + (f2 - f3) * v2[c] + f3 * v3[c])
-    }
-
-    /// in the LUT's domain, from a 0..1 coordinate per channel
-    fn domain(&self, u: [f64; 3]) -> [f64; 3] {
-        std::array::from_fn(|c| self.min[c] + u[c] * (self.max[c] - self.min[c]))
     }
 }
 
@@ -529,10 +524,11 @@ fn target_lab(cam: &Camera, lut: &Lut, input: Input, s: &Samples) -> Vec<[f64; 3
     s.l.iter().enumerate().map(|(i, &l)| {
         let u = match input {
             Input::Display => standard.render(cam, i, l),
-            Input::Linear => l.map(|v| v.clamp(0.0, 1.0)),
+            Input::Linear => l,
             Input::GrLog { lo, span } => l.map(|v| (((v.max(1e-12) / 0.18).log2() - lo) / span).clamp(0.0, 1.0)),
         };
-        lab(lut.lookup(lut.domain(u)).map(|v| v.clamp(0.0, 1.0)))
+        // in the LUT's domain units (lookup clamps to the domain)
+        lab(lut.lookup(u).map(|v| v.clamp(0.0, 1.0)))
     }).collect()
 }
 

@@ -2,7 +2,7 @@
 //! file the user dropped in, the decoded image and the current look data.
 //! Requests and answers are JSON, routed by editor/static/bridge.js.
 
-use crate::{chan, curvesel, gamma, grfw, looks, multiaxial, space, tone};
+use crate::{chan, curvesel, gamma, grfw, looks, lutfit, multiaxial, space, tone};
 use crate::targets::{self, Target, CROSS};
 use crate::gamma::{Engine, ToneParams};
 use serde_json::{json, Map, Value};
@@ -213,6 +213,42 @@ impl Session {
         let mut out = multiaxial::encode(&h, &ycc)?.to_json();
         out["ycc"] = json!(ycc);
         Ok(out)
+    }
+
+    /// POST /api/lut {cube}: what a .cube holds, and what the preview needs
+    /// to show it next to the edit: the LUT's values (R fastest) and the
+    /// fitter's camera (scale of its scene colours, Standard's tone curve
+    /// and matrix, for display-referred LUTs). From the stock image.
+    pub fn lut_info(&self, text: &str) -> Result<(Value, Vec<f32>), String> {
+        let lut = lutfit::parse_cube(text)?;
+        let cam = lutfit::Camera::new(&self.stock, "Standard")?;
+        let data = lut.data.iter().flat_map(|v| v.map(|x| x as f32)).collect();
+        let info = json!({
+            "size": lut.size, "title": lut.title, "min": lut.min, "max": lut.max,
+            "input": lut.input.map(|i| i.to_json()),
+            "scale": cam.scale, "tone": cam.tone, "standard": cam.standard,
+            "targets": lutfit::TARGETS,
+        });
+        Ok((info, data))
+    }
+
+    /// POST /api/lut/fit {name, target, input, post, hsl} with the .cube:
+    /// the target's look fitted to the LUT, as a v2 preset's target
+    /// (source Standard; edit.lut says where it came from), and the report
+    pub fn lut_fit(&self, text: &str, body: &Value, progress: &mut dyn FnMut(&str)) -> Result<Value, String> {
+        let lut = lutfit::parse_cube(text)?;
+        let target = body.get("target").and_then(|v| v.as_str()).unwrap_or("");
+        let cam = lutfit::Camera::new(&self.stock, target)?;
+        let flag = |k: &str| body.get(k).and_then(|v| v.as_bool()).unwrap_or(true);
+        let input = match body.get("input").and_then(|v| v.as_str()) {
+            Some(s) => Some(lutfit::Input::parse(s)?),
+            None => None,
+        };
+        let opt = lutfit::Options { post: flag("post"), hsl: flag("hsl"), input, ..lutfit::Options::default() };
+        let fit = lutfit::fit(&cam, &lut, &opt, progress)?;
+        let name = body.get("name").and_then(|v| v.as_str()).unwrap_or("");
+        let spec = fit.spec(json!({ "name": name, "title": lut.title, "sha256": sha256_hex(text.as_bytes()) }));
+        Ok(json!({ "target": target, "spec": spec, "report": fit.report }))
     }
 
     /// the post matrix a target keeps when a request changes something else

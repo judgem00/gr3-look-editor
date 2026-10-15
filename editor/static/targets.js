@@ -4,9 +4,10 @@
 // changing its source keeps them; only the base underneath changes.
 //
 // Per target the editor keeps
-//   state.targets[name]  { source, ext, effects_off, post }  (ext: id of an extra
-//                        base; effects_off: HDR Tone only, always on for it;
-//                        post: 3x3 after the tone curve or null, postmatrix.rs)
+//   state.targets[name]  { source, ext, effects_off, post, lut }  (ext: id of an
+//                        extra base; effects_off: HDR Tone only, always on for it;
+//                        post: 3x3 after the tone curve or null, postmatrix.rs;
+//                        lut: the LUT it was fitted to, lut.js, or null)
 //   state.edits[name]    { base | null, sat, hue, calib }  (base null: the source's matrix)
 //   state.chan.edits / state.grade  by channel index / set name, as before
 //   hsl.looks[name]      HSL curves (hsl.js)
@@ -25,7 +26,7 @@ const isTarget = (name) => targetNames().includes(name);
 function targetSpec(name) {
   // HDR Tone as a target always has its effects off (no local tone mapping):
   // the modified firmware never carries them, and only then is its matrix its own
-  if (!state.targets[name]) state.targets[name] = { source: name, ext: null, effects_off: name === HDR, post: null };
+  if (!state.targets[name]) state.targets[name] = { source: name, ext: null, effects_off: name === HDR, post: null, lut: null };
   return state.targets[name];
 }
 

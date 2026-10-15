@@ -42,6 +42,7 @@
         <button data-mode="ab" data-i18n="mode_ab" data-i18n-title="mode_ab_t">Before / After</button>
         <button data-mode="camera" data-i18n="mode_camera" data-i18n-title="mode_camera_t">Compare camera</button>
         <button data-mode="jpeg" data-i18n="mode_jpeg" data-i18n-title="mode_jpeg_t">Camera JPEG</button>
+        <button data-mode="lut" data-i18n="mode_lut" data-i18n-title="mode_lut_t" disabled>Compare LUT</button>
       </div>
       <div class="shot" id="shot-info"></div>
     </div>
@@ -113,6 +114,7 @@
         <select id="source" disabled></select>
       </div>
       <p class="note" id="pick-note" hidden></p>
+      <button class="btn" id="lut-open" type="button" data-i18n="lut_open" hidden>Fit to a LUT …</button>
     </div>
 
     <!-- one scrolling column of the target's edits -->
@@ -237,6 +239,31 @@
   </div>
 </section>
 
+<dialog id="lut-dlg">
+  <h2><span data-i18n="lut_title">Fit to a LUT</span> · <span id="lut-target"></span></h2>
+  <p class="note muted" data-i18n-html="lut_intro"></p>
+  <label class="btn wide">
+    <span id="lut-file-name" data-i18n="lut_pick">Choose a .cube file …</span>
+    <input type="file" id="lut-file" accept=".cube,.CUBE" hidden>
+  </label>
+  <div class="slider"><label for="lut-input" data-i18n="lut_input">The LUT expects</label>
+    <select id="lut-input">
+      <option value="display" data-i18n="lut_in_display">a finished image (applied to Standard)</option>
+      <option value="linear" data-i18n="lut_in_linear">linear sRGB</option>
+      <option value="grlog" data-i18n="lut_in_grlog">GR log (spektrafilm tool)</option>
+    </select></div>
+  <label class="check"><input type="checkbox" id="lut-post" checked>
+    <span data-i18n="lut_post">Post matrix (after the tone curve)</span></label>
+  <label class="check"><input type="checkbox" id="lut-hsl" checked>
+    <span data-i18n="lut_hsl">HSL</span></label>
+  <p class="note warn" data-i18n="lut_replaces"></p>
+  <button class="btn primary wide" id="lut-fit" data-i18n="lut_fit" disabled>Fit</button>
+  <p class="note" id="lut-msg"></p>
+  <table class="lut-report" id="lut-report" hidden></table>
+  <p class="note muted" id="lut-report-note" data-i18n="lut_report_note" hidden></p>
+  <form method="dialog"><button class="btn" data-i18n="close">Close</button></form>
+</dialog>
+
 <dialog id="export-dlg">
   <h2 data-i18n="export_title">Export</h2>
   <p class="note" id="export-none" data-i18n="export_none" hidden></p>
@@ -299,5 +326,6 @@
 <script src="targets.js"></script>
 <script src="app.js"></script>
 <script src="presets.js"></script>
+<script src="lut.js"></script>
 </body>
 </html>

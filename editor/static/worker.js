@@ -51,6 +51,16 @@ const ops = {
     e.free();
     return [out, [update.buffer]];
   },
+  // a .cube: what it holds, and its values for the preview
+  lut({ text }) {
+    const i = editor.lut_info(text);
+    const data = i.take_data();
+    const out = { meta: JSON.parse(i.meta), data };
+    i.free();
+    return [out, [data.buffer]];
+  },
+  // the LUT fitter: blocks this worker for some seconds, reporting each step
+  lut_fit: ({ text, body }) => JSON.parse(editor.lut_fit(text, body)),
   async dng({ bytes, name }) {
     const data = new Uint8Array(bytes);
     editor.open_dng(data);
@@ -67,7 +77,12 @@ const ops = {
   },
 };
 
+// called by the core during a LUT fit (wasm.rs): progress for the running request
+let running = 0;
+globalThis.lutFitProgress = (step) => postMessage({ id: running, progress: step });
+
 onmessage = async ({ data: { id, op, args } }) => {
+  running = id;
   try {
     await ready;
     if (op !== "open" && !editor) throw new Error("no firmware loaded");

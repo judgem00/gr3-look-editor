@@ -218,3 +218,25 @@ fn fitted_targets_export() {
     let err = s.export(&json!({ "targets": targets })).unwrap_err();
     assert!(err.contains("not enough free space"), "{err}");
 }
+
+/// the session's requests (wasm.rs): what a .cube holds, and refusals
+/// before any fitting
+#[test]
+fn session_lut_requests() {
+    let s = need!(session());
+    let text = cube(5, "TITLE \"five\"\n# GR-INPUT: grlog -8 12", |c| c);
+    let (info, data) = s.lut_info(&text).unwrap();
+    assert_eq!(info["size"], 5);
+    assert_eq!(info["title"], "five");
+    assert_eq!(info["input"], "grlog -8 12");
+    assert_eq!(info["tone"].as_array().unwrap().len(), 256);
+    assert_eq!(info["standard"].as_array().unwrap().len(), 9);
+    assert!(info["scale"].as_f64().unwrap() > 1000.0);
+    assert_eq!(data.len(), 3 * 125);
+    assert_eq!(&data[3..6], &[0.25, 0.0, 0.0]);
+    assert!(s.lut_info("LUT_1D_SIZE 2\n").is_err());
+
+    let fit = |body: Value| s.lut_fit(&text, &body, &mut |_| {});
+    assert!(fit(json!({ "target": "CrossProcess" })).unwrap_err().contains("not \"CrossProcess\""));
+    assert!(fit(json!({ "target": "Vivid", "input": "slog3" })).unwrap_err().contains("display, linear or grlog"));
+}

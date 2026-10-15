@@ -382,9 +382,10 @@ function initHsl() {
 }
 
 // a preset's "hsl": {look: {curves | bands, protect}}; returns warnings.
-// Bands (presets from before the curves) become curve points.
-function hslLoad(p) {
-  hsl.looks = {};
+// Bands (presets from before the curves) become curve points. `keep` keeps
+// the other looks' HSL (a single target, lut.js).
+function hslLoad(p, keep = false) {
+  if (!keep) hsl.looks = {};
   const warn = [];
   const num = (v, lo, hi, d) => (Number.isFinite(+v) ? Math.max(lo, Math.min(hi, +v)) : d);
   for (const [name, v] of Object.entries(p || {})) {

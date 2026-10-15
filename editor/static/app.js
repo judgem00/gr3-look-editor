@@ -160,7 +160,16 @@ uniform vec3 uVig;     // lens shading correction: 1 + a r2 + b r4 + c r6
 uniform vec2 uSize;
 uniform vec3 uWb;
 uniform float uExp, uScale, uSplit;
-uniform int uMode;   // 0 edit, 1 original|edit, 2 camera|edit, 3 camera
+uniform int uMode;   // 0 edit, 1 original|edit, 2 camera|edit, 3 camera, 4 LUT|edit
+// the LUT the target was fitted to (lut.js): on the scene colours of the fit
+uniform highp sampler3D uCube;
+uniform sampler2D uStd;      // Standard's tone curve, for display-referred LUTs
+uniform int uCubeIn;         // input: 0 display (on Standard), 1 linear, 2 grlog
+uniform vec2 uCubeLog;       // grlog: lo, span
+uniform vec3 uCubeMin, uCubeMax;
+uniform float uCubeN, uCubeScale;
+uniform mat3 uSensor, uStdM;
+uniform sampler2D uRemap;    // preview tone index -> the fitter's, same output on Standard
 
 ${HSL_GLSL}
 float lut(sampler2D t, float f) {   // single-channel table (residual), 256 texels
@@ -181,7 +190,8 @@ vec3 lut3(sampler2D t, vec3 f) {
     mix(texelFetch(t, ivec2(i.b, 0), 0).b, texelFetch(t, ivec2(i.b + 1, 0), 0).b, u.b));
 }
 
-vec3 render(mat3 m, sampler2D curve, bool ma) {
+// camera RGB after white balance (and lens shading)
+vec3 sensorIn() {
   // where the sensor clipped, white balance would invent a colour: cut all
   // channels at the level of the smallest gain, as the camera does (fit.rs)
   vec3 c = min(texture(uImg, uv).rgb * uWb, vec3(min(uWb.r, min(uWb.g, uWb.b))));
@@ -190,7 +200,29 @@ vec3 render(mat3 m, sampler2D curve, bool ma) {
     float r2 = dot(d, d) / (.25 * dot(uSize, uSize));
     c *= 1. + r2 * (uVig.x + r2 * (uVig.y + r2 * uVig.z));
   }
-  c = max(m * c, 0.);
+  return c;
+}
+
+// the LUT on the photo: scene colours scaled as the fitter's (lutfit.rs), whose
+// tone index is x * uCubeScale / 16 where the preview's is x * uScale / 16
+// The photo's tone curve has its own gain (fitted per shot, as the camera sets
+// it), the fitter assumes Standard's default: the exposure goes through the one
+// and back through the other, on luminance, so both sides mean the same grey.
+vec3 lutSide() {
+  vec3 L = max(uSensor * sensorIn(), 0.) * uExp;
+  float t = dot(L, vec3(.2126, .7152, .0722)) * uScale / 16.;
+  float j = t < 255. ? lut(uRemap, t) : t * texelFetch(uRemap, ivec2(255, 0), 0).r / 255.;
+  L *= t > 1e-4 ? j / t * uScale / uCubeScale : texelFetch(uRemap, ivec2(1, 0), 0).r * uScale / uCubeScale;
+  vec3 v;
+  if (uCubeIn == 0) v = clamp(lut3(uStd, max(uStdM * L, 0.) * uCubeScale / 16.) / 16384., 0., 1.);
+  else if (uCubeIn == 1) v = L;
+  else v = (log2(max(L, vec3(1e-12)) / .18) - uCubeLog.x) / uCubeLog.y;
+  vec3 g = clamp((v - uCubeMin) / (uCubeMax - uCubeMin), 0., 1.);
+  return texture(uCube, (g * (uCubeN - 1.) + .5) / uCubeN).rgb;
+}
+
+vec3 render(mat3 m, sampler2D curve, bool ma) {
+  vec3 c = max(m * sensorIn(), 0.);
   if (uMono) c = vec3((c.r + c.g + c.b) / 3.);
   c *= uExp;
   if (ma && uMa) c = multiaxial(c);
@@ -223,6 +255,7 @@ void main() {
   if (uMode == 3) c = cam;
   else if (uMode == 1 && left) c = render(uMRef, uLutRef, false);
   else if (uMode == 2 && left) c = cam;
+  else if (uMode == 4 && left) c = lutSide();
   else c = render(uM, uLut, true);
   o = vec4(c, 1);
 }`;
@@ -309,7 +342,8 @@ function draw() {
   gl.uniform1f(uni("uExp"), Math.pow(2, state.ev));
   gl.uniform1f(uni("uScale"), state.shot.scale);
   gl.uniform1f(uni("uSplit"), state.mode === "edit" || state.mode === "jpeg" ? -1 : state.split);
-  gl.uniform1i(uni("uMode"), { edit: 0, ab: 1, camera: 2, jpeg: 3 }[state.mode]);
+  gl.uniform1i(uni("uMode"), { edit: 0, ab: 1, camera: 2, jpeg: 3, lut: 4 }[state.mode]);
+  lutUniforms();
   hslUniforms();
   gl.uniform1i(uni("uTc"), 5);
   gl.uniform1i(uni("uTcOn"), tex.tc && state.params.shadowcorr > 0 ? 1 : 0);
@@ -327,7 +361,7 @@ function imageRect() {
 }
 
 function placeSplit() {
-  const show = state.shot && (state.mode === "ab" || state.mode === "camera");
+  const show = state.shot && (state.mode === "ab" || state.mode === "camera" || state.mode === "lut");
   $("split").hidden = !show;
   $("labels").hidden = !show;
   if (!show) return;
@@ -341,7 +375,8 @@ function placeSplit() {
   $("labels").style.width = `${r.w - 16}px`;
   $("labels").style.top = `${r.y + 8}px`;
   const T = state.current;
-  $("label-l").textContent = state.mode !== "ab" ? t("label_camera") : T ? t("label_stock", { look: label(T) }) : t("label_original");
+  $("label-l").textContent = state.mode === "lut" ? t("label_lut", { name: lut.shown[T] ? lut.shown[T].name : "" })
+    : state.mode !== "ab" ? t("label_camera") : T ? t("label_stock", { look: label(T) }) : t("label_original");
   $("label-r").textContent = T ? t("label_edited") : t("label_original");
 }
 
@@ -584,15 +619,17 @@ function update() {
   renderSections();
   renderChannelPanel();
   renderChanges();
+  renderLutButton();
   syncTargets();
   draw();
 }
 
+const markMode = () => document.querySelectorAll("#modes button").forEach((x) => x.classList.toggle("on", x.dataset.mode === state.mode));
 for (const b of document.querySelectorAll("#modes button")) {
   b.onclick = () => {
     if (b.disabled) return;
     state.mode = b.dataset.mode;
-    document.querySelectorAll("#modes button").forEach((x) => x.classList.toggle("on", x === b));
+    markMode();
     draw();
   };
 }
