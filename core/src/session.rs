@@ -463,7 +463,8 @@ impl Session {
     ///     {"targets": {"Vivid": {"source": "NegativeFilm", "matrices": {"Vivid": [9]},
     ///                            "hsl": {..}, "curves": [R, G, B], "edit": any},
     ///                  "CrossProcess": {"channels": {"3": [256], ..}, ..},
-    ///                  "HdrCuisine": {"effects_off": true, ..}}}
+    ///                  "HdrCuisine": {"effects_off": true, ..},
+    ///                  "NegativeFilm": {"post": [9], ..}}}
     ///
     /// Only the targets change; every other look stays byte-identical to
     /// stock. `edit` is the editor's own state, kept in the preset as it is.
@@ -473,7 +474,11 @@ impl Session {
         for (name, spec) in specs {
             let source = spec.get("source").and_then(|v| v.as_str());
             let off = spec.get("effects_off").and_then(|v| v.as_bool()).unwrap_or(false);
-            list.push(Target::new(name, source, off)?);
+            let post = match spec.get("post") {
+                Some(v) if !v.is_null() => Some(crate::postmatrix::parse(v).map_err(|e| format!("{name}: {e}"))?),
+                _ => None,
+            };
+            list.push(Target::new(name, source, off)?.with_post(post));
         }
         let list = targets::sorted(list)?;
         let mut matrices = Map::new();
