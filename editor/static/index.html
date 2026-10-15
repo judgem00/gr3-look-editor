@@ -16,6 +16,7 @@
   </div>
   <button class="btn ghost" id="help-open" type="button" data-i18n="help_open">How it works</button>
   <a class="btn ghost" href="tutorial.html" data-i18n="tutorial">Tutorial</a>
+  <button class="btn ghost credits-open" type="button" data-i18n="credits">Credits</button>
   <div class="open">
     <button class="btn accent" id="example-preset" type="button" data-i18n="example_preset">Load example preset</button>
     <label class="btn">
@@ -239,6 +240,7 @@
     <p class="note muted" data-i18n-html="gate_where"></p>
     <p class="note muted" data-i18n="gate_local"></p>
     <p class="note warn" data-i18n="gate_unofficial"></p>
+    <p class="note muted"><button class="link credits-open" type="button" data-i18n="credits_title">Credits and licences</button></p>
   </div>
 </section>
 
@@ -320,7 +322,22 @@
   </details>
   <p class="note" data-i18n-html="help_tutorial"></p>
   <p class="note warn" data-i18n="help_risk"></p>
+  <p class="note muted"><button class="link credits-open" type="button" data-i18n="credits_title">Credits and licences</button></p>
   <form method="dialog"><button class="btn primary" data-i18n="help_go">Let's go</button></form>
+</dialog>
+
+<dialog id="credits">
+  <h2 data-i18n="credits_title">Credits and licences</h2>
+  <p class="note" data-i18n="credits_intro"></p>
+  <ul class="howto credits">
+    <li data-i18n-html="credits_films"></li>
+    <li data-i18n-html="credits_fw"></li>
+    <li data-i18n-html="credits_libs"></li>
+    <li data-i18n-html="credits_tools"></li>
+  </ul>
+  <p class="note muted" data-i18n-html="credits_ricoh"></p>
+  <p class="note muted" data-i18n-html="credits_editor"></p>
+  <form method="dialog"><button class="btn" data-i18n="close">Close</button></form>
 </dialog>
 
 <script src="i18n.js"></script>

@@ -1327,6 +1327,7 @@ function renderWheels() {
 }
 
 $("help-open").onclick = () => $("help").showModal();
+for (const b of document.querySelectorAll(".credits-open")) b.onclick = () => $("credits").showModal();
 
 function renderVignetteNote() {
   const v = state.shot && state.shot.vignette;

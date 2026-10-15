@@ -294,3 +294,7 @@ header .btn { white-space: nowrap; }
 .lut-report tr.final td, .lut-report tr.final th { color: var(--text); font-weight: 600; }
 .pick .note a { color: var(--accent); }
 .pick-row .num:empty { visibility: hidden; }
+
+/* credits (index.html #credits) */
+button.link { background: none; border: 0; padding: 0; color: var(--accent); font: inherit; cursor: pointer; text-decoration: underline; }
+.howto.credits li { margin: 6px 0; }

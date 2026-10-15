@@ -134,6 +134,16 @@ const I18N = {
     post_adv: "Post matrix (after the tone curve)",
     post_note: "A 3×3 on the tone-mapped RGB, before the hue setting. Rows add up to 1; typing a value off the diagonal moves the diagonal so they do.",
     e_post: "{name}: post matrix left out (nine numbers, rows adding up to 1)",
+    // credits (index.html #credits)
+    credits: "Credits",
+    credits_title: "Credits and licences",
+    credits_intro: "This editor stands on the work of others. Thank you to everyone below.",
+    credits_films: "<b>Film looks: <a href=\"https://github.com/andreavolpato/spektrafilm\" target=\"_blank\" rel=\"noopener\">spektrafilm</a></b> by Andrea Volpato. The editor's 132 film looks were fitted to spektrafilm's film and print profiles: every film and print was rendered with spektrafilm as a 3D LUT, and the camera's look parameters were fitted to that LUT. The fitted data (<code>films/spektrafilm.json</code>) is derived from those profiles and licensed <a href=\"films/LICENSE.txt\" target=\"_blank\" rel=\"noopener\">CC BY-SA 4.0</a> (<a href=\"films/CHANGELOG.txt\" target=\"_blank\" rel=\"noopener\">CHANGELOG</a>). spektrafilm's simulation code (GPLv3) only ran offline to make the LUTs and is not part of the editor. spektrafilm and its author are not involved in this editor.",
+    credits_fw: "<b>Firmware research:</b> <a href=\"https://github.com/hhornbacher/gr3x-fw-hack\" target=\"_blank\" rel=\"noopener\">hhornbacher/gr3x-fw-hack</a>, the exploration of the GR firmware this editor builds on. <a href=\"https://github.com/idontknownihil/gr3-film-mods\" target=\"_blank\" rel=\"noopener\">idontknownihil/gr3-film-mods</a>: the per-look curve selector (variant patch, RAM pointer rewrite of the curve library, HDR effect switches), tested on a GR III; the editor's emulator harness for its checks is adapted from it (MIT).",
+    credits_libs: "<b>Libraries compiled into the editor</b> (MIT or Apache-2.0): serde, serde_json, itoa, zmij (David Tolnay and contributors), memchr (Andrew Gallant), sha2, digest, block-buffer, crypto-common (RustCrypto), generic-array, typenum, wasm-bindgen, bumpalo, once_cell, cfg-if.",
+    credits_tools: "<b>Tools used offline</b>, not part of the editor: <a href=\"https://www.unicorn-engine.org\" target=\"_blank\" rel=\"noopener\">Unicorn Engine</a> (GPLv2) for the firmware checks; <a href=\"https://www.colour-science.org\" target=\"_blank\" rel=\"noopener\">colour-science</a>, NumPy, SciPy and scikit-image (BSD) for fits and evaluations; wasm-pack for the build.",
+    credits_ricoh: "GR, GR III and GR IIIx are products and trademarks of Ricoh Imaging. This is an unofficial project, not affiliated with or endorsed by Ricoh Imaging. The editor does not distribute Ricoh's firmware: you load your own copy, and everything stays in your browser.",
+    credits_editor: "The editor: <a href=\"https://github.com/judgem00/gr3-look-editor\" target=\"_blank\" rel=\"noopener\">judgem00/gr3-look-editor</a>, MIT licence; the film data in <code>films/</code>: CC BY-SA 4.0.",
     // fit to a LUT (lut.js)
     lut_open: "Fit to a LUT …", lut_open_t: "Fit this target's look to a 3D LUT (.cube)",
     lut_not_here: "A LUT can be fitted for Standard, Vivid, Positive Film, Retro and Negative Film",
@@ -310,6 +320,16 @@ const I18N = {
     post_adv: "Post-Matrix (nach der Tonkurve)",
     post_note: "Eine 3×3-Matrix auf dem RGB nach der Tonkurve, vor dem Farbton-Regler. Die Zeilen ergeben 1; ein Wert neben der Diagonale verschiebt die Diagonale entsprechend.",
     e_post: "{name}: Post-Matrix ausgelassen (neun Zahlen, Zeilensummen 1)",
+    // Credits (index.html #credits)
+    credits: "Credits",
+    credits_title: "Credits und Lizenzen",
+    credits_intro: "Dieser Editor baut auf der Arbeit anderer auf. Danke an alle hier.",
+    credits_films: "<b>Film-Looks: <a href=\"https://github.com/andreavolpato/spektrafilm\" target=\"_blank\" rel=\"noopener\">spektrafilm</a></b> von Andrea Volpato. Die 132 Film-Looks des Editors wurden an die Film- und Print-Profile von spektrafilm gefittet: Jeder Film und jedes Print wurde mit spektrafilm als 3D-LUT gerendert, und die Look-Parameter der Kamera wurden an diese LUT gefittet. Die gefitteten Daten (<code>films/spektrafilm.json</code>) sind aus diesen Profilen abgeleitet und stehen unter <a href=\"films/LICENSE.txt\" target=\"_blank\" rel=\"noopener\">CC BY-SA 4.0</a> (<a href=\"films/CHANGELOG.txt\" target=\"_blank\" rel=\"noopener\">CHANGELOG</a>). Der Simulationscode von spektrafilm (GPLv3) lief nur offline, um die LUTs zu erzeugen, und ist nicht Teil des Editors. spektrafilm und sein Autor sind an diesem Editor nicht beteiligt.",
+    credits_fw: "<b>Firmware-Forschung:</b> <a href=\"https://github.com/hhornbacher/gr3x-fw-hack\" target=\"_blank\" rel=\"noopener\">hhornbacher/gr3x-fw-hack</a>, die Erkundung der GR-Firmware, auf der dieser Editor aufbaut. <a href=\"https://github.com/idontknownihil/gr3-film-mods\" target=\"_blank\" rel=\"noopener\">idontknownihil/gr3-film-mods</a>: der Kurvenselektor pro Look (Varianten-Patch, Umbiegen der Kurvenbibliothek im RAM, HDR-Effektschalter), auf einer GR III getestet; der Emulator-Rahmen für die Prüfungen des Editors ist davon abgeleitet (MIT).",
+    credits_libs: "<b>Bibliotheken, die in den Editor kompiliert sind</b> (MIT oder Apache-2.0): serde, serde_json, itoa, zmij (David Tolnay und Mitwirkende), memchr (Andrew Gallant), sha2, digest, block-buffer, crypto-common (RustCrypto), generic-array, typenum, wasm-bindgen, bumpalo, once_cell, cfg-if.",
+    credits_tools: "<b>Offline genutzte Werkzeuge</b>, nicht Teil des Editors: <a href=\"https://www.unicorn-engine.org\" target=\"_blank\" rel=\"noopener\">Unicorn Engine</a> (GPLv2) für die Firmware-Prüfungen; <a href=\"https://www.colour-science.org\" target=\"_blank\" rel=\"noopener\">colour-science</a>, NumPy, SciPy und scikit-image (BSD) für Fits und Auswertungen; wasm-pack für den Build.",
+    credits_ricoh: "GR, GR III und GR IIIx sind Produkte und Marken von Ricoh Imaging. Dies ist ein inoffizielles Projekt, nicht mit Ricoh Imaging verbunden oder von Ricoh unterstützt. Der Editor verbreitet keine Ricoh-Firmware: Du lädst deine eigene Kopie, und alles bleibt in deinem Browser.",
+    credits_editor: "Der Editor: <a href=\"https://github.com/judgem00/gr3-look-editor\" target=\"_blank\" rel=\"noopener\">judgem00/gr3-look-editor</a>, MIT-Lizenz; die Filmdaten in <code>films/</code>: CC BY-SA 4.0.",
     // an eine LUT fitten (lut.js)
     lut_open: "An LUT fitten …", lut_open_t: "Den Look dieses Ziels an eine 3D-LUT (.cube) fitten",
     lut_not_here: "Eine LUT lässt sich für Standard, Vivid, Positive Film, Retro und Negative Film fitten",
