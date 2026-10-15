@@ -166,6 +166,12 @@ which found the variant patch, the RAM pointer rewrite of the curve library
 and the HDR effect switches and tested them on a GR III; `tools/emu.py` is
 adapted from its Unicorn harness (MIT). Its film fits are not used here.
 
+The film looks (`editor/static/films/`) are derived from
+[spektrafilm](https://github.com/andreavolpato/spektrafilm) by Andrea
+Volpato: its film and print profiles, rendered and fitted to the camera's
+look parameters (see `editor/static/films/CHANGELOG.txt`).
+
 ## License
 
-MIT, see [LICENSE](LICENSE).
+MIT, see [LICENSE](LICENSE). Except `editor/static/films/`: derived from
+spektrafilm, licensed CC BY-SA 4.0 (`editor/static/films/LICENSE.txt`).

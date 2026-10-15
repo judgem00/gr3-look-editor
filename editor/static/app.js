@@ -362,6 +362,7 @@ function renderPickers() {
   if (!state.fw) return;
   const T = state.current;
   const tsel = $("target");
+  if (!T) $("print-row").hidden = true;
   tsel.innerHTML = `<option value="">${esc(t("target_choose"))}</option>` + targetNames().map((n) =>
     `<option value="${esc(n)}">${esc(label(n))} — ${esc(targetState(n))}${targetChanged(n) ? " ●" : ""}</option>`).join("");
   tsel.value = T || "";
@@ -374,21 +375,26 @@ function renderPickers() {
   const looks = sourcesFor(T).map((n) =>
     opt(`look:${n}`, n === T ? t("src_own", { look: label(n) }) : label(n), SOURCE_HINTS[n] && t(SOURCE_HINTS[n])));
   const exts = state.extBases.map((x) => opt(`ext:${x.id}`, extText(x.label), extText(x.hint)));
-  // a target fitted to a LUT shows the LUT (it computes on Standard's tone curve)
-  const fitted = lutName(T);
+  // a target fitted to a LUT shows the LUT, one from the film library the film
+  // (both compute on Standard's tone curve)
+  const film = filmOf(T);
+  const fitted = !film && lutName(T);
   ssel.innerHTML = (fitted ? `<optgroup label="${esc(t("src_lut_group"))}">${opt("lut", fitted, t("src_lut_t"))}</optgroup>` : "") +
+    filmOptions(T, opt) +
     `<optgroup label="${esc(t("src_looks"))}">${looks.join("")}</optgroup>` +
     (exts.length ? `<optgroup label="${esc(t("src_extra"))}">${exts.join("")}</optgroup>` : "");
-  ssel.value = fitted ? "lut" : s.ext ? `ext:${s.ext}` : `look:${s.source}`;
-  ssel.title = fitted ? t("src_lut_t") : s.ext ? extText(extOf(T).tip) : "";
+  ssel.value = film ? `film:${film.film}` : fitted ? "lut" : s.ext ? `ext:${s.ext}` : `look:${s.source}`;
+  ssel.title = film ? film.title : fitted ? t("src_lut_t") : s.ext ? extText(extOf(T).tip) : "";
+  renderPrintRow(T);
 
   // at most one line about the target's rules
   const note = $("pick-note");
   const key = T === HDR ? "pick_hdr"
     : T === BLEACH && s.source !== BLEACH ? "pick_bleach"
     : T === CROSS ? "pick_cross" : null;
-  note.hidden = !key;
-  if (key) note.textContent = t(key);
+  note.hidden = !key && !film;
+  if (film) note.innerHTML = t("pick_film");      // the attribution spektrafilm's licence asks for
+  else if (key) note.textContent = t(key);
 }
 
 $("target").onchange = (e) => select(e.target.value || null);
@@ -397,6 +403,11 @@ $("source").onchange = (e) => setSource(state.current, e.target.value);
 // switch the target's base; curves, wheels, HSL and the sliders stay
 function setSource(T, value) {
   if (!T || value === "lut") return;
+  if (value.startsWith("film:")) {
+    // a film of the library: its own print, or the print it had
+    const f = filmOf(T), film = value.slice(5);
+    return applyFilm(T, film, f && f.film === film ? f.print : null);
+  }
   const s = targetSpec(T);
   const ext = value.startsWith("ext:") ? value.slice(4) : null;
   const source = ext ? T : value.slice(5);

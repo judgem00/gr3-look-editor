@@ -53,7 +53,7 @@ function renderExportDialog() {
   $("export-none").hidden = list.length > 0;
   $("changes").innerHTML = list.map((T) => {
     const s = targetSpec(T), x = extOf(T);
-    const from = x ? extText(x.label) : lutName(T) ? t("ex_lut", { name: lutName(T) })
+    const from = x ? extText(x.label) : lutName(T) ? t(lutFilm(T) ? "ex_film" : "ex_lut", { name: lutName(T) })
       : s.source !== T ? t("ex_from", { look: label(s.source) }) : t("ex_own");
     const what = changesOf(T);
     return `<li><b>${esc(label(T))}</b> <span class="muted">· ${esc(from)}</span>${what.length ? `<br><span class="muted">${esc(what.join(", "))}</span>` : ""}</li>`;
@@ -283,7 +283,7 @@ async function loadPreset(file) {
     if (p.firmware && state.fw.path && !p.firmware.endsWith(state.fw.path)) warn.push(t("e_source", { source: p.firmware }));
     const parts = list.map((T) => {
       const s = targetSpec(T), x = extOf(T);
-      return x ? `${label(T)} ← ${extText(x.label)}` : lutName(T) ? `${label(T)} ← LUT ${lutName(T)}`
+      return x ? `${label(T)} ← ${extText(x.label)}` : lutName(T) ? `${label(T)} ← ${lutFilm(T) ? "" : "LUT "}${lutName(T)}`
         : s.source !== T ? `${label(T)} ← ${label(s.source)}` : label(T);
     });
     ok = !warn.length;

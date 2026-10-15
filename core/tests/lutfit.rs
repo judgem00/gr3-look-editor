@@ -236,3 +236,31 @@ fn session_lut_requests() {
     assert!(fit(json!({ "target": "CrossProcess" })).unwrap_err().contains("not \"CrossProcess\""));
     assert!(fit(json!({ "target": "Vivid", "input": "slog3" })).unwrap_err().contains("display, linear or grlog"));
 }
+
+/// the editor's film library (editor/static/films/spektrafilm.json, written
+/// by examples/film_library.rs): every look goes through the export as the
+/// editor applies it, and the fits are as good as reported
+#[test]
+fn film_library_exports() {
+    let s = need!(session());
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../editor/static/films/spektrafilm.json");
+    let lib: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    let looks = lib["looks"].as_array().unwrap();
+    assert_eq!(looks.len(), 132);
+    assert!(lib["attribution"].as_str().unwrap().contains("CC BY-SA 4.0"));
+    let mut worst: f64 = 0.0;
+    for l in looks {
+        worst = worst.max(l["report"]["final"]["all"].as_f64().unwrap());
+    }
+    // every look in a release build (16 s); a debug build exports each 11th (one per film and more)
+    let step = if cfg!(debug_assertions) { 11 } else { 1 };
+    for l in looks.iter().step_by(step) {
+        let name = format!("{} / {}", l["film"], l["print"]);
+        let spec = json!({
+            "source": "Standard", "matrices": { "Vivid": l["matrix"] }, "curves": l["curves"],
+            "hsl": l["hsl"], "post": l["post"],
+        });
+        s.export(&json!({ "targets": { "Vivid": spec } })).unwrap_or_else(|e| panic!("{name}: {e}"));
+    }
+    assert!(worst < 3.5, "worst fit {worst}");
+}

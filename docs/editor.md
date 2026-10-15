@@ -213,6 +213,21 @@ its own ColorMatrix set and its own matrix in the free area `0x53002080…`
   keeps the fitted values and drops the LUT's name. The fitted look sits
   on Standard's curve at the default gain; the camera sets the gain per
   shot at runtime, and the look follows it like any look does.
+- **Films** (source picker, group "Films (spektrafilm)"; the same five
+  targets): 20 films from spektrafilm, every negative on each of 8 print
+  media (6 papers, the cine print films 2383 and 2393) and 4 slide films
+  scanned directly, 132 looks, fitted beforehand
+  (`editor/static/films/spektrafilm.json`, 747 KB, loaded once the firmware
+  is in). Choosing a film applies its fit at once, like a LUT fit; for a
+  negative a **Print** row under the source picks the print medium (the
+  film's own first, each with its ΔE2000). The note under the pickers
+  carries the attribution spektrafilm's licence asks for. Built by
+  `tools/spektrafilm-lut.py --all` (one process per core, 15 s on 18
+  cores) and `core/examples/film_library.rs` (one thread per core, 79 s);
+  `core/tests/lutfit.rs` exports every look. The fit does not depend on the
+  target (all colour looks share the YCbCr and hue data it uses), so one
+  fit per film and print serves every target. The data is CC BY-SA 4.0
+  (`films/LICENSE.txt`, `films/CHANGELOG.txt`), the editor's code MIT.
 
 ## Export
 

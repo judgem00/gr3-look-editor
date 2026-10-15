@@ -292,3 +292,5 @@ header .btn { white-space: nowrap; }
 .lut-report th:first-child { text-align: left; font-weight: normal; color: var(--muted); }
 .lut-report thead th { color: var(--muted); font-weight: normal; }
 .lut-report tr.final td, .lut-report tr.final th { color: var(--text); font-weight: 600; }
+.pick .note a { color: var(--accent); }
+.pick-row .num:empty { visibility: hidden; }

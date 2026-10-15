@@ -351,10 +351,43 @@ flat 6×6 blocks of the camera JPEG (10 000–30 000 per shot), mean / p95:
   and back through Standard's. The film error does not grow with the
   larger gain difference (scene B).
 
+## Film library (2026-10-15)
+
+Every spektrafilm film on every print medium, fitted beforehand and shipped
+with the editor (`editor/static/films/`), so a film is one click instead of
+a LUT and a 20–60 s fit.
+
+- `tools/spektrafilm-lut.py --all`: from spektrafilm's profiles, every
+  film (`stage: filming`, colour) on every print medium (`stage: printing`:
+  6 papers, 2383, 2393) for the 16 negatives, the 4 slides scanned directly
+  (`io.scan_film`; normalised by the film exposure instead of the print
+  exposure); the film's own print (`target_print`, else Portra Endura)
+  first. 132 LUTs (33³) and `index.json`, one process per core: 15 s on the
+  M5 Pro's 18 cores. Every look's grey at 0.460.
+- `core/examples/film_library.rs`: the 132 fits on one thread per core
+  (79 s, 15.6 cores busy), written as `spektrafilm.json` (747 KB): per look
+  matrix, curves, HSL, P, report, exposure. A fit is the same for every
+  target (checked: Portra on Negative Film and on Vivid bit-identical), so
+  the library holds one per film and print.
+- Fit quality (held out, against the LUT): mean 1.90 ΔE2000, median 1.83,
+  1.23–3.36; matrix + curves alone 2.99. The films on their own print:
+  Portra 160 1.48, C200 1.49, UltraMax 1.51, Gold 1.54, Pro 400H 1.56,
+  Portra 400 1.61, Portra 800 1.64, Xtra 400 1.65, Kodachrome 1.67,
+  Vision3 500T 1.67, Vision3 250D 1.74, Ektar 1.80, Vision3 200T 1.81,
+  Provia 1.87, Vision3 50D 1.88, Ektachrome 1.93, Verita 2.00, Portra 800
+  push 1 2.06, push 2 2.35, Velvia 2.37. Hardest: pushed Portra 800 and
+  Xtra 400 on Ultra Endura (2.8–3.4).
+- Editor (lut.js): a film group in the source picker, a Print row for
+  negatives, the fit applied as a LUT fit; `edit.lut` with `library`,
+  `film`, `print` keeps it through presets. Attribution in the note under
+  the pickers, the help, the README and `films/CHANGELOG.txt`; the data is
+  CC BY-SA 4.0 (spektrafilm's licence for profiles, LUTs and their direct
+  derivatives), the code stays MIT.
+- Test `film_library_exports`: every look exports on a target.
+
 ## Open points
 
 - Display LUTs: "LUT on Standard" assumes the LUT was made for an image
   like the camera's Standard JPEG. LUTs made for log footage need their
   input encoding (later).
 - The camera's highlight chroma roll-off is not modelled (as before).
-- Shipping film LUTs with the editor (size, which films): after phase 4.

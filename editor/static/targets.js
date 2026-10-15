@@ -36,6 +36,9 @@ const lutName = (name) => {
   return l ? l.title || String(l.name || "LUT").replace(/\.cube$/i, "") : null;
 };
 
+// fitted from the film library (lut.js) rather than an uploaded LUT
+const lutFilm = (name) => !!(state.targets[name] && state.targets[name].lut && state.targets[name].lut.library);
+
 const extOf = (name) => {
   const id = state.targets[name] && state.targets[name].ext;
   return (id && state.extBases.find((x) => x.id === id)) || null;
@@ -131,7 +134,7 @@ const changedTargets = () => targetNames().filter(targetChanged);
 function targetState(name) {
   const s = targetSpec(name), x = extOf(name);
   if (x) return extText(x.label);
-  if (lutName(name)) return t("tg_lut", { name: lutName(name) });
+  if (lutName(name)) return t(lutFilm(name) ? "tg_film" : "tg_lut", { name: lutName(name) });
   if (s.source !== name) return t("tg_from", { look: label(s.source) });
   return targetChanged(name) ? t("tg_own") : t("tg_stock");
 }
