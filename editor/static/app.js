@@ -26,6 +26,7 @@ const state = {
   wbCal: null,         // [R, B] calibration of the photo's camera, null: typical
   wbShot: null,        // { k, gm } closest to the shot's white balance
   shot: null,          // /api/dng meta
+  loadSeq: 0,          // the last picked photo; a load discards its result when a newer one was picked
   params: { key: 0, contrast: 0, highlight: 0, shadow: 0, saturation: 0, hue: 0, shadowcorr: 0 },
   residual: false,     // fine match to the camera JPEG: dormant, no GUI switch any more
   vignette: true,      // the camera's lens shading correction in the preview
@@ -808,7 +809,8 @@ async function loadExtBases() {
 
 // ---- loading a DNG ----------------------------------------------------------
 
-async function loadDng(file) {
+async function loadDng(file, seq) {
+  if (seq === undefined) seq = ++state.loadSeq;   // picked outside the filmstrip (Open photo, drop)
   $("busy").hidden = false;
   try {
     // the camera's colour temperature calibration from the makernote (near the start)
@@ -819,8 +821,9 @@ async function loadDng(file) {
     fd.append("file", file);
     const res = await api("/api/dng", { method: "POST", body: fd });
     if (!res.ok) throw new Error(await errorText(res));
-    await show(await res.json());
+    await show(await res.json(), seq);
   } catch (err) {
+    window.dispatchEvent(new Event("shot-failed"));   // the filmstrip hides its preview cover
     alert(t("load_failed", { msg: err.message }));
   } finally {
     $("busy").hidden = true;
@@ -857,8 +860,11 @@ $("load-shot").onclick = async () => {
   update();
 };
 
-async function show(meta) {
+async function show(meta, seq) {
+  // a newer photo was picked meanwhile: this load's result is no longer wanted
+  if (seq !== undefined && seq !== state.loadSeq) return;
   const lin = new Float32Array(await (await api("/api/dng/linear")).arrayBuffer());
+  if (seq !== undefined && seq !== state.loadSeq) return;
 
   canvas.width = meta.width;
   canvas.height = meta.height;
@@ -870,7 +876,9 @@ async function show(meta) {
 
   let cam = null;
   const camRes = await api("/api/dng/camera.jpg");
+  if (seq !== undefined && seq !== state.loadSeq) return;
   if (camRes.ok) cam = await createImageBitmap(await camRes.blob());
+  if (seq !== undefined && seq !== state.loadSeq) return;
   tex.cam = texture(2, () => {
     if (cam) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, cam);
     else gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
@@ -880,6 +888,7 @@ async function show(meta) {
   if (!cam && (state.mode === "camera" || state.mode === "jpeg")) $("modes").querySelector("button").click();
 
   state.shot = meta;
+  window.dispatchEvent(new CustomEvent("shot-shown", { detail: meta }));   // the filmstrip highlights it
   hcFromShot(meta);
   state.wbShot = wbEstimate(meta.wb, wbCal());   // a new photo starts from its own white balance
   wbAsShot();

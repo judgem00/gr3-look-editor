@@ -129,6 +129,9 @@ const api = (() => {
   // GR-Log (grlog.rs, docs/plan-gr-log.md)
   web.grlog = async (body) => { await gate(); return call("grlog", { body: JSON.stringify(body) }); };
   web.grlogLut = async (body, text) => { await gate(); return call("grlog_lut", { body: JSON.stringify(body), text }); };
+  // the embedded JPEGs of a DNG ([[off, len], ...], largest first): the
+  // filmstrip's thumbnails — the core reads only the given slice
+  web.dngPreview = async (bytes) => { await gate(); return call("dng_preview", { bytes }, [bytes]); };
 
   return web;
 })();
