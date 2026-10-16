@@ -83,7 +83,7 @@ fn main() {
     });
     let looks: Vec<Value> = results.into_inner().unwrap().into_iter().map(Option::unwrap).collect();
     let library = json!({
-        "format": 1,
+        "format": 2,
         "attribution": "Derived from spektrafilm by Andrea Volpato, https://github.com/andreavolpato/spektrafilm, \
                         licensed CC BY-SA 4.0 (LICENSE.txt). Modified: rendered as LUTs and fitted to GR III look \
                         parameters by the GR III Look Editor (CHANGELOG.txt).",

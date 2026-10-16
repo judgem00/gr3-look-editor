@@ -446,7 +446,7 @@ function sectionDirty(sec, T) {
     case "base": return baseColourChanged(T);
     case "curves": return curvesEdited(T);
     case "wheels": return gradedOf(T).length > 0;
-    case "hsl": return hslChangedOf(T);
+    case "hsl": return !hslCurvesFlat(hsl.looks[T]);   // the user's curves; a film's base is not an edit
     case "adv": return matrixTyped(T) || !!postOf(T);
   }
   return false;
@@ -486,7 +486,13 @@ function resetSection(sec) {
       for (const n of setsOf(T)) delete state.grade[n];
       requestTone();
       break;
-    case "hsl": delete hsl.looks[T]; renderHsl(); requestHsl(); break;
+    case "hsl": {
+      // the user's curves go; a fitted film's or LUT's base stays
+      const base = hsl.looks[T] && hsl.looks[T].base;
+      delete hsl.looks[T];
+      if (base) hslOf(T).base = base;
+      renderHsl(); requestHsl(); break;
+    }
   }
   update();
 }

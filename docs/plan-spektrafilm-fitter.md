@@ -385,6 +385,24 @@ a LUT and a 20–60 s fit.
   derivatives), the code stays MIT.
 - Test `film_library_exports`: every look exports on a target.
 
+## HSL as a base (2026-10-16)
+
+At the user's request the fit's HSL no longer shows up as the target's
+HSL curves. `multiaxial::Hsl` has a `base` (curves in the same form);
+`encode_curves` samples base and user curves per bin and combines them
+(hue and luminance add, saturation multiplies: (1 + b)(1 + u) − 1) before
+the split into steps and banks. The steps it reports for the editor are the
+user's part, taken against the steps of the base alone, so a flat curve
+over a film is flat. `lutfit` writes `{curves: flat, base, protect}`; the
+library was converted (format 2, identical to a fresh fit). The editor
+keeps the base through presets, export and Reset, and marks the section
+changed only for the user's curves. Tests: `base_under_the_curves` (base
+alone and under flat curves encode exactly as the same values as curves;
+saturation multiplies; the user's steps). Checked in the browser: Portra
+on Negative Film gives flat curves and an untouched section, the preview
+keeps the film's HSL, −20 % saturation shows as −20 % steps, Reset keeps
+the base, presets keep both.
+
 ## Open points
 
 - Display LUTs: "LUT on Standard" assumes the LUT was made for an image

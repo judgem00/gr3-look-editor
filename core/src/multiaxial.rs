@@ -75,6 +75,10 @@ pub struct Curves {
 #[derive(Clone, Debug)]
 pub struct Hsl {
     pub curves: Option<Curves>,
+    /// a base under the curves (a fitted film or LUT, lutfit.rs): combined
+    /// with them before encoding -- hue and luminance add, saturation
+    /// multiplies -- so the user's curves stay their own
+    pub base: Option<Curves>,
     pub bands: Vec<Band>,
     /// weight curve: full weight above `shadows`, fading to 0 at x = 0
     /// (0 = no protection), and from `highlights` on fading to
@@ -86,7 +90,7 @@ pub struct Hsl {
 
 impl Default for Hsl {
     fn default() -> Self {
-        Hsl { curves: None, bands: vec![], shadows: 0.0, highlights: 4096.0, highlight_weight: 1.0 }
+        Hsl { curves: None, base: None, bands: vec![], shadows: 0.0, highlights: 4096.0, highlight_weight: 1.0 }
     }
 }
 
@@ -106,20 +110,22 @@ impl Hsl {
                 lum: num(b, "lum", 0.0).clamp(-100.0, 100.0),
             }).collect()
         }).unwrap_or_default();
-        let curve = |k: &str, lim: f64| -> Vec<[f64; 2]> {
-            v.get("curves").and_then(|c| c.get(k)).and_then(|a| a.as_array()).map(|a| {
+        let curve = |set: &str, k: &str, lim: f64| -> Vec<[f64; 2]> {
+            v.get(set).and_then(|c| c.get(k)).and_then(|a| a.as_array()).map(|a| {
                 a.iter().filter_map(|p| {
                     let (x, y) = (p.get(0)?.as_f64()?, p.get(1)?.as_f64()?);
                     (x.is_finite() && y.is_finite()).then(|| [x.rem_euclid(CIRCLE as f64), y.clamp(-lim, lim)])
                 }).collect()
             }).unwrap_or_default()
         };
-        let curves = v.get("curves").filter(|c| c.is_object()).map(|_| Curves {
-            hue: curve("hue", HUE_MAX), sat: curve("sat", 100.0), lum: curve("lum", 100.0),
+        let set = |name: &str| v.get(name).filter(|c| c.is_object()).map(|_| Curves {
+            hue: curve(name, "hue", HUE_MAX), sat: curve(name, "sat", 100.0), lum: curve(name, "lum", 100.0),
         });
+        let (curves, base) = (set("curves"), set("base"));
         let p = v.get("protect").cloned().unwrap_or(Value::Null);
         Hsl {
             curves,
+            base,
             bands,
             shadows: num(&p, "shadows", 0.0).clamp(0.0, 4096.0),
             highlights: num(&p, "highlights", 4096.0).clamp(0.0, 4096.0),
@@ -129,8 +135,8 @@ impl Hsl {
 
     pub fn is_neutral(&self) -> bool {
         let flat = |c: &[[f64; 2]]| c.iter().all(|p| p[1] == 0.0);
-        self.bands.iter().all(|b| b.hue == 0.0 && b.sat == 0.0 && b.lum == 0.0)
-            && self.curves.as_ref().map_or(true, |c| flat(&c.hue) && flat(&c.sat) && flat(&c.lum))
+        let neutral = |c: &Option<Curves>| c.as_ref().is_none_or(|c| flat(&c.hue) && flat(&c.sat) && flat(&c.lum));
+        self.bands.iter().all(|b| b.hue == 0.0 && b.sat == 0.0 && b.lum == 0.0) && neutral(&self.curves) && neutral(&self.base)
     }
 }
 
@@ -378,8 +384,8 @@ fn runs(lane: &[u8], quarter: usize) -> Vec<(usize, u8)> {
 /// edges (or the stage more than 12 banks), the soft edges there are dropped
 /// first, and `notes` says so; only if that is not enough it fails.
 pub fn encode(h: &Hsl, ycc: &M3) -> Result<Encoded, String> {
-    if let Some(c) = &h.curves {
-        return encode_curves(h, c, ycc);
+    if h.curves.is_some() || h.base.is_some() {
+        return encode_curves(h, h.curves.as_ref().unwrap_or(&Curves::default()), ycc);
     }
     let full: Vec<M3> = h.bands.iter().map(|b| band_matrix(ycc, b, 1.0)).collect();
     let mut feather = vec![true; h.bands.len()];
@@ -556,9 +562,45 @@ fn split(v: &[[f64; 3]]) -> Vec<(usize, usize)> {
 /// Curves -> what the hardware gets. Each quarter of the circle is split
 /// into at most 5 steps that follow the curves best; similar steps are then
 /// merged until at most 11 adjustments remain (bank 0 stays unchanged).
+/// the user's curve values on top of a base: hue and luminance add,
+/// saturation multiplies (both are scales of the chroma)
+fn combine(b: [f64; 3], u: [f64; 3]) -> [f64; 3] {
+    [b[0] + u[0], (((1.0 + b[1] / 100.0) * (1.0 + u[1] / 100.0) - 1.0) * 100.0).max(-100.0), b[2] + u[2]]
+}
+
+/// what is left of the user's part in a combined value
+fn uncombine(c: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+    let s = 1.0 + b[1] / 100.0;
+    [c[0] - b[0], if s > 1e-6 { ((1.0 + c[1] / 100.0) / s - 1.0) * 100.0 } else { 0.0 }, c[2] - b[2]]
+}
+
+fn sample_set(c: &Curves) -> Vec<[f64; 3]> {
+    let s = [sample_curve(&c.hue, BINS), sample_curve(&c.sat, BINS), sample_curve(&c.lum, BINS)];
+    (0..BINS).map(|i| [s[0][i], s[1][i], s[2][i]]).collect()
+}
+
 fn encode_curves(h: &Hsl, c: &Curves, ycc: &M3) -> Result<Encoded, String> {
-    let smooth = [sample_curve(&c.hue, BINS), sample_curve(&c.sat, BINS), sample_curve(&c.lum, BINS)];
-    let v: Vec<[f64; 3]> = (0..BINS).map(|i| [smooth[0][i] * NORM[0], smooth[1][i] * NORM[1], smooth[2][i] * NORM[2]]).collect();
+    let user = sample_set(c);
+    let base = h.base.as_ref().map(sample_set);
+    // the base's own steps: the user's part is drawn against them, so flat
+    // curves over a base show flat steps
+    let base_steps: Option<Vec<[f64; 3]>> = match &h.base {
+        Some(bc) => {
+            let alone = Hsl { curves: Some(bc.clone()), base: None, ..h.clone() };
+            let e = encode_curves(&alone, bc, ycc)?;
+            let st = &e.curves.as_ref().unwrap()["steps"];
+            let ch = |k: &str| -> Vec<f64> { st[k].as_array().unwrap().iter().map(|v| v.as_f64().unwrap()).collect() };
+            let (hu, sa, lu) = (ch("hue"), ch("sat"), ch("lum"));
+            Some((0..BINS).map(|i| [hu[i], sa[i], lu[i]]).collect())
+        }
+        None => None,
+    };
+    let total: Vec<[f64; 3]> = match &base {
+        Some(b) => (0..BINS).map(|i| combine(b[i], user[i])).collect(),
+        None => user.clone(),
+    };
+    let smooth = [0, 1, 2].map(|k| user.iter().map(|v| v[k]).collect::<Vec<f64>>());
+    let v: Vec<[f64; 3]> = total.iter().map(|t| [t[0] * NORM[0], t[1] * NORM[1], t[2] * NORM[2]]).collect();
     // steps: (first bin, end bin, value in normalised units)
     let mut steps: Vec<(usize, usize, [f64; 3])> = vec![];
     for quarter in 0..4 {
@@ -664,7 +706,12 @@ fn encode_curves(h: &Hsl, c: &Curves, ycc: &M3) -> Result<Encoded, String> {
             lane[g] = bank;
         }
         for b in s.0..s.1 {
-            stepped[b] = [val[0] / NORM[0], val[1] / NORM[1], val[2] / NORM[2]];
+            let got = [val[0] / NORM[0], val[1] / NORM[1], val[2] / NORM[2]];
+            // the editor draws the user's part of what the camera gets
+            stepped[b] = match &base_steps {
+                Some(bs) => uncombine(got, bs[b]),
+                None => got,
+            };
         }
     }
     let curves = json!({
@@ -889,6 +936,38 @@ mod tests {
         for (h, s, l) in [(45.0, 100.0, 100.0), (-45.0, -100.0, -100.0), (45.0, 100.0, -100.0)] {
             encode(&curves(full(h), full(s), full(l)), &YCC).unwrap();
         }
+    }
+
+    #[test]
+    fn base_under_the_curves() {
+        // a film's HSL as the base: plateaus on the red and blue sectors
+        let plate = |a: f64, b: f64, v: f64| vec![[a + 8.0, v], [b - 8.0, v], [b + 8.0, 0.0], [a - 8.0 + 8192.0, 0.0]];
+        let set = Curves { hue: plate(6827.0, 7509.0, 8.0), sat: plate(2048.0, 2731.0, -30.0), lum: vec![] };
+        let as_curves = encode(&Hsl { curves: Some(set.clone()), ..Default::default() }, &YCC).unwrap();
+        let as_base = encode(&Hsl { base: Some(set.clone()), ..Default::default() }, &YCC).unwrap();
+        let flat = Curves { hue: vec![[700.0, 0.0], [7700.0, 0.0]], ..Default::default() };
+        let under_flat = encode(&Hsl { curves: Some(flat), base: Some(set.clone()), ..Default::default() }, &YCC).unwrap();
+        for e in [&as_base, &under_flat] {
+            assert_eq!((e.axes, e.nibbles, &e.banks), (as_curves.axes, as_curves.nibbles, &as_curves.banks));
+        }
+        assert!(!Hsl { base: Some(set.clone()), ..Default::default() }.is_neutral());
+        // the editor sees only its own curves: flat, and flat steps
+        let c = under_flat.curves.as_ref().unwrap();
+        for ch in ["hue", "sat", "lum"] {
+            assert!(c["smooth"][ch].as_array().unwrap().iter().all(|v| v.as_f64().unwrap().abs() < 1e-9), "{ch}");
+            assert!(c["steps"][ch].as_array().unwrap().iter().all(|v| v.as_f64().unwrap().abs() < 0.6), "{ch}");
+        }
+        // saturation multiplies: -30 % under a flat -20 % is -44 % on blue
+        let user = Curves { sat: vec![[0.0, -20.0]], ..Default::default() };
+        let both = encode(&Hsl { curves: Some(user), base: Some(set), ..Default::default() }, &YCC).unwrap();
+        let want = encode(&curves(vec![], plate(2048.0, 2731.0, -44.0).into_iter()
+            .map(|p| [p[0], if p[1] == 0.0 { -20.0 } else { p[1] }]).collect(), vec![]), &YCC).unwrap();
+        let blue = both.banks[both.bank_at(2400.0)];
+        let blue_want = want.banks[want.bank_at(2400.0)];
+        assert!(blue.iter().zip(blue_want).all(|(a, b)| (a - b).abs() <= 2), "{blue:?} {blue_want:?}");
+        // and the user's part of the steps is -20 there
+        let steps = &both.curves.as_ref().unwrap()["steps"]["sat"];
+        assert!((steps[2400 / 16].as_f64().unwrap() + 20.0).abs() < 1.0);
     }
 
     #[test]

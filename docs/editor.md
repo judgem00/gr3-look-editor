@@ -210,7 +210,15 @@ its own ColorMatrix set and its own matrix in the free area `0x53002080…`
   The source picker then shows the LUT (its title, else the file name),
   and so do the target list, the export list and the preset notice; the
   look still computes on Standard's tone curve. Picking another source
-  keeps the fitted values and drops the LUT's name. The fitted look sits
+  keeps the fitted values and drops the LUT's name. The fit's HSL goes
+  in as a **base** under the HSL curves (`hsl.base`, `multiaxial::Hsl`):
+  the curves stay flat for the user's own adjustments, and the core
+  combines both before it encodes the stage -- hue and luminance add,
+  saturation multiplies. The dashed steps show the user's part (against
+  the steps the base gets alone, so flat curves show flat steps); the
+  section's dot and its Reset act on the user's curves only, the base
+  stays. A fitted film already uses most of the stage's 11 adjustments, so
+  further curves share them with the film's. The fitted look sits
   on Standard's curve at the default gain; the camera sets the gain per
   shot at runtime, and the look follows it like any look does.
 - **Films** (source picker, group "Films (spektrafilm)"; the same five

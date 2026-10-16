@@ -814,7 +814,7 @@ pub struct Fit {
     pub matrix: M3,
     /// R, G, B channel curves, 256 x 0..16383
     pub curves: [Vec<u16>; 3],
-    /// the editor's HSL ({curves, protect}), None without HSL
+    /// the editor's HSL ({curves: flat, base: the fit, protect}), None without HSL
     pub hsl: Option<Value>,
     /// P, rows summing to 1, None without
     pub post: Option<M3>,
@@ -916,8 +916,9 @@ fn metrics(de: &[f64], s: &Samples, lab_t: &[[f64; 3]]) -> Value {
     })
 }
 
-/// the editor's HSL curves for sector values: a plateau per sector, so the
-/// core's encoding finds the sector edges as steps
+/// the editor's HSL for sector values: a plateau per sector as the base
+/// (multiaxial::Hsl::base), so the core's encoding finds the sector edges as
+/// steps, and the user's curves stay flat to edit on top
 fn hsl_curves(sectors: &[[f64; 3]; SECTORS]) -> Value {
     let pts = |ch: usize| -> Vec<[f64; 2]> {
         let mut v = vec![];
@@ -929,7 +930,8 @@ fn hsl_curves(sectors: &[[f64; 3]; SECTORS]) -> Value {
         v
     };
     json!({
-        "curves": { "hue": pts(0), "sat": pts(1), "lum": pts(2) },
+        "curves": { "hue": [], "sat": [], "lum": [] },
+        "base": { "hue": pts(0), "sat": pts(1), "lum": pts(2) },
         "protect": { "shadows": 0, "highlights": 4096, "highlight_weight": 1 },
     })
 }
