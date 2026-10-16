@@ -4,6 +4,10 @@
 //!     cargo run --release --example film_library --manifest-path core/Cargo.toml -- \
 //!         work/films editor/static/films/spektrafilm.json [--threads N]
 //!
+//! With `--hc` every film is fitted for the camera's highlight correction
+//! (lutfit::Camera::with_hc; docs/plan-highlight-correction.md), for
+//! editor/static/films/spektrafilm-hc.json.
+//!
 //! A fit does not depend on the target (every colour look shares the YCbCr and
 //! hue data the fit uses), so the library holds one per film and print; the
 //! editor puts it on any target. The update file comes from GR_UPDATE or
@@ -34,19 +38,20 @@ fn round(v: &Value, digits: i32) -> Value {
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.len() < 2 {
-        eprintln!("usage: film_library LUT_DIR OUT.json [--threads N]");
+        eprintln!("usage: film_library LUT_DIR OUT.json [--threads N] [--hc]");
         std::process::exit(2);
     }
     let dir = PathBuf::from(&args[0]);
     let threads = args.iter().position(|a| a == "--threads").and_then(|i| args.get(i + 1)).and_then(|v| v.parse().ok())
         .unwrap_or_else(|| std::thread::available_parallelism().map_or(4, |n| n.get()));
+    let hc = args.iter().any(|a| a == "--hc");
     let work = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../work");
     let update = std::env::var("GR_UPDATE").map(PathBuf::from).unwrap_or_else(|_| work.join("fwdc239b.bin"));
     let session = Session::open(std::fs::read(&update).unwrap(), "fwdc239b.bin").unwrap();
     let img = session.image();
     let index: Value = serde_json::from_str(&std::fs::read_to_string(dir.join("index.json")).unwrap()).unwrap();
     let looks = index["looks"].as_array().unwrap().clone();
-    eprintln!("{} looks on {threads} threads", looks.len());
+    eprintln!("{} looks on {threads} threads{}", looks.len(), if hc { ", highlight correction" } else { "" });
 
     let t0 = Instant::now();
     let next = AtomicUsize::new(0);
@@ -54,7 +59,7 @@ fn main() {
     std::thread::scope(|scope| {
         for _ in 0..threads {
             scope.spawn(|| {
-                let cam = Camera::new(img, "NegativeFilm").unwrap();
+                let cam = Camera::with_hc(img, "NegativeFilm", hc).unwrap();
                 loop {
                     let k = next.fetch_add(1, Ordering::Relaxed);
                     let Some(entry) = looks.get(k) else { break };
@@ -82,7 +87,7 @@ fn main() {
         }
     });
     let looks: Vec<Value> = results.into_inner().unwrap().into_iter().map(Option::unwrap).collect();
-    let library = json!({
+    let mut library = json!({
         "format": 2,
         "attribution": "Derived from spektrafilm by Andrea Volpato, https://github.com/andreavolpato/spektrafilm, \
                         licensed CC BY-SA 4.0 (LICENSE.txt). Modified: rendered as LUTs and fitted to GR III look \
@@ -92,6 +97,9 @@ fn main() {
         "names": index["names"],
         "looks": looks,
     });
+    if hc {
+        library["highlight_correction"] = json!(true);
+    }
     let out = PathBuf::from(&args[1]);
     std::fs::create_dir_all(out.parent().unwrap()).unwrap();
     std::fs::write(&out, serde_json::to_string(&library).unwrap()).unwrap();

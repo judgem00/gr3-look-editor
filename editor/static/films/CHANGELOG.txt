@@ -22,3 +22,12 @@ Modified by the GR III Look Editor project
   The file holds those fitted parameters and the fit's error (ΔE2000)
   against the LUT, not the LUTs. The camera reproduces the film only
   approximately (on average 1.9 ΔE2000).
+
+2026-10-16:
+
+- spektrafilm-hc.json: the same 132 looks fitted for the camera's
+  highlight correction (core/examples/film_library.rs --hc). The camera
+  model reads the sensor out one stop lower and halves the tone curve's
+  gain, as measured on a GR III; the fit's samples reach a stop further
+  into the highlights. On average 2.1 ΔE2000 from the film (the extra
+  highlights are harder to match).

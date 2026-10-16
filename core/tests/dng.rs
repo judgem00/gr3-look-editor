@@ -62,3 +62,17 @@ fn dngs_match_reference() {
         assert!(res < 0.02, "{stem}: residual off by {res}");
     }
 }
+
+/// highlight correction from the makernote (0x0069): the screen-chart test
+/// shots of docs/plan-highlight-correction.md, off and on
+#[test]
+fn highlight_correction_flag() {
+    let dir = common::work().join("highlight-test");
+    for (stem, on) in [("MR029426", false), ("MR029428", true), ("MR029430", false)] {
+        let Ok(data) = std::fs::read(dir.join(format!("{stem}.DNG"))) else {
+            eprintln!("{stem}: DNG not found, skipped");
+            continue;
+        };
+        assert_eq!(dng::decode(&data).unwrap().highlight_correction, Some(on), "{stem}");
+    }
+}

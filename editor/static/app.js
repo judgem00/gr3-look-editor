@@ -362,7 +362,7 @@ function renderPickers() {
   if (!state.fw) return;
   const T = state.current;
   const tsel = $("target");
-  if (!T) $("print-row").hidden = true;
+  if (!T) $("print-row").hidden = $("hc-box").hidden = true;
   tsel.innerHTML = `<option value="">${esc(t("target_choose"))}</option>` + targetNames().map((n) =>
     `<option value="${esc(n)}">${esc(label(n))} — ${esc(targetState(n))}${targetChanged(n) ? " ●" : ""}</option>`).join("");
   tsel.value = T || "";
@@ -879,6 +879,7 @@ async function show(meta) {
   if (!cam && (state.mode === "camera" || state.mode === "jpeg")) $("modes").querySelector("button").click();
 
   state.shot = meta;
+  hcFromShot(meta);
   state.wbShot = wbEstimate(meta.wb, wbCal());   // a new photo starts from its own white balance
   wbAsShot();
   $("empty").hidden = true;

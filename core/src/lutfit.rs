@@ -300,25 +300,47 @@ pub struct Camera<'a> {
     pub standard: M3,
     /// linear -> 12-bit tone input, so that 18 % grey lands at sRGB 0.46
     pub scale: f64,
+    /// fitted for the camera's highlight correction (docs/plan-highlight-correction.md)
+    pub hc: bool,
+    /// EV of input headroom over the default camera (0 without HC, ~1 with):
+    /// the samples reach that much further into the highlights
+    pub extra_ev: f64,
+}
+
+/// GammaTuning gain of the model: the default, and with highlight correction,
+/// which reads the sensor out one stop lower and halves the gain (MR029426-432)
+pub const GAIN: i32 = 0x1800;
+pub const GAIN_HC: i32 = 0x0c00;
+
+/// Standard's tone curve at default sliders and `gain`, and the tone index
+/// (fractional) where it reaches sRGB 0.46
+fn tone_at(img: &[u8], gain: i32) -> Result<(Vec<u16>, f64), String> {
+    let p = ToneParams { key: 0, contrast: 0, highlight: 0, shadow: 0, gain, flag: 0 };
+    let tone = Engine::new(img, &[]).curve(img, p)?;
+    let want = 0.46 * 16384.0;
+    let k = tone.windows(2).position(|w| w[1] as f64 >= want).ok_or("tone curve never reaches mid grey")?;
+    let (a, b) = (tone[k] as f64, tone[k + 1] as f64);
+    let mid = k as f64 + if b > a { (want - a) / (b - a) } else { 0.0 };
+    Ok((tone, mid))
 }
 
 impl<'a> Camera<'a> {
     pub fn new(img: &'a [u8], target: &str) -> Result<Camera<'a>, String> {
+        Camera::with_hc(img, target, false)
+    }
+
+    /// the camera with or without its highlight correction
+    pub fn with_hc(img: &'a [u8], target: &str, hc: bool) -> Result<Camera<'a>, String> {
         if !TARGETS.contains(&target) {
             return Err(format!("a LUT can be fitted for {}, not {target:?}", TARGETS.join(", ")));
         }
         let table = looks::table_of(target).ok_or(format!("unknown look {target:?}"))?;
-        let p = ToneParams { key: 0, contrast: 0, highlight: 0, shadow: 0, gain: 0x1800, flag: 0 };
-        let tone = Engine::new(img, &[]).curve(img, p)?;
+        let (tone, mid) = tone_at(img, if hc { GAIN_HC } else { GAIN })?;
+        let extra_ev = if hc { (tone_at(img, GAIN)?.1 / mid).log2() } else { 0.0 };
         let standard: Vec<f64> = looks::looks(img).into_iter()
             .find(|l| l["name"] == "Standard")
             .and_then(|l| l["matrix"].as_array().map(|a| a.iter().filter_map(|v| v.as_f64()).collect()))
             .ok_or("Standard's matrix not found")?;
-        // the tone index where the curve reaches sRGB 0.46
-        let want = 0.46 * 16384.0;
-        let k = tone.windows(2).position(|w| w[1] as f64 >= want).ok_or("tone curve never reaches mid grey")?;
-        let (a, b) = (tone[k] as f64, tone[k + 1] as f64);
-        let mid = k as f64 + if b > a { (want - a) / (b - a) } else { 0.0 };
         Ok(Camera {
             img,
             table,
@@ -327,6 +349,8 @@ impl<'a> Camera<'a> {
             ycc: multiaxial::ycc(img, table),
             standard: std::array::from_fn(|k| standard[k]),
             scale: mid * 16.0 / 0.18,
+            hc,
+            extra_ev,
         })
     }
 
@@ -465,12 +489,18 @@ pub struct Samples {
 
 impl Samples {
     pub fn new(seed: u64, random: usize, sweep: usize) -> Samples {
+        Samples::with_extra(seed, random, sweep, 0.0)
+    }
+
+    /// the same, with the grey ramp and the random colours `extra` EV
+    /// further into the highlights (a camera with more input headroom)
+    pub fn with_extra(seed: u64, random: usize, sweep: usize, extra: f64) -> Samples {
         let mut rng = Rng(seed);
         let off = rng.uniform(-0.25, 0.25);
         let mut l = vec![];
         let mut tag = vec![];
         for k in 0..120 {
-            let ev = -6.0 + 9.3 * k as f64 / 119.0 + off;
+            let ev = -6.0 + (9.3 + extra) * k as f64 / 119.0 + off;
             l.push([0.18 * 2f64.powf(ev); 3]);
             tag.push(Tag::Grey);
         }
@@ -485,7 +515,7 @@ impl Samples {
         for _ in 0..random {
             let c: [f64; 3] = std::array::from_fn(|_| rng.next().powf(2.2));
             let mx = c.iter().cloned().fold(0.0, f64::max).max(1e-3);
-            let g = 0.18 * 2f64.powf(rng.uniform(-4.0, 2.2)) * 1.3 / mx;
+            let g = 0.18 * 2f64.powf(rng.uniform(-4.0, 2.2 + extra)) * 1.3 / mx;
             l.push(c.map(|v| v * g));
             tag.push(Tag::Random);
         }
@@ -954,8 +984,8 @@ fn encode_hsl(cam: &Camera, sectors: &[[f64; 3]; SECTORS]) -> Result<(Value, Enc
 /// fit `lut` for the camera's target; `progress` hears each pass
 pub fn fit(cam: &Camera, lut: &Lut, opt: &Options, progress: &mut dyn FnMut(&str)) -> Result<Fit, String> {
     let input = opt.input.or(lut.input).unwrap_or(Input::Display);
-    let train = Samples::new(1, opt.random, opt.sweep);
-    let held = Samples::new(2, opt.random, opt.sweep);
+    let train = Samples::with_extra(1, opt.random, opt.sweep, cam.extra_ev);
+    let held = Samples::with_extra(2, opt.random, opt.sweep, cam.extra_ev);
     let lab_t = target_lab(cam, lut, input, &train);
     let lab_v = target_lab(cam, lut, input, &held);
     let ctx = Ctx { cam, s: &train, lab: &lab_t, w: train.weights() };

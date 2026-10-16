@@ -247,6 +247,22 @@ its own ColorMatrix set and its own matrix in the free area `0x53002080…`
   target (all colour looks share the YCbCr and hue data it uses), so one
   fit per film and print serves every target. The data is CC BY-SA 4.0
   (`films/LICENSE.txt`, `films/CHANGELOG.txt`), the editor's code MIT.
+- **Film fitted for highlight correction** (a box of its own under the
+  print, for the same five targets, with a short explanation: it switches
+  nothing in the camera): every film is fitted twice, for the camera's highlight
+  correction off and on (`films/spektrafilm-hc.json`, `film_library --hc`,
+  76 s). With it on the camera reads the sensor out one stop lower and
+  halves the tone curve's gain; the model does the same
+  (`lutfit::Camera::with_hc`, gain 3072) and the fit's samples reach a stop
+  further into the highlights, so the film rolls off where the sensor now
+  ends (docs/plan-highlight-correction.md). A film target takes its looks
+  from the library of its setting and records it (`edit.lut.hc`); changing
+  it fits the film again from the library (like a print change). The
+  LUT dialog fits a LUT for the same setting. A loaded DNG sets it
+  from its makernote (`0x0069`) for new fits and notes when the selected
+  target is fitted for the other setting. The preview needs nothing extra:
+  its per-DNG fit of gain and scale covers the camera's highlight
+  correction.
 
 ## Export
 

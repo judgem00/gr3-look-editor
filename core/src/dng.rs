@@ -326,6 +326,9 @@ pub struct Shot {
     pub params: Vec<(&'static str, i32)>,
     /// makernote 0x0079, second byte: shadow correction level (tonecontrol.rs)
     pub shadow_correction: Option<u8>,
+    /// makernote 0x0069, first byte: highlight correction on (exiftool:
+    /// DynamicRangeExpansion; docs/plan-highlight-correction.md)
+    pub highlight_correction: Option<bool>,
     /// file range of the largest embedded JPEG
     pub jpeg: Option<(usize, usize)>,
 }
@@ -450,7 +453,7 @@ pub fn decode(d: &[u8]) -> Result<Shot, String> {
     let model = find(&ifd0, 0x110).map(|e| ascii(&t, e));
 
     // makernote (DNGPrivateData: "RICOH\0II" + IFD, offsets from its start)
-    let (mut image_tone, mut params, mut shadow_correction) = (None, vec![], None);
+    let (mut image_tone, mut params, mut shadow_correction, mut highlight_correction) = (None, vec![], None, None);
     if let Some(e) = find(&ifd0, 0xC634) {
         let base = e.at;
         if d.get(base..base + 8) == Some(b"RICOH\0II") {
@@ -458,6 +461,7 @@ pub fn decode(d: &[u8]) -> Result<Shot, String> {
             if let Ok(mn) = mt.ifd(base + 8, base) {
                 image_tone = find(&mn, 0x4F).and_then(|e| mt.num(e, 0).ok()).map(|v| v as u16);
                 shadow_correction = find(&mn, 0x79).and_then(|e| mt.bytes(e).get(1).copied());
+                highlight_correction = find(&mn, 0x69).and_then(|e| mt.bytes(e).first().map(|&b| b != 0));
                 if let Some(e) = find(&mn, 0x247) {
                     let raw = mt.bytes(e);
                     let val = |k: usize| i16::from_le_bytes([raw[2 * k], raw[2 * k + 1]]);
@@ -494,7 +498,7 @@ pub fn decode(d: &[u8]) -> Result<Shot, String> {
         }
     }
 
-    Ok(Shot { linear, width, height, flip, wb, model, image_tone, params, shadow_correction, jpeg })
+    Ok(Shot { linear, width, height, flip, wb, model, image_tone, params, shadow_correction, highlight_correction, jpeg })
 }
 
 /// mean over factor x factor blocks
