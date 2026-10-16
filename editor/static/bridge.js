@@ -126,6 +126,9 @@ const api = (() => {
     await gate();
     return call("lut_fit", { text, body: JSON.stringify(body) }, [], onProgress);
   };
+  // GR-Log (grlog.rs, docs/plan-gr-log.md)
+  web.grlog = async (body) => { await gate(); return call("grlog", { body: JSON.stringify(body) }); };
+  web.grlogLut = async (body, text) => { await gate(); return call("grlog_lut", { body: JSON.stringify(body), text }); };
 
   return web;
 })();

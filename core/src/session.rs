@@ -255,6 +255,49 @@ impl Session {
         self.target(name).map_or(0, |t| t.grain)
     }
 
+    /// POST /api/grlog {target, hc, lo, span}: GR-Log on `target`
+    /// (docs/plan-gr-log.md) as a v2 preset's target, and the EV range the
+    /// camera then stores
+    pub fn grlog(&self, body: &Value) -> Result<Value, String> {
+        let (cam, enc) = self.grlog_model(body)?;
+        let target = body.get("target").and_then(|v| v.as_str()).unwrap_or("");
+        let spec = crate::grlog::spec(&cam, target, enc)?;
+        Ok(json!({ "target": target, "spec": spec, "top_ev": crate::grlog::Encoding::top_ev(&cam),
+                   "first_ev": (16.0 / (0.18 * cam.scale)).log2() }))
+    }
+
+    /// POST /api/grlog/lut {to: standard | rec709 | lut, hc, lo, span, size}
+    /// (with the .cube for `lut`): the post LUT from GR-Log, as .cube text
+    pub fn grlog_lut(&self, body: &Value, text: Option<&str>) -> Result<String, String> {
+        use crate::grlog::To;
+        let (cam, enc) = self.grlog_model(body)?;
+        let size = body.get("size").and_then(|v| v.as_u64()).unwrap_or(33) as usize;
+        let own;
+        let to = match body.get("to").and_then(|v| v.as_str()) {
+            Some("standard") => To::Standard,
+            Some("rec709") => To::Rec709,
+            Some("lut") => {
+                own = lutfit::parse_cube(text.ok_or("GR-Log to a LUT needs the .cube")?)?;
+                To::Film(&own)
+            }
+            other => return Err(format!("a GR-Log LUT goes to standard, rec709 or lut, not {other:?}")),
+        };
+        let title = match &to {
+            To::Standard => "GR-Log to Standard".to_string(),
+            To::Rec709 => "GR-Log to Rec.709".to_string(),
+            To::Film(l) => format!("GR-Log to {}", if l.title.is_empty() { "LUT" } else { &l.title }),
+        };
+        crate::grlog::post_lut(&cam, enc, &to, size, &title)
+    }
+
+    fn grlog_model(&self, body: &Value) -> Result<(lutfit::Camera<'_>, crate::grlog::Encoding), String> {
+        let d = crate::grlog::Encoding::DEFAULT;
+        let num = |k: &str, def: f64| body.get(k).and_then(|v| v.as_f64()).unwrap_or(def);
+        let enc = crate::grlog::Encoding::new(num("lo", d.lo), num("span", d.span))?;
+        let hc = body.get("hc").and_then(|v| v.as_bool()).unwrap_or(false);
+        Ok((crate::grlog::camera(&self.stock, hc)?, enc))
+    }
+
     /// the post matrix a target keeps when a request changes something else
     fn post_of(&self, name: &str) -> Option<[f64; 9]> {
         self.target(name).and_then(|t| t.post)

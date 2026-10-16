@@ -39,6 +39,10 @@ const lutName = (name) => {
   return l ? l.title || String(l.name || "LUT").replace(/\.cube$/i, "") : null;
 };
 
+// where a fitted target came from: "spektrafilm" (the film library), "grlog"
+// (the log curve for video), null for an uploaded LUT or none
+const lutLib = (name) => (state.targets[name] && state.targets[name].lut && state.targets[name].lut.library) || null;
+
 // fitted from the film library (lut.js) rather than an uploaded LUT
 const lutFilm = (name) => !!(state.targets[name] && state.targets[name].lut && state.targets[name].lut.library);
 

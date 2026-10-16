@@ -264,6 +264,19 @@ its own ColorMatrix set and its own matrix in the free area `0x53002080…`
   its per-DNG fit of gain and scale covers the camera's highlight
   correction.
 
+- **GR-Log (video)** (source group "Video" for Standard, Vivid, Positive
+  Film, Bleach Bypass and Retro; docs/plan-gr-log.md): a log tone curve for
+  video in manual exposure, on Standard's colours, the same curve on R, G
+  and B (`core/src/grlog.rs`, `grlog −6 10`). The target records it like a
+  film (`edit.lut.library: "grlog"`, encoding, `hc`), so resets go back to
+  it and another source drops it; grain stays. The highlight correction box
+  builds it on the tone curve with or without highlight correction. A box
+  "Post LUTs for GR-Log" shows the range the camera stores as log and saves
+  `.cube` LUTs (33³) to Standard, to Rec.709 or through a LUT of the user's
+  (any `.cube` with its own input, e.g. a spektrafilm film); the core
+  writes them (`/api/grlog/lut`), inverting the curve the camera applies.
+  The preview shows the flat image as the camera records it.
+
 ## Export
 
 Builds the update file (`FWDC239B.BIN` or `FWDC243B.BIN`) with recomputed checksums

@@ -122,6 +122,15 @@ impl Editor {
         Ok(r.to_string())
     }
 
+    pub fn grlog(&self, body: &str) -> Result<String, JsError> {
+        Ok(self.session.grlog(&parse(body)?).map_err(js)?.to_string())
+    }
+
+    /// `text`: the .cube for `to: "lut"`, else empty
+    pub fn grlog_lut(&self, body: &str, text: &str) -> Result<String, JsError> {
+        self.session.grlog_lut(&parse(body)?, (!text.is_empty()).then_some(text)).map_err(js)
+    }
+
     /// decode a DNG; afterwards decode `dng_jpeg()` to RGBA at
     /// `dng_width()` x `dng_height()` and call `prepare_dng`
     pub fn open_dng(&mut self, data: &[u8]) -> Result<(), JsError> {
