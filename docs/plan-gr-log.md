@@ -9,8 +9,8 @@ below. On the GR III it works in principle (user-confirmed, 2026-10-16);
 the measured camera test (phase 4) comes later. Builds on the per-look curves
 ([plan-look-curves.md](plan-look-curves.md)), the LUT fitter's `grlog`
 encoding ([plan-spektrafilm-fitter.md](plan-spektrafilm-fitter.md)) and the
-video patches in gr3x-fw-hack (`docs/video.md`: manual exposure `manual
-mlive7 dials`, optionally `osd` and `bitrate`).
+video patches (`docs/video.md`: manual exposure `manual mlive7 dials`,
+optionally `osd` and `bitrate`).
 
 ## What is given
 
@@ -23,8 +23,12 @@ mlive7 dials`, optionally `osd` and `bitrate`).
   be picked in movie mode, so GR-Log goes on one of the first six.
 - **Encoder:** 8-bit YCbCr 4:2:0, H.264, 16.8 (24p) to 42 Mbit/s (60p);
   `bitrate` doubles 24p/30p.
-- **Video patches ride along with an editor export:** `video-test.py build
-  … --image <unpackedFW from the editor>`.
+- **Video patches are built into the editor export:** the Export dialog's
+  "Video" checkbox applies the tested set (`manual mlive7 dials osd
+  bitrate`) directly in the core (`core/src/video.rs`), so no second step
+  with `video-test.py` is needed any more. The earlier two-step build
+  (`video-test.py build … --image <unpackedFW>`) still works and is what the
+  camera-tested firmware was made with.
 
 ## The curve
 
@@ -211,9 +215,9 @@ stays `−6 10` until the camera test shows how the toe and the noise look.
 
 `core/examples/grlog_flash.rs` exports GR-Log (`grlog −6 10`, highlight
 correction off) on Bleach Bypass, every other look stock, to
-`work/grlog-test/` with the post LUTs. gr3x-fw-hack
-`tools/video-test.py build manual mlive7 dials osd bitrate --image
-work/grlog-test/unpackedFW-looks` adds the video patches
+`work/grlog-test/` with the post LUTs. `tools/video-test.py build manual
+mlive7 dials osd bitrate --image work/grlog-test/unpackedFW-looks` adds the
+video patches
 (`work/grlog-test/video/FWDC239B.BIN`). Checks: container (`fw-pack.py
 check`), the look and the video image differ only in the 102 bytes of the
 patches, `verify-tuning.py --patched` (the selector stub with the video

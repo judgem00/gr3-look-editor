@@ -304,8 +304,14 @@
   <p class="note warn" data-i18n="risk"></p>
   <label class="check"><input type="checkbox" id="risk-ok">
     <span data-i18n="risk_ok">I understand the risk and flash the file at my own responsibility.</span></label>
+  <label class="check" data-i18n-title="video_m_t"><input type="checkbox" id="video-export">
+    <span data-i18n="video_m">Video: manual exposure mode (M) in movie</span></label>
   <button class="btn primary wide" id="export" data-i18n="create_update" disabled>Create update file</button>
   <p class="note" id="export-msg"></p>
+  <div id="video-applied" hidden>
+    <p class="note muted" data-i18n="video_applied">Video patches applied:</p>
+    <ul class="changes" id="video-list"></ul>
+  </div>
   <div class="downloads" id="downloads" hidden>
     <a class="btn primary wide" id="dl-update" download data-i18n="dl_update">Download update file</a>
     <a class="btn wide" id="dl-preset" download data-i18n="dl_preset">Save preset</a>

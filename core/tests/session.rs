@@ -122,8 +122,8 @@ fn firmware_tone_inherit_export() {
         preset["source"] = json!(null);
         want["source"] = json!(null);
         // newer than the reference answers: HSL (none in these requests)
-        // and per-look curves, effects off (none either)
-        for k in ["hsl", "look_curves", "effects_off"] {
+        // and per-look curves, effects off, video patches (none either)
+        for k in ["hsl", "look_curves", "effects_off", "video"] {
             assert_eq!(preset.as_object_mut().unwrap().remove(k), Some(Value::Null), "{k}");
         }
         if let Some(d) = diff(&preset, &want, &format!("preset[{n}]"), 1e-12) {

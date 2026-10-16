@@ -520,6 +520,7 @@ impl Session {
         if self.hdr_off() {
             curvesel::hdr_effects_off(&mut img)?;
         }
+        let video = self.apply_video(&mut img, body)?;
         let or_null = |k: &str| match body.get(k) {
             Some(v) if !v.is_null() && v != &json!({}) && v != &json!([]) => v.clone(),
             _ => Value::Null,
@@ -552,9 +553,13 @@ impl Session {
                 }).collect())
             },
             "effects_off": if self.hdr_off() { json!(self.effects_off()) } else { Value::Null },
+            "video": video.as_ref().map(|(names, _)| names.clone()),
         });
         let space = space::report_with(&self.stock, sets.len(), look_curves.len(), &targets::item_sizes(&self.stock, &self.targets));
         let (mut result, packed) = self.pack(img, space)?;
+        if let Some((_, applied)) = video {
+            result["video"] = json!(applied);
+        }
         if tone_ignored {
             result["tone_ignored"] = json!(true);
         }
@@ -642,6 +647,7 @@ impl Session {
         if list.iter().any(|t| t.effects_off) {
             curvesel::hdr_effects_off(&mut img)?;
         }
+        let video = self.apply_video(&mut img, body)?;
         // the preset: the request as it was accepted, sources filled in
         let mut out = Map::new();
         for t in &list {
@@ -655,10 +661,25 @@ impl Session {
             "version": 2,
             "firmware": format!("{}/unpackedFW", self.build.name),
             "targets": out,
+            "video": video.as_ref().map(|(names, _)| names.clone()),
         });
         let space = space::report_with(&self.stock, sets.len(), look_curves.len(), &targets::item_sizes(&self.stock, &list));
-        let (result, packed) = self.pack(img, space)?;
+        let (mut result, packed) = self.pack(img, space)?;
+        if let Some((_, applied)) = video {
+            result["video"] = json!(applied);
+        }
         Ok((result, packed, serde_json::to_string_pretty(&preset).unwrap()))
+    }
+
+    /// apply the video patches a request asks for (video.rs), if any;
+    /// returns (patch names, one report line per applied patch)
+    fn apply_video(&self, img: &mut [u8], body: &Value) -> Result<Option<(Vec<String>, Vec<String>)>, String> {
+        let names = crate::video::names_from(body.get("video"))?;
+        if names.is_empty() {
+            return Ok(None);
+        }
+        let applied = crate::video::apply(img, &names)?;
+        Ok(Some((names, applied)))
     }
 
     /// checksum, repack and verify the patched image the way the camera's
