@@ -35,7 +35,7 @@ function renderLutDialog() {
   $("lut-target").textContent = T ? label(T) : "—";
   $("lut-file-name").textContent = lut.name || t("lut_pick");
   $("lut-fit").disabled = lut.busy || !lut.text || !T || !LUT_TARGETS.includes(T);
-  for (const id of ["lut-file", "lut-input", "lut-post", "lut-hsl"]) $(id).disabled = lut.busy;
+  for (const id of ["lut-file", "lut-input", "lut-post", "lut-hsl", "lut-hc"]) $(id).disabled = lut.busy;
   $("lut-dlg").classList.toggle("busy", lut.busy);
 }
 
@@ -45,6 +45,7 @@ function lutMsg(text, kind = "") {
 }
 
 $("lut-open").onclick = () => {
+  $("lut-hc").checked = hcOf(state.current);
   renderLutDialog();
   $("lut-report").hidden = true;
   lutMsg(lut.text ? t("lut_ready", { size: lut.info.size, title: lut.info.title || lut.name }) : "");
@@ -75,7 +76,8 @@ $("lut-file").onchange = async (e) => {
 $("lut-fit").onclick = async () => {
   const T = state.current;
   if (!T || !lut.text || lut.busy) return;
-  const body = { name: lut.name, target: T, input: lutInput(), post: $("lut-post").checked, hsl: $("lut-hsl").checked };
+  const body = { name: lut.name, target: T, input: lutInput(), post: $("lut-post").checked, hsl: $("lut-hsl").checked,
+    hc: $("lut-hc").checked };
   lut.busy = true;
   renderLutDialog();
   $("lut-report").hidden = true;
@@ -86,6 +88,7 @@ $("lut-fit").onclick = async () => {
   const timer = setInterval(tick, 1000);
   try {
     const r = await api.lutFit(lut.text, body, (s) => { step = LUT_STEPS[s] ? t(LUT_STEPS[s]) : s; tick(); });
+    setHc(body.hc);
     applyLutFit(T, r.spec);
     renderLutReport(r.report);
     lutMsg(t("lut_done", { look: label(T), s: Math.round((performance.now() - t0) / 1000) }), "ok");
@@ -150,22 +153,45 @@ function renderLutReport(r) {
 // depend on the target, so any LUT target can take any of them at once.
 // Derived from spektrafilm by Andrea Volpato, CC BY-SA 4.0 (films/LICENSE.txt).
 
-const films = { lib: null, byFilm: {} };
+// films/spektrafilm-hc.json is the same library fitted for the camera's
+// highlight correction (docs/plan-highlight-correction.md); a film target
+// takes its looks from the library of its setting and records it (lut.hc).
+const films = { libs: { off: null, on: null }, byFilm: { off: {}, on: {} }, lib: null };
 
-async function loadFilms() {
+async function loadLibrary(key, file) {
   try {
-    const res = await fetch("films/spektrafilm.json");
+    const res = await fetch(`films/${file}`);
     if (!res.ok) return;
-    films.lib = await res.json();
-    films.byFilm = {};
-    for (const l of films.lib.looks) (films.byFilm[l.film] ||= []).push(l);
+    const lib = await res.json();
+    films.libs[key] = lib;
+    films.byFilm[key] = {};
+    for (const l of lib.looks) (films.byFilm[key][l.film] ||= []).push(l);
+    films.lib = films.libs.off || films.libs.on;
     if (state.fw) renderPickers();
   } catch { /* no library: no film group */ }
 }
+function loadFilms() {
+  loadLibrary("off", "spektrafilm.json");
+  loadLibrary("on", "spektrafilm-hc.json");
+}
 window.addEventListener("editor-ready", loadFilms);
 
+// the highlight correction setting new fits are made for (the pick panel's
+// row; a loaded DNG sets it from its makernote)
+const hcState = { on: store.get("hc") === "on" };
+function setHc(on) {
+  hcState.on = !!on;
+  store.set("hc", hcState.on ? "on" : "off");
+}
+// a target fitted to a film or a LUT: the setting it was fitted for; else the current one
+const hcOf = (T) => {
+  const l = T && state.targets[T] && state.targets[T].lut;
+  return l ? !!l.hc : hcState.on;
+};
+const hcKey = (on) => (on ? "on" : "off");
+
 const stockName = (id) => (films.lib && films.lib.names[id]) || id;
-const filmLooks = (film) => films.byFilm[film] || [];
+const filmLooks = (film, on = hcState.on) => films.byFilm[hcKey(on)][film] || [];
 const filmOf = (T) => {
   const l = state.targets[T] && state.targets[T].lut;
   return l && l.library === "spektrafilm" ? l : null;
@@ -174,18 +200,20 @@ const deText = (v) => (Number.isFinite(v) ? v.toFixed(2) : "–");
 
 // the source picker's film group: one entry per film (its own print first)
 function filmOptions(T, opt) {
-  if (!films.lib || !LUT_TARGETS.includes(T)) return "";
-  const list = Object.keys(films.byFilm).sort((a, b) => stockName(a).localeCompare(stockName(b)));
+  const on = hcOf(T);
+  if (!films.libs[hcKey(on)] || !LUT_TARGETS.includes(T)) return "";
+  const list = Object.keys(films.byFilm[hcKey(on)]).sort((a, b) => stockName(a).localeCompare(stockName(b)));
   return `<optgroup label="${esc(t("src_films"))}">` + list.map((f) => {
-    const d = filmLooks(f).find((l) => l.default) || filmLooks(f)[0];
+    const d = filmLooks(f, on).find((l) => l.default) || filmLooks(f, on)[0];
     return opt(`film:${f}`, stockName(f), t("film_t", { print: d.print ? stockName(d.print) : t("print_scan"), de: deText(d.report.final.all) }));
   }).join("") + "</optgroup>";
 }
 
 // the print row under the source: shown for a negative from the library
 function renderPrintRow(T) {
+  renderHcRow(T);
   const f = T && filmOf(T);
-  const looks = f ? filmLooks(f.film) : [];
+  const looks = f ? filmLooks(f.film, !!f.hc) : [];
   $("print-row").hidden = !(f && f.print && looks.length);
   if ($("print-row").hidden) return;
   $("print").innerHTML = looks.map((l) => `<option value="${esc(l.print)}">${esc(stockName(l.print))}` +
@@ -194,25 +222,72 @@ function renderPrintRow(T) {
 }
 
 // a film of the library on target T: replaces its source, colour, curves, wheels and HSL
-function applyFilm(T, film, print) {
-  const looks = filmLooks(film);
+// `on`: fitted for highlight correction (default: what the target's row shows)
+function applyFilm(T, film, print, on = hcOf(T)) {
+  const looks = filmLooks(film, on);
   const l = looks.find((x) => x.print === print) || looks.find((x) => x.default) || looks[0];
   if (!l) return;
   const neutral = { hue: 0, sat: 0 };
   // stored in the preset: language-neutral (a slide has no print)
-  const title = l.print ? `${stockName(l.film)} · ${stockName(l.print)}` : stockName(l.film);
+  const title = (l.print ? `${stockName(l.film)} · ${stockName(l.print)}` : stockName(l.film)) + (on ? " · HC" : "");
   applyLutFit(T, {
     source: "Standard", effects_off: false,
     matrices: { [T]: l.matrix }, curves: l.curves, hsl: l.hsl, post: l.post,
     edit: {
       matrix: { base: l.matrix, sat: 1, hue: 0, calib: { r: neutral, g: neutral, b: neutral } },
       lut: { library: "spektrafilm", film: l.film, print: l.print, title, input: "grlog -8 12",
-        spektrafilm: films.lib.spektrafilm, report: l.report },
+        spektrafilm: films.libs[hcKey(on)].spektrafilm, report: l.report, ...(on ? { hc: true } : {}) },
     },
   });
 }
 
 $("print").onchange = (e) => {
   const f = state.current && filmOf(state.current);
-  if (f) applyFilm(state.current, f.film, e.target.value);
+  if (f) applyFilm(state.current, f.film, e.target.value);   // the print changes, the setting stays
 };
+
+// the highlight correction row: for every target a LUT or film can go on
+function renderHcRow(T) {
+  const show = !!T && LUT_TARGETS.includes(T);
+  $("hc-row").hidden = !show;
+  $("hc-note").hidden = true;
+  if (!show) return;
+  const on = hcOf(T);
+  const sel = $("hc");
+  sel.value = hcKey(on);
+  sel.title = t("hc_t");
+  // "on" needs the second library for a film target
+  const f = filmOf(T);
+  sel.querySelector('option[value="on"]').disabled = !!f && !films.libs.on;
+  const photo = state.shot && state.shot.highlight_correction;
+  const fitted = state.targets[T] && state.targets[T].lut;
+  const word = (v) => t(v ? "hc_w_on" : "hc_off");
+  if (fitted && typeof photo === "boolean" && photo !== on) {
+    $("hc-note").textContent = t("hc_photo", { photo: word(photo), fitted: word(on) });
+    $("hc-note").hidden = false;
+  }
+}
+
+$("hc").onchange = (e) => {
+  const T = state.current;
+  const on = e.target.value === "on";
+  setHc(on);
+  const f = T && filmOf(T);
+  if (f && !!f.hc !== on) return applyFilm(T, f.film, f.print, on);   // the same film, fitted for the setting
+  if (T && state.targets[T] && state.targets[T].lut && !!state.targets[T].lut.hc !== on) {
+    notice(t("hc_lut_refit"), true);
+    e.target.value = hcKey(!on);
+    return;
+  }
+  renderPickers();
+};
+
+// a loaded DNG says how it was taken: new fits follow it
+function hcFromShot(meta) {
+  const v = meta && meta.highlight_correction;
+  if (typeof v === "boolean" && v !== hcState.on) {
+    setHc(v);
+    notice(t("hc_loaded", { photo: t(v ? "hc_w_on" : "hc_off") }));
+  }
+  renderPickers();
+}

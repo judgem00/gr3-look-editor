@@ -180,6 +180,55 @@ fn known_look_round_trip() {
     assert!(fit.hsl.is_none() && fit.post.is_some());
 }
 
+/// the camera with its highlight correction (docs/plan-highlight-correction.md):
+/// half the gain, grey still at sRGB 0.46, about a stop more input headroom
+#[test]
+fn highlight_correction_camera() {
+    let s = need!(session());
+    let off = Camera::new(s.image(), "NegativeFilm").unwrap();
+    let on = Camera::with_hc(s.image(), "NegativeFilm", true).unwrap();
+    assert!(!off.hc && off.extra_ev == 0.0);
+    assert!(on.hc && (0.9..1.1).contains(&on.extra_ev), "{}", on.extra_ev);
+    assert!((off.scale / on.scale).log2() - on.extra_ev < 1e-9);
+    // the input end (4095) over grey: +3.46 EV without, +4.45 with
+    let end = |c: &Camera| (4095.0 / (0.18 * c.scale)).log2();
+    assert!((end(&off) - 3.46).abs() < 0.05 && (end(&on) - 4.45).abs() < 0.05, "{} {}", end(&off), end(&on));
+    // a look rendered with HC still tells grey +4 EV from +3.5 EV; without HC both clip
+    let truth = Fit {
+        target: "NegativeFilm".into(), input: Input::Display, matrix: off.standard,
+        curves: [chan_linear(), chan_linear(), chan_linear()], hsl: None, post: None, report: Value::Null,
+    };
+    let grey = |cam: &Camera, ev: f64| truth.renderer(cam).unwrap().render(&[[0.18 * 2f64.powf(ev); 3]])[0][1];
+    assert!(grey(&off, 4.0) - grey(&off, 3.6) < 1e-6);
+    assert!(grey(&on, 4.0) - grey(&on, 3.5) > 0.005, "{} {}", grey(&on, 3.5), grey(&on, 4.0));
+}
+
+fn chan_linear() -> Vec<u16> {
+    (0..256).map(|i| (i * 16383 / 255) as u16).collect()
+}
+
+/// a look made with the HC camera is fitted back with it
+#[test]
+fn highlight_correction_round_trip() {
+    let s = need!(session());
+    let cam = Camera::with_hc(s.image(), "NegativeFilm", true).unwrap();
+    let curve = |gamma: f64| -> Vec<u16> { (0..256).map(|i| (16383.0 * (i as f64 / 255.0).powf(gamma)).round() as u16).collect() };
+    let truth = Fit {
+        target: "NegativeFilm".into(),
+        input: Input::GrLog { lo: -8.0, span: 12.0 },
+        matrix: cam.standard,
+        curves: [curve(1.1), curve(1.0), curve(0.92)],
+        hsl: None,
+        post: Some(PORTRA),
+        report: Value::Null,
+    };
+    let r = truth.renderer(&cam).unwrap();
+    let text = cube(33, "# GR-INPUT: grlog -8 12", |u| r.render(&[u.map(|v| 0.18 * 2f64.powf(12.0 * v - 8.0))])[0]);
+    let lut = lutfit::parse_cube(&text).unwrap();
+    let fit = lutfit::fit(&cam, &lut, &Options { hsl: false, ..quick() }, &mut |_| {}).unwrap();
+    assert!(all(&fit, "final") < 0.6, "{}", fit.report);
+}
+
 /// the fitted target goes through the export as it is; three films fit
 #[test]
 fn fitted_targets_export() {
@@ -263,4 +312,35 @@ fn film_library_exports() {
         s.export(&json!({ "targets": { "Vivid": spec } })).unwrap_or_else(|e| panic!("{name}: {e}"));
     }
     assert!(worst < 3.5, "worst fit {worst}");
+}
+
+/// the same library fitted for highlight correction (spektrafilm-hc.json,
+/// film_library --hc): every film, marked, exports, and fits about as well
+#[test]
+fn film_library_hc_exports() {
+    let s = need!(session());
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../editor/static/films");
+    let read = |f: &str| -> Value { serde_json::from_str(&std::fs::read_to_string(dir.join(f)).unwrap()).unwrap() };
+    let (lib, plain) = (read("spektrafilm-hc.json"), read("spektrafilm.json"));
+    assert_eq!(lib["highlight_correction"], true);
+    assert!(plain.get("highlight_correction").is_none());
+    let looks = lib["looks"].as_array().unwrap();
+    assert_eq!(looks.len(), 132);
+    let key = |l: &Value| format!("{} / {}", l["film"], l["print"]);
+    let same: Vec<String> = plain["looks"].as_array().unwrap().iter().map(key).collect();
+    assert_eq!(looks.iter().map(key).collect::<Vec<_>>(), same, "the same films in the same order");
+    let mut worst: f64 = 0.0;
+    for l in looks {
+        worst = worst.max(l["report"]["final"]["all"].as_f64().unwrap());
+    }
+    let step = if cfg!(debug_assertions) { 11 } else { 1 };
+    for l in looks.iter().step_by(step) {
+        let spec = json!({
+            "source": "Standard", "matrices": { "Vivid": l["matrix"] }, "curves": l["curves"],
+            "hsl": l["hsl"], "post": l["post"],
+        });
+        s.export(&json!({ "targets": { "Vivid": spec } })).unwrap_or_else(|e| panic!("{}: {e}", key(l)));
+    }
+    // a stop more highlights in the samples: a little harder than without (3.36)
+    assert!(worst < 3.7, "worst fit {worst}");
 }

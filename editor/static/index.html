@@ -117,6 +117,14 @@
         <label for="print"><span class="num"></span><span data-i18n="print">Print</span></label>
         <select id="print"></select>
       </div>
+      <div class="pick-row" id="hc-row" hidden>
+        <label for="hc"><span class="num"></span><span data-i18n="hc">Highlight correction</span></label>
+        <select id="hc">
+          <option value="off" data-i18n="hc_off">off</option>
+          <option value="on" data-i18n="hc_on">on</option>
+        </select>
+      </div>
+      <p class="note" id="hc-note" hidden></p>
       <div class="pick-row">
         <label for="grain"><span class="num">3</span><span data-i18n="grain">Grain</span></label>
         <select id="grain" disabled></select>
@@ -265,6 +273,8 @@
     <span data-i18n="lut_post">Post matrix (after the tone curve)</span></label>
   <label class="check"><input type="checkbox" id="lut-hsl" checked>
     <span data-i18n="lut_hsl">HSL</span></label>
+  <label class="check"><input type="checkbox" id="lut-hc">
+    <span data-i18n="lut_hc">For highlight correction on</span></label>
   <p class="note warn" data-i18n="lut_replaces"></p>
   <button class="btn primary wide" id="lut-fit" data-i18n="lut_fit" disabled>Fit</button>
   <p class="note" id="lut-msg"></p>

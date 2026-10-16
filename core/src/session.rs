@@ -225,13 +225,15 @@ impl Session {
         }))
     }
 
-    /// POST /api/lut/fit {name, target, input, post, hsl} with the .cube:
+    /// POST /api/lut/fit {name, target, input, post, hsl, hc} with the .cube:
     /// the target's look fitted to the LUT, as a v2 preset's target
-    /// (source Standard; edit.lut says where it came from), and the report
+    /// (source Standard; edit.lut says where it came from), and the report;
+    /// `hc`: fitted for the camera's highlight correction (default off)
     pub fn lut_fit(&self, text: &str, body: &Value, progress: &mut dyn FnMut(&str)) -> Result<Value, String> {
         let lut = lutfit::parse_cube(text)?;
         let target = body.get("target").and_then(|v| v.as_str()).unwrap_or("");
-        let cam = lutfit::Camera::new(&self.stock, target)?;
+        let hc = body.get("hc").and_then(|v| v.as_bool()).unwrap_or(false);
+        let cam = lutfit::Camera::with_hc(&self.stock, target, hc)?;
         let flag = |k: &str| body.get(k).and_then(|v| v.as_bool()).unwrap_or(true);
         let input = match body.get("input").and_then(|v| v.as_str()) {
             Some(s) => Some(lutfit::Input::parse(s)?),
@@ -240,7 +242,11 @@ impl Session {
         let opt = lutfit::Options { post: flag("post"), hsl: flag("hsl"), input, ..lutfit::Options::default() };
         let fit = lutfit::fit(&cam, &lut, &opt, progress)?;
         let name = body.get("name").and_then(|v| v.as_str()).unwrap_or("");
-        let spec = fit.spec(json!({ "name": name, "title": lut.title, "sha256": sha256_hex(text.as_bytes()) }));
+        let mut info = json!({ "name": name, "title": lut.title, "sha256": sha256_hex(text.as_bytes()) });
+        if hc {
+            info["hc"] = json!(true);
+        }
+        let spec = fit.spec(info);
         Ok(json!({ "target": target, "spec": spec, "report": fit.report }))
     }
 
@@ -872,6 +878,7 @@ impl Session {
             "image_tone": tone_label.map(|t| t.0), "shot_look": shot_look,
             "params": params, "gain": gain, "scale": scale, "residual": residual,
             "shadow_correction": shot.shadow_correction,
+            "highlight_correction": shot.highlight_correction,
             "highlight_chroma": if vignette_fit { json!(chroma) } else { Value::Null },
             "vignette": if vignette_fit { json!({ "coef": vignette, "source": vignette_source }) } else { Value::Null },
             "filename": filename,
