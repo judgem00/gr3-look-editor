@@ -212,6 +212,7 @@ function filmOptions(T, opt) {
 // the print row under the source: shown for a negative from the library
 function renderPrintRow(T) {
   renderHcBox(T);
+  renderLogBox(T);
   const f = T && filmOf(T);
   const looks = f ? filmLooks(f.film, !!f.hc) : [];
   $("print-row").hidden = !(f && f.print && looks.length);
@@ -250,11 +251,13 @@ $("print").onchange = (e) => {
 // the print, so it does not read as a camera switch; for every LUT target
 function renderHcBox(T) {
   const box = $("hc-box");
-  box.hidden = !T || !LUT_TARGETS.includes(T);
+  const log = !!T && lutLib(T) === "grlog";
+  box.hidden = !T || !(LUT_TARGETS.includes(T) || log);
   $("hc-note").hidden = true;
   if (box.hidden) return;
   const on = hcOf(T);
-  $("hc-sum").textContent = t("hc_sum", { state: t(on ? "hc_sum_on" : "hc_sum_off") });
+  $("hc-sum").textContent = t(log ? "hc_sum_log" : "hc_sum", { state: t(on ? "hc_sum_on" : "hc_sum_off") });
+  $("hc-explain").textContent = t(log ? "hc_explain_log" : "hc_explain");
   const f = filmOf(T);
   for (const b of $("hc").querySelectorAll("button")) {
     b.classList.toggle("on", (b.dataset.hc === "on") === on);
@@ -277,6 +280,7 @@ for (const b of $("hc").querySelectorAll("button")) b.onclick = () => {
   if (T && hcOf(T) === on) return;
   const f = T && filmOf(T);
   const l = T && state.targets[T] && state.targets[T].lut;
+  if (l && l.library === "grlog") { setHc(on); return applyGrLog(T, on); }   // the log curve on that tone curve
   if (l && !f) return notice(t("hc_lut_refit"), true);   // a LUT of the user's: only its dialog can refit
   setHc(on);
   if (f) return applyFilm(T, f.film, f.print, on);       // the same film, fitted for the setting
@@ -292,3 +296,73 @@ function hcFromShot(meta) {
   }
   renderPickers();
 }
+
+// ---- GR-Log ---------------------------------------------------------------------------
+// A log tone curve for video in manual exposure (core/src/grlog.rs,
+// docs/plan-gr-log.md): on Standard's colours, the same curve on R, G and B.
+// The target records it like a film (edit.lut.library "grlog"), so resets go
+// back to it and another source drops it. Post LUTs come from the core.
+
+const GRLOG_TARGETS = ["Standard", "Vivid", "PositiveFilm", "BleechBypass_GR", "Retro"];
+
+function grlogOptions(T, opt) {
+  if (!GRLOG_TARGETS.includes(T)) return "";
+  return `<optgroup label="${esc(t("src_video"))}">${opt("grlog", "GR-Log", t("src_grlog_t"))}</optgroup>`;
+}
+
+// GR-Log on target T, for the camera's highlight correction off or on
+async function applyGrLog(T, on = hcOf(T)) {
+  try {
+    const r = await api.grlog({ target: T, hc: on });
+    r.spec.edit.lut.range = [r.first_ev, r.top_ev];
+    applyLutFit(T, r.spec);
+  } catch (err) {
+    notice(t("grlog_failed", { msg: err.message }), true);
+    renderPickers();
+  }
+}
+
+function renderLogBox(T) {
+  const l = T && state.targets[T] && state.targets[T].lut;
+  const box = $("log-box");
+  box.hidden = !(l && l.library === "grlog");
+  if (box.hidden) return;
+  const ev = (v) => (v >= 0 ? "+" : "−") + Math.abs(v).toLocaleString(LANG, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  $("log-range").hidden = !Array.isArray(l.range);
+  if (l.range) $("log-range").textContent = t("grlog_range", { lo: ev(l.range[0]), hi: ev(l.range[1]) });
+}
+
+function logMsg(text, kind = "") {
+  $("log-msg").className = `note ${kind}`;
+  $("log-msg").textContent = text;
+  $("log-msg").hidden = !text;
+}
+
+// the post LUT as a file to save: .cube text from the core
+async function grlogDownload(to, text, stem) {
+  const T = state.current;
+  const l = T && state.targets[T] && state.targets[T].lut;
+  if (!l || l.library !== "grlog") return;
+  const name = `GR-Log${l.hc ? "-HC" : ""}_to_${stem}.cube`;
+  try {
+    const cube = await api.grlogLut({ to, hc: !!l.hc, lo: l.lo, span: l.span, size: 33 }, text);
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([cube], { type: "text/plain" }));
+    a.download = name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    logMsg(t("grlog_saved", { name }), "ok");
+  } catch (err) {
+    logMsg(t("grlog_failed", { msg: err.message }), "warn");
+  }
+}
+
+for (const b of $("log-luts").querySelectorAll("button")) b.onclick = () => {
+  if (b.dataset.to === "lut") return $("log-lut-file").click();
+  grlogDownload(b.dataset.to, "", b.dataset.to === "standard" ? "Standard" : "Rec709");
+};
+$("log-lut-file").onchange = async (e) => {
+  const f = e.target.files[0];
+  e.target.value = "";
+  if (f) grlogDownload("lut", await f.text(), f.name.replace(/\.cube$/i, ""));
+};

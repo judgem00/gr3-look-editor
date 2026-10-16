@@ -119,12 +119,24 @@
       </div>
       <details class="pick-sub" id="hc-box" hidden>
         <summary><span id="hc-sum">Film fitted for: highlight correction off</span></summary>
-        <p class="note" data-i18n="hc_explain"></p>
+        <p class="note" id="hc-explain"></p>
         <div class="seg small" id="hc" role="group">
           <button type="button" data-hc="off" data-i18n="hc_off">without highlight correction</button>
           <button type="button" data-hc="on" data-i18n="hc_on">with highlight correction</button>
         </div>
         <p class="note warn" id="hc-note" hidden></p>
+      </details>
+      <details class="pick-sub" id="log-box" hidden>
+        <summary><span data-i18n="grlog_sum">Post LUTs for GR-Log</span></summary>
+        <p class="note" id="log-range" hidden></p>
+        <p class="note" data-i18n="grlog_explain"></p>
+        <div class="seg small" id="log-luts" role="group">
+          <button type="button" data-to="standard" data-i18n="grlog_to_std">to Standard</button>
+          <button type="button" data-to="rec709" data-i18n="grlog_to_709">to Rec.709</button>
+          <button type="button" data-to="lut" data-i18n="grlog_to_lut" data-i18n-title="grlog_lut_t">through a LUT …</button>
+        </div>
+        <input type="file" id="log-lut-file" accept=".cube,.CUBE" hidden>
+        <p class="note" id="log-msg" hidden></p>
       </details>
       <div class="pick-row">
         <label for="grain"><span class="num">3</span><span data-i18n="grain">Grain</span></label>
@@ -333,6 +345,7 @@
       <li data-i18n-html="help_space"></li>
       <li data-i18n-html="help_presets"></li>
       <li data-i18n-html="help_films"></li>
+      <li data-i18n-html="help_grlog"></li>
     </ul>
   </details>
   <p class="note" data-i18n-html="help_tutorial"></p>

@@ -109,12 +109,14 @@ fn targets_export() {
         for t in grlog::TARGETS {
             let spec = grlog::spec(&cam, t, Encoding::DEFAULT).unwrap();
             assert_eq!(spec["source"], "Standard");
-            assert!(spec["edit"].get("lut").is_none(), "not a LUT fit");
-            assert_eq!(spec["edit"]["log"]["lo"], -6.0);
-            assert_eq!(spec["edit"]["log"].get("hc").is_some(), hc);
+            let l = &spec["edit"]["lut"];
+            assert_eq!(l["library"], "grlog");
+            assert_eq!(l["lo"], -6.0);
+            assert_eq!(l.get("hc").is_some(), hc);
+            assert!(l.get("report").is_none(), "not a fit");
             let (_, _, preset) = s.export(&json!({ "targets": { t: spec } })).unwrap_or_else(|e| panic!("{t}: {e}"));
             let preset: Value = serde_json::from_str(&preset).unwrap();
-            assert_eq!(preset["targets"][t]["edit"]["log"]["span"], 10.0, "{t}");
+            assert_eq!(preset["targets"][t]["edit"]["lut"]["span"], 10.0, "{t}");
         }
     }
 }
@@ -188,4 +190,22 @@ fn post_lut_to_film() {
     eprintln!("GR-Log -> Portra: ΔE2000 mean {:.2}", mean(&d));
     // two tetrahedral lookups on 33^3 and the curve's knots
     assert!(mean(&d) < 0.3, "mean {}", mean(&d));
+}
+
+/// the session's requests (wasm.rs): the target and the post LUTs
+#[test]
+fn session_requests() {
+    let s = need!(session());
+    let r = s.grlog(&json!({ "target": "Retro", "hc": true })).unwrap();
+    assert_eq!(r["spec"]["edit"]["lut"]["hc"], true);
+    assert_eq!(r["top_ev"].as_f64().map(|v| (v - 4.45).abs() < 0.05), Some(true));
+    assert!(s.grlog(&json!({ "target": "NegativeFilm" })).is_err());
+    assert!(s.grlog(&json!({ "target": "Retro", "lo": 2 })).is_err());
+    let cube = s.grlog_lut(&json!({ "to": "standard", "size": 9 }), None).unwrap();
+    assert_eq!(lutfit::parse_cube(&cube).unwrap().size, 9);
+    let own = "TITLE \"own\"\n# GR-INPUT: grlog -8 12\nLUT_3D_SIZE 2\n0 0 0\n1 0 0\n0 1 0\n1 1 0\n0 0 1\n1 0 1\n0 1 1\n1 1 1\n";
+    let cube = s.grlog_lut(&json!({ "to": "lut", "size": 5 }), Some(own)).unwrap();
+    assert!(cube.contains("film LUT own"));
+    assert!(s.grlog_lut(&json!({ "to": "lut" }), None).is_err());
+    assert!(s.grlog_lut(&json!({ "to": "x" }), None).is_err());
 }

@@ -4,7 +4,7 @@ Goal: a look whose tone curve stores the scene logarithmically, for video
 shot in manual exposure, with LUTs that take it back to a finished image in
 post (the camera's Standard, Rec.709, or a spektrafilm film).
 
-Status: phase 1 (core) done, see [below](#phase-1-result); editor, test
+Status: phases 1 (core) and 2 (editor) done, see the results below; test
 firmware and camera test open. Builds on the per-look curves
 ([plan-look-curves.md](plan-look-curves.md)), the LUT fitter's `grlog`
 encoding ([plan-spektrafilm-fitter.md](plan-spektrafilm-fitter.md)) and the
@@ -183,3 +183,25 @@ For phase 2: the encoding could follow the camera's range (e.g. `grlog
 −4.5 8` without highlight correction, `−3.5 8` with it: about 32 codes per
 stop instead of 25). It is a parameter of every function; the default
 stays `−6 10` until the camera test shows how the toe and the noise look.
+
+## Phase 2 result (2026-10-16)
+
+- Session calls `grlog {target, hc, lo, span}` (the target and the EV range
+  it stores) and `grlog_lut {to, hc, lo, span, size}` (+ the .cube for
+  `to: "lut"`), in wasm, worker and bridge.
+- The target keeps `edit.lut` with `library: "grlog"` (not a separate
+  `edit.log`): the editor already treats such a target as fitted, so resets,
+  "another source drops it" and the preset work unchanged.
+- Editor: source group "Video" → "GR-Log"; the highlight correction box
+  ("GR-Log made for: …") rebuilds the curve; a box "Post LUTs for GR-Log"
+  with the stored range and three downloads (to Standard, to Rec.709,
+  through a LUT of one's own); a note with the movie menu settings; help
+  text; "GR-Log (video)" in the export list. EN and DE.
+- Checked in the browser: Bleach Bypass and Retro take it; HC on rebuilds
+  the curve (range −3.5 … +4.5 EV) and keeps the grain; the downloads come
+  out as `GR-Log_to_Standard.cube`, `GR-Log-HC_to_<lut>.cube`; switching
+  back to a look drops it. `cargo test` green (GR-Log: 8 tests).
+- Not done: a preview "through the LUT" toggle (the preview shows the
+  flat log image); the 132 film LUTs as a ready download (they need the
+  library's .cube files, which are not shipped; `grlog_luts --films` makes
+  them offline, or "through a LUT" in the editor one by one).

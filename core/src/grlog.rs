@@ -104,17 +104,20 @@ pub fn look(cam: &Camera, target: &str, enc: Encoding) -> Result<Fit, String> {
 }
 
 /// the target as a v2 preset holds it: source Standard, Standard's matrix,
-/// the three curves; `edit.log` says it is GR-Log (not a LUT fit)
+/// the three curves; `edit.lut` says where it came from like a film of the
+/// library does (`library: "grlog"`, the encoding, `hc`), so the editor
+/// treats it as a fitted target (resets go back to it, another source drops it)
 pub fn spec(cam: &Camera, target: &str, enc: Encoding) -> Result<Value, String> {
     let fit = look(cam, target, enc)?;
-    let mut spec = fit.spec(json!({}));
-    let edit = spec["edit"].as_object_mut().ok_or("spec without edit")?;
-    edit.remove("lut");
-    let mut log = enc.to_json();
+    let mut lut = json!({ "library": "grlog", "title": "GR-Log", "lo": enc.lo, "span": enc.span });
     if cam.hc {
-        log["hc"] = json!(true);
+        lut["hc"] = json!(true);
     }
-    edit.insert("log".into(), log);
+    let mut spec = fit.spec(lut);
+    // a log curve is not a fit: no error report
+    if let Some(l) = spec["edit"]["lut"].as_object_mut() {
+        l.remove("report");
+    }
     debug_assert!(look_sets().any(|(n, _)| n == target));
     Ok(spec)
 }

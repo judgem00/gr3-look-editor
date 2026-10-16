@@ -55,6 +55,9 @@ const ops = {
   lut: ({ text }) => JSON.parse(editor.lut_info(text)),
   // the LUT fitter: blocks this worker for some seconds, reporting each step
   lut_fit: ({ text, body }) => JSON.parse(editor.lut_fit(text, body)),
+  // GR-Log (grlog.rs): the target, and a post LUT as .cube text
+  grlog: ({ body }) => JSON.parse(editor.grlog(body)),
+  grlog_lut: ({ body, text }) => editor.grlog_lut(body, text || ""),
   async dng({ bytes, name }) {
     const data = new Uint8Array(bytes);
     editor.open_dng(data);
