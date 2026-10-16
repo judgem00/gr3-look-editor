@@ -4,8 +4,8 @@ Goal: a look whose tone curve stores the scene logarithmically, for video
 shot in manual exposure, with LUTs that take it back to a finished image in
 post (the camera's Standard, Rec.709, or a spektrafilm film).
 
-Status: phases 1 (core) and 2 (editor) done, see the results below; test
-firmware and camera test open. Builds on the per-look curves
+Status: phases 1–3 done (core, editor, test firmware), see the results
+below; camera test open. Builds on the per-look curves
 ([plan-look-curves.md](plan-look-curves.md)), the LUT fitter's `grlog`
 encoding ([plan-spektrafilm-fitter.md](plan-spektrafilm-fitter.md)) and the
 video patches in gr3x-fw-hack (`docs/video.md`: manual exposure `manual
@@ -205,3 +205,17 @@ stays `−6 10` until the camera test shows how the toe and the noise look.
   flat log image); the 132 film LUTs as a ready download (they need the
   library's .cube files, which are not shipped; `grlog_luts --films` makes
   them offline, or "through a LUT" in the editor one by one).
+
+## Phase 3: test firmware (2026-10-16)
+
+`core/examples/grlog_flash.rs` exports GR-Log (`grlog −6 10`, highlight
+correction off) on Bleach Bypass, every other look stock, to
+`work/grlog-test/` with the post LUTs. gr3x-fw-hack
+`tools/video-test.py build manual mlive7 dials osd bitrate --image
+work/grlog-test/unpackedFW-looks` adds the video patches
+(`work/grlog-test/video/FWDC239B.BIN`). Checks: container (`fw-pack.py
+check`), the look and the video image differ only in the 102 bytes of the
+patches, `verify-tuning.py --patched` (the selector stub with the video
+patches, still and live, every look), `verify-targets.py --patched` (every
+other look stock). `osd` is flashed here for the first time.
+Shooting guide: `work/grlog-test/HOW_TO_SHOOT.txt` (German).
