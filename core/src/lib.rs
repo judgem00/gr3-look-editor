@@ -11,6 +11,7 @@ pub mod curvesel;
 pub mod dng;
 pub mod fit;
 pub mod gamma;
+pub mod grain;
 pub mod grfw;
 pub mod looks;
 pub mod lutfit;

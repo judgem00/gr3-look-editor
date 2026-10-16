@@ -4,8 +4,9 @@
 // changing its source keeps them; only the base underneath changes.
 //
 // Per target the editor keeps
-//   state.targets[name]  { source, ext, effects_off, post, lut }  (ext: id of an
-//                        extra base; effects_off: HDR Tone only, always on for it;
+//   state.targets[name]  { source, ext, effects_off, grain, post, lut }  (ext: id of
+//                        an extra base; effects_off: HDR Tone only, always on for it;
+//                        grain: 1 strong .. 3 weak in the camera whatever its menu says, 0 = as the camera;
 //                        post: 3x3 after the tone curve or null, postmatrix.rs;
 //                        lut: the LUT it was fitted to, lut.js, or null)
 //   state.edits[name]    { base | null, sat, hue, calib }  (base null: the source's matrix)
@@ -26,8 +27,10 @@ const isTarget = (name) => targetNames().includes(name);
 function targetSpec(name) {
   // HDR Tone as a target always has its effects off (no local tone mapping):
   // the modified firmware never carries them, and only then is its matrix its own
-  if (!state.targets[name]) state.targets[name] = { source: name, ext: null, effects_off: name === HDR, post: null, lut: null };
-  return state.targets[name];
+  if (!state.targets[name]) state.targets[name] = { source: name, ext: null, effects_off: name === HDR, grain: 0, post: null, lut: null };
+  const s = state.targets[name];
+  if (!s.grain) s.grain = 0;
+  return s;
 }
 
 // the LUT the target was fitted to (lut.js): its title, or the file name
@@ -145,7 +148,7 @@ const postOf = (name) => {
 function targetChanged(name) {
   if (!state.fw || !state.stock[name]) return false;
   const s = targetSpec(name);
-  return s.source !== name || !!s.ext || !same(effective(name), state.stock[name].matrix) ||
+  return s.source !== name || !!s.ext || s.grain > 0 || !same(effective(name), state.stock[name].matrix) ||
     curvesForExport(name).length > 0 || hslChangedOf(name) || !!postOf(name);
 }
 const changedTargets = () => targetNames().filter(targetChanged);
@@ -170,6 +173,7 @@ function changesOf(name) {
   if (hslChangedOf(name)) out.push(t("ex_hsl"));
   if (postOf(name)) out.push(t("ex_post"));
   if (targetSpec(name).effects_off) out.push(t("ex_hdr_off"));
+  if (targetSpec(name).grain) out.push(t("ex_grain", { n: grainText(targetSpec(name).grain) }));
   return out;
 }
 
@@ -194,12 +198,12 @@ async function runSync() {
   try {
     for (const name of targetNames()) {
       const s = targetSpec(name);
-      const want = targetChanged(name) ? { source: s.source, effects_off: s.effects_off, post: postOf(name) } : null;
+      const want = targetChanged(name) ? { source: s.source, effects_off: s.effects_off, grain: s.grain, post: postOf(name) } : null;
       const have = (state.fw.targets || []).find((x) => x.name === name);
       const samePost = (a, b) => (!a && !b) || (!!a && !!b && a.every((v, k) => v === b[k]));
       const ok = want ? have && have.source === want.source && have.effects_off === want.effects_off &&
-          samePost(have.post, want.post)
-        : !have || (name === CROSS && have.source === CROSS && !have.effects_off && !have.post);
+          (have.grain || 0) === want.grain && samePost(have.post, want.post)
+        : !have || (name === CROSS && have.source === CROSS && !have.effects_off && !have.grain && !have.post);
       if (ok) continue;
       const res = await api("/api/target", {
         method: "POST",

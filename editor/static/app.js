@@ -367,10 +367,14 @@ function renderPickers() {
     `<option value="${esc(n)}">${esc(label(n))} — ${esc(targetState(n))}${targetChanged(n) ? " ●" : ""}</option>`).join("");
   tsel.value = T || "";
 
-  const ssel = $("source");
-  ssel.disabled = !T;
-  if (!T) { ssel.innerHTML = ""; $("pick-note").hidden = true; return; }
+  const ssel = $("source"), gsel = $("grain");
+  ssel.disabled = gsel.disabled = !T;
+  if (!T) { ssel.innerHTML = gsel.innerHTML = ""; $("pick-note").hidden = true; return; }
   const s = targetSpec(T);
+  gsel.innerHTML = [0, 3, 2, 1].map((g) =>
+    `<option value="${g}">${esc(g ? grainText(g) : t(GRAIN_OWN.includes(T) ? "grain_camera" : "grain_off"))}</option>`).join("");
+  gsel.value = String(s.grain);
+  gsel.title = t("grain_t");
   const opt = (v, text, hint) => `<option value="${esc(v)}"${hint ? ` title="${esc(hint)}"` : ""}>${esc(text)}</option>`;
   const looks = sourcesFor(T).map((n) =>
     opt(`look:${n}`, n === T ? t("src_own", { look: label(n) }) : label(n), SOURCE_HINTS[n] && t(SOURCE_HINTS[n])));
@@ -389,7 +393,8 @@ function renderPickers() {
 
   // at most one line about the target's rules
   const note = $("pick-note");
-  const key = T === HDR ? "pick_hdr"
+  const key = s.grain ? "pick_grain"
+    : T === HDR ? "pick_hdr"
     : T === BLEACH && s.source !== BLEACH ? "pick_bleach"
     : T === CROSS ? "pick_cross" : null;
   note.hidden = !key && !film;
@@ -399,6 +404,15 @@ function renderPickers() {
 
 $("target").onchange = (e) => select(e.target.value || null);
 $("source").onchange = (e) => setSource(state.current, e.target.value);
+$("grain").onchange = (e) => {
+  if (!state.current) return;
+  targetSpec(state.current).grain = +e.target.value;
+  update();
+};
+// targets whose camera menu has a grain setting of its own (0 leaves it to that)
+const GRAIN_OWN = ["NegativeFilm"];
+// the firmware's grain 1 is the strongest, 3 the weakest (camera test, docs/grain.md)
+const grainText = (g) => t(["", "grain_strong", "grain_mid", "grain_weak"][g]);
 
 // switch the target's base; curves, wheels, HSL and the sliders stay
 function setSource(T, value) {

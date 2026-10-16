@@ -99,8 +99,10 @@ $("lut-fit").onclick = async () => {
   }
 };
 
-// the target starts over: the fit replaces its source, colour, curves, wheels and HSL
+// the target starts over: the fit replaces its source, colour, curves, wheels and HSL;
+// its grain (a picker of its own) stays
 function applyLutFit(T, spec) {
+  const grain = state.targets[T] ? state.targets[T].grain : 0;
   delete state.targets[T];
   delete state.edits[T];
   for (const i of targetChannels(T)) delete state.chan.edits[i];
@@ -108,6 +110,7 @@ function applyLutFit(T, spec) {
   delete hsl.looks[T];
   const warn = [], hslIn = {};
   applyTarget(T, spec, warn, hslIn);
+  if (spec.grain == null) targetSpec(T).grain = grain || 0;
   lutStartFrom(T, spec);
   warn.push(...hslLoad(hslIn, true));
   relink();

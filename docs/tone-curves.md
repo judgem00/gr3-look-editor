@@ -78,8 +78,9 @@ Sharpness, ColorTone…, FilterEffect…, Shading, ClarityControl, Particle. And
 `FUN_536db7d8` reads `+0x795` exactly for the looks that have a "Particle"
 parameter: MonotoneGR, SoftMonotone, HardMonotone, HighContrastBW and
 NegativeFilm. The setting filler `0x536dc0f4` does not read
-`+0x1f4…+0x1fe`. Who reads them is open; they have no effect in the R2Y
-pipeline.
+`+0x1f4…+0x1fe`. They have no effect in the R2Y pipeline: shading, clarity
+and grain are applied afterwards by the DigitalFilterProcess, which reads
+them from the shooting settings directly ([grain.md](grain.md)).
 
 In the DNG the values are in makernote tag `0x0247` (int16, −4…+4,
 `0x8000` = not set). The order saturation, hue, key, contrast, highlights,
