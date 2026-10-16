@@ -101,6 +101,16 @@ fn find(ifd: &Ifd, tag: u16) -> Option<&Entry> {
     ifd.iter().find(|e| e.tag == tag)
 }
 
+/// the display flip (LibRaw code, see Shot.flip) from the IFD0 orientation tag
+fn flip_of(t: &Tiff, ifd0: &Ifd) -> u32 {
+    match find(ifd0, 0x112).and_then(|e| t.num(e, 0).ok()).unwrap_or(1.0) as u32 {
+        3 => 3,
+        6 => 6,
+        8 => 5,
+        _ => 0,
+    }
+}
+
 /// (offset, length) of every JPEG IFD among `ifds`, largest first. Offsets
 /// are absolute file offsets (the TIFF header sits at file offset 0). An
 /// entry whose value cannot be read is skipped rather than failing the walk,
@@ -464,12 +474,7 @@ pub fn decode(d: &[u8]) -> Result<Shot, String> {
     let mul: Vec<f32> = neutral.iter().map(|&v| (1.0 / v) as f32).collect();
     let wb = [mul[0] as f64 / mul[1] as f64, 1.0, mul[2] as f64 / mul[1] as f64];
 
-    let flip = match find(&ifd0, 0x112).map(|e| t.num(e, 0)).transpose()?.unwrap_or(1.0) as u32 {
-        3 => 3,
-        6 => 6,
-        8 => 5,
-        _ => 0,
-    };
+    let flip = flip_of(&t, &ifd0);
     let model = find(&ifd0, 0x110).map(|e| ascii(&t, e));
 
     // makernote (DNGPrivateData: "RICOH\0II" + IFD, offsets from its start)
@@ -538,6 +543,21 @@ pub fn preview_ranges(d: &[u8]) -> Vec<(usize, usize)> {
         }
     }
     jpeg_ranges(&t, &ifds)
+}
+
+/// The display flip (LibRaw code) of a DNG, from IFD0 only — the filmstrip
+/// rotates its thumbnails and the instant preview with it (see orient).
+pub fn preview_flip(d: &[u8]) -> u32 {
+    let le = match d.get(..4) {
+        Some(b"II*\0") => true,
+        Some(b"MM\0*") => false,
+        _ => return 0,
+    };
+    let t = Tiff { d, le };
+    let Ok(ifd0) = t.u32(4).and_then(|o| t.ifd(o as usize, 0)) else {
+        return 0;
+    };
+    flip_of(&t, &ifd0)
 }
 
 /// mean over factor x factor blocks

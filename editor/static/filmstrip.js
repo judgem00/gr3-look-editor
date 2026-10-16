@@ -16,18 +16,19 @@ const stripState = {
 // ---- the embedded JPEG range -------------------------------------------------
 
 // candidates [[off, len], ...] (largest first) from the core; the caps cover
-// the usual DNGs with a prefix, up to files whose IFD0 sits at the very end
+// the usual DNGs with a prefix, up to files whose IFD0 sits at the very end.
+// Returns {off, len, flip} of the chosen JPEG.
 async function jpegRangeOf(file) {
-  let ranges = [];
+  let info = { ranges: [], flip: 0 };
   for (const cap of [1 << 20, 8 << 20, Infinity]) {
     const bytes = await file.slice(0, Math.min(file.size, cap)).arrayBuffer();
-    ranges = (await api.dngPreview(bytes)).ranges;
-    if (ranges.length) break;
+    info = await api.dngPreview(bytes);
+    if (info.ranges.length) break;
   }
-  for (const [off, len] of ranges) {
+  for (const [off, len] of info.ranges) {
     if (off < 0 || len <= 0 || off + len > file.size) continue;
     const head = new Uint8Array(await file.slice(off, off + 2).arrayBuffer());
-    if (head[0] === 0xff && head[1] === 0xd8) return [off, len];
+    if (head[0] === 0xff && head[1] === 0xd8) return { off, len, flip: info.flip };
   }
   return null;
 }
@@ -109,24 +110,41 @@ function stripThumb(e) {
   return b;
 }
 
+// draw `bmp` rotated by the LibRaw flip code into `cv` — the same pixel
+// mapping as dng::orient in the core; the canvas takes the rotated
+// dimensions (swapped for 5/6). drawImage works in rect coordinates, hence
+// the full w/h offsets where orient counts pixels.
+function stripDrawRotated(cv, bmp, flip) {
+  const sw = bmp.width, sh = bmp.height;
+  const w = flip === 5 || flip === 6 ? sh : sw;
+  const h = flip === 5 || flip === 6 ? sw : sh;
+  if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+  const ctx = cv.getContext("2d");
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  if (flip === 3) ctx.setTransform(-1, 0, 0, -1, sw, sh);
+  else if (flip === 5) ctx.setTransform(0, -1, 1, 0, 0, sw);   // 90 ccw
+  else if (flip === 6) ctx.setTransform(0, 1, -1, 0, sh, 0);   // 90 cw
+  ctx.drawImage(bmp, 0, 0);
+}
+
 // decode one thumbnail; the status machine makes the sequential queue and the
 // on-demand decode race-safe (whoever comes first claims "loading")
 async function stripThumbDecode(e, gen) {
   if (e.status !== "idle") return;
   e.status = "loading";
   try {
-    const range = await jpegRangeOf(e.file);
-    if (!range) throw new Error("no embedded JPEG");
-    e.range = range;   // the instant preview (stripShowPreview) reuses it
-    const bytes = new Uint8Array(await e.file.slice(range[0], range[0] + range[1]).arrayBuffer());
+    const r = await jpegRangeOf(e.file);
+    if (!r) throw new Error("no embedded JPEG");
+    e.range = r;   // the instant preview (stripShowPreview) reuses it
+    const bytes = new Uint8Array(await e.file.slice(r.off, r.off + r.len).arrayBuffer());
     const bmp = await createImageBitmap(new Blob([bytes], { type: "image/jpeg" }),
       { resizeWidth: 168, resizeHeight: 112, resizeQuality: "high" });
     if (gen !== stripState.gen) { bmp.close(); return; }   // the folder changed meanwhile
-    const ctx = e.el.querySelector("canvas").getContext("2d");
-    const s = Math.min(168 / bmp.width, 112 / bmp.height); // contain-fit: Safari may ignore the resize
-    const [dw, dh] = [bmp.width * s, bmp.height * s];
-    ctx.drawImage(bmp, (168 - dw) / 2, (112 - dh) / 2, dw, dh);
+    const cv = e.el.querySelector("canvas");
+    stripDrawRotated(cv, bmp, r.flip);
     bmp.close();
+    e.el.classList.toggle("portrait", r.flip === 5 || r.flip === 6);
     e.status = "done";
     e.el.classList.remove("loading");
   } catch {
@@ -159,10 +177,10 @@ const stripPreviewCache = new Map();   // entry -> ImageBitmap, ~7 MB each, capp
 async function stripPreviewBitmap(e) {
   const hit = stripPreviewCache.get(e);
   if (hit) { stripPreviewCache.delete(e); stripPreviewCache.set(e, hit); return hit; }
-  const range = e.range || await jpegRangeOf(e.file);
-  if (!range) return null;
-  e.range = range;
-  const bytes = new Uint8Array(await e.file.slice(range[0], range[0] + range[1]).arrayBuffer());
+  const r = e.range || await jpegRangeOf(e.file);
+  if (!r) return null;
+  e.range = r;
+  const bytes = new Uint8Array(await e.file.slice(r.off, r.off + r.len).arrayBuffer());
   const bmp = await createImageBitmap(new Blob([bytes], { type: "image/jpeg" }),
     { resizeWidth: 1600, resizeHeight: 1067, resizeQuality: "high" });
   stripPreviewCache.set(e, bmp);
@@ -180,10 +198,7 @@ async function stripShowPreview(e, seq) {
     if (!bmp) return;                  // no preview: the busy overlay explains
     if (seq !== state.loadSeq) return; // moved on: the bitmap stays cached
     const cv = $("preview-cover");
-    const s = Math.min(1, 1600 / bmp.width);   // Safari may ignore the resize hint
-    cv.width = Math.round(bmp.width * s);
-    cv.height = Math.round(bmp.height * s);
-    cv.getContext("2d").drawImage(bmp, 0, 0, cv.width, cv.height);
+    stripDrawRotated(cv, bmp, e.range.flip);
     cv.hidden = false;
   } catch { /* no preview: the busy overlay explains */ }
 }

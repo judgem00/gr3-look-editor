@@ -323,3 +323,5 @@ button.link { background: none; border: 0; padding: 0; color: var(--accent); fon
    the raw pipeline renders; sits above the busy overlay, below the split */
 #preview-cover { position: absolute; inset: 16px; width: calc(100% - 32px); height: calc(100% - 32px);
   object-fit: contain; background: #0b0b0c; z-index: 1; }
+
+.thumb.portrait canvas { width: 56px; height: 84px; }

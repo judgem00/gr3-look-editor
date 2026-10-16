@@ -197,6 +197,25 @@ fn preview_ranges_gates_and_sorts() {
     assert_eq!(dng::preview_ranges(&f), want);
 }
 
+/// a minimal TIFF with only the orientation tag (0x112)
+fn tiff_orient(le: bool, o: u16) -> Vec<u8> {
+    let mut b = Vec::new();
+    b.extend(if le { &b"II*\0"[..] } else { &b"MM\0*"[..] });
+    b.extend(p32(le, 8)); // IFD0 at 8
+    b.extend(ifd(le, &[ent(le, 0x112, 3, 1, o as u32)]));
+    b
+}
+
+#[test]
+fn preview_flip_from_orientation() {
+    for le in [true, false] {
+        for (o, want) in [(1u16, 0), (3, 3), (6, 6), (8, 5), (0, 0)] {
+            assert_eq!(dng::preview_flip(&tiff_orient(le, o)), want, "le={le} o={o}");
+        }
+    }
+    assert_eq!(dng::preview_flip(b"not a tiff"), 0);
+}
+
 /// the editor's local test photos (editor/static/_local, not in git): the
 /// walk on a 1 MiB prefix must agree with decode() on the full file
 #[test]
@@ -229,6 +248,11 @@ fn preview_ranges_match_decode() {
         let cap = data.len().min(1 << 20);
         if ifd0 < cap {
             assert_eq!(dng::preview_ranges(&data[..cap]), ranges, "{}: prefix walk differs", p.display());
+        }
+        // the filmstrip's rotation: the flip must agree with decode()
+        assert_eq!(dng::preview_flip(&data), shot.flip, "{}: flip", p.display());
+        if ifd0 < cap {
+            assert_eq!(dng::preview_flip(&data[..cap]), shot.flip, "{}: prefix flip", p.display());
         }
         seen += 1;
     }
