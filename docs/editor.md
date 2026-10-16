@@ -38,10 +38,13 @@ come from the firmware ([docs/look-mapping.md](look-mapping.md)).
   f/2.8 correction (`DEFAULT_VIGNETTE`). The preview applies the correction
   before everything else; it can be switched off.
 - Input scaling and gain are fitted per DNG against the embedded camera JPEG,
-  after the lens shading correction. The **residual correction** (can be
-  switched off, "Fine-match to camera JPEG") absorbs the camera's
-  image-dependent shadow correction. Without the shading correction it
-  absorbed the brighter edges too and fitted worse. On MR024685 the mean
+  after the lens shading correction. The **residual correction** absorbs the
+  camera's image-dependent shadow correction. It is still fitted and carried
+  in the photo's metadata, but the preview no longer applies it: the
+  "Fine-match to camera JPEG" switch was removed, the code stays in
+  `core/src/fit.rs` and `editor/static/app.js` (state `residual`). Without
+  the shading correction it absorbed the brighter edges too and fitted
+  worse. On MR024685 the mean
   difference to the camera JPEG drops from 6.9 to 1.4 levels (8 bit). The
   residual is fitted on all pixels. Leaving out the ones the camera clipped
   kept only the darker ones near white, and white came out at 247 instead of
@@ -71,7 +74,8 @@ come from the firmware ([docs/look-mapping.md](look-mapping.md)).
   measured on three shots in Standard and Negative Film. It is fitted per
   shot against the camera JPEG, one factor per 16 levels of Y
   (`fit::fit_highlight_chroma`, typical table `DEFAULT_HIGHLIGHT_CHROMA`).
-  It is part of "Fine-match to camera JPEG". Error above Y 176: MR024685
+  Like the residual it is fitted but no longer applied in the preview.
+  Error above Y 176: MR024685
   5.1 → 3.0, MR024661 7.6 → 4.8, MR022009 5.9 → 4.4 levels. Where the
   camera does it is not known; the CSP block's chroma limits are a candidate.
 
@@ -167,8 +171,8 @@ its own ColorMatrix set and its own matrix in the free area `0x53002080…`
   exposure, white balance) affect the preview only. A newly loaded photo
   starts with them at their defaults; only the white balance comes from the
   DNG. **Load preview settings from DNG** takes the shot's values from the
-  makernote (for a Cross Process shot also its Color Tone). The fine-match
-  to the camera JPEG is fitted with the shot's settings, so "Compare camera"
+  makernote (for a Cross Process shot also its Color Tone). The match to
+  the camera JPEG is fitted with the shot's settings, so "Compare camera"
   only lines up after loading them.
 - **White balance (preview only):** "as shot" uses the DNG's AsShotNeutral.
   Moving **Colour temperature** (2500–10000 K), **Blue – Amber** or

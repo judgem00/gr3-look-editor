@@ -27,7 +27,7 @@ const state = {
   wbShot: null,        // { k, gm } closest to the shot's white balance
   shot: null,          // /api/dng meta
   params: { key: 0, contrast: 0, highlight: 0, shadow: 0, saturation: 0, hue: 0, shadowcorr: 0 },
-  residual: true,
+  residual: false,     // fine match to the camera JPEG: dormant, no GUI switch any more
   vignette: true,      // the camera's lens shading correction in the preview
   curves: null,        // last /api/tone answer
   chan: { edits: {}, set: "Preset 1", channel: 0, all: true },   // channel curves by index (Color Tone 1-3, the looks' own)
@@ -603,7 +603,6 @@ for (const k of COLOR_KEYS) {
     draw();
   };
 }
-$("residual").onchange = (e) => { state.residual = e.target.checked; draw(); };
 // the camera's shadow correction table (tonecontrol.rs): 1 + S (base - 1) on
 // the first 256 of 1024 entries, S = 0.25 / 0.5 / 1 for Low / Medium / Strong
 function setShadowCorr(level) {
@@ -815,7 +814,6 @@ async function show(meta) {
   // a new photo starts with the preview settings at their defaults; only the
   // white balance comes from the DNG ("Load preview settings from DNG" takes the rest)
   applyShotParams(false);
-  $("residual").disabled = !meta.residual;
   renderVignetteNote();
   await fetchTone();
   update();
