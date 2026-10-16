@@ -244,17 +244,27 @@ impl Session {
         Ok(json!({ "target": target, "spec": spec, "report": fit.report }))
     }
 
+    /// the grain a target keeps when a request changes something else
+    fn grain_of(&self, name: &str) -> u8 {
+        self.target(name).map_or(0, |t| t.grain)
+    }
+
     /// the post matrix a target keeps when a request changes something else
     fn post_of(&self, name: &str) -> Option<[f64; 9]> {
         self.target(name).and_then(|t| t.post)
     }
 
-    /// POST /api/target {target, source, effects_off, post}: make `target` a
-    /// look of the user's built from `source` (default: itself), with a post
-    /// matrix (9 values or null; default: as it had); `remove: true` gives it
-    /// back to stock (Cross Process goes back to its own data)
+    /// POST /api/target {target, source, effects_off, grain, post}: make
+    /// `target` a look of the user's built from `source` (default: itself),
+    /// with grain 0..3 and a post matrix (9 values or null); both default to
+    /// what it had; `remove: true` gives it back to stock (Cross Process goes
+    /// back to its own data)
     pub fn set_target(&mut self, body: &Value) -> Result<Value, String> {
         let name = body.get("target").and_then(|v| v.as_str()).unwrap_or("");
+        let grain = match body.get("grain") {
+            Some(v) => grain_value(v)?,
+            None => self.grain_of(name),
+        };
         let post = match body.get("post") {
             Some(v) if v.is_null() => None,
             Some(v) => Some(crate::postmatrix::parse(v)?),
@@ -270,7 +280,7 @@ impl Session {
         } else {
             let source = body.get("source").and_then(|v| v.as_str());
             let off = body.get("effects_off").and_then(|v| v.as_bool()).unwrap_or(false);
-            list.push(Target::new(name, source, off)?.with_post(post));
+            list.push(Target::new(name, source, off)?.with_grain(grain)?.with_post(post));
         }
         self.set_targets(list)?;
         Ok(self.firmware())
@@ -285,10 +295,11 @@ impl Session {
             return Err("unknown look".into());
         }
         let off = self.target(name).is_some_and(|t| t.effects_off);
+        let grain = self.grain_of(name);
         let post = self.post_of(name);
         let mut list: Vec<Target> = self.targets.iter().filter(|t| t.name != name).cloned().collect();
-        if source.is_some() || off || post.is_some() || name == CROSS {
-            list.push(Target::new(name, source, off)?.with_post(post));
+        if source.is_some() || off || grain > 0 || post.is_some() || name == CROSS {
+            list.push(Target::new(name, source, off)?.with_grain(grain)?.with_post(post));
         } else if !targets::TARGETS.contains(&name) {
             return Err("unknown look".into());
         }
@@ -305,10 +316,11 @@ impl Session {
         }
         let off = !names.is_empty();
         let source = self.target(HDR).map(|t| t.source.clone());
+        let grain = self.grain_of(HDR);
         let post = self.post_of(HDR);
         let mut list: Vec<Target> = self.targets.iter().filter(|t| t.name != HDR).cloned().collect();
-        if off || post.is_some() || source.as_deref().is_some_and(|s| s != HDR) {
-            list.push(Target::new(HDR, source.as_deref(), off)?.with_post(post));
+        if off || grain > 0 || post.is_some() || source.as_deref().is_some_and(|s| s != HDR) {
+            list.push(Target::new(HDR, source.as_deref(), off)?.with_grain(grain)?.with_post(post));
         }
         self.set_targets(list)?;
         Ok(self.firmware())
@@ -506,6 +518,7 @@ impl Session {
     ///                            "hsl": {..}, "curves": [R, G, B], "edit": any},
     ///                  "CrossProcess": {"channels": {"3": [256], ..}, ..},
     ///                  "HdrCuisine": {"effects_off": true, ..},
+    ///                  "Standard": {"grain": 2, ..},
     ///                  "NegativeFilm": {"post": [9], ..}}}
     ///
     /// Only the targets change; every other look stays byte-identical to
@@ -516,11 +529,15 @@ impl Session {
         for (name, spec) in specs {
             let source = spec.get("source").and_then(|v| v.as_str());
             let off = spec.get("effects_off").and_then(|v| v.as_bool()).unwrap_or(false);
+            let grain = match spec.get("grain") {
+                Some(v) if !v.is_null() => grain_value(v).map_err(|e| format!("{name}: {e}"))?,
+                _ => 0,
+            };
             let post = match spec.get("post") {
                 Some(v) if !v.is_null() => Some(crate::postmatrix::parse(v).map_err(|e| format!("{name}: {e}"))?),
                 _ => None,
             };
-            list.push(Target::new(name, source, off)?.with_post(post));
+            list.push(Target::new(name, source, off)?.with_grain(grain)?.with_post(post));
         }
         let list = targets::sorted(list)?;
         let mut matrices = Map::new();
@@ -582,6 +599,7 @@ impl Session {
             let mut spec = specs[&t.name].clone();
             spec["source"] = json!(t.source);
             spec["effects_off"] = json!(t.effects_off);
+            spec["grain"] = json!(t.grain);
             out.insert(t.name.clone(), spec);
         }
         let preset = json!({
@@ -615,6 +633,12 @@ impl Session {
         });
         Ok((result, packed))
     }
+}
+
+/// a grain value from a request: 0..3
+fn grain_value(v: &Value) -> Result<u8, String> {
+    v.as_u64().filter(|&g| g <= crate::grain::MAX as u64).map(|g| g as u8)
+        .ok_or(format!("grain: need 0..{}", crate::grain::MAX))
 }
 
 fn count_hsl(hsl: &[(String, Value)]) -> usize {

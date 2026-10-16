@@ -52,6 +52,11 @@ pub fn table_of(name: &str) -> Option<u32> {
     LOOKS.iter().find(|l| l.2 == name).map(|l| l.1)
 }
 
+/// menu index of a look name (panics for an unknown name)
+pub fn index_of(name: &str) -> u32 {
+    LOOKS.iter().find(|l| l.2 == name).unwrap().0
+}
+
 /// image where look table entry `target` points at the same look data as
 /// `source` -- all three per-look tables
 pub fn inherit(img: &mut [u8], target: u32, source: u32) {

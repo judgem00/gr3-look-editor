@@ -9,6 +9,7 @@
 //! - Bleach Bypass built from another source is one look: tables 18, 22 and
 //!   23 share its private set.
 //! - HDR takes another source or a matrix of its own only with its effects off.
+//! - A target can have grain (grain.rs), whether its look offers it or not.
 //! - A target can have a post matrix P after the tone curve (postmatrix.rs).
 
 use crate::looks::{self, Toning, BLEACH_TABLES, SET_SIZE, TONING_TABLE};
@@ -28,6 +29,8 @@ pub struct Target {
     pub source: String,
     /// HDR only: its tone mapping and strength off (curvesel::hdr_effects_off)
     pub effects_off: bool,
+    /// grain 1..3 whatever the camera's setting; 0 leaves it to the camera
+    pub grain: u8,
     /// 3x3 after the tone curve, rows summing to 1 (postmatrix.rs)
     pub post: Option<[f64; 9]>,
 }
@@ -59,7 +62,15 @@ impl Target {
         if name == HDR && source != HDR && !effects_off {
             return Err(format!("{HDR} takes another source only with its effects off"));
         }
-        Ok(Target { name: name.into(), source: source.into(), effects_off, post: None })
+        Ok(Target { name: name.into(), source: source.into(), effects_off, grain: 0, post: None })
+    }
+
+    pub fn with_grain(mut self, grain: u8) -> Result<Target, String> {
+        if grain > crate::grain::MAX {
+            return Err(format!("grain {grain} for {}: 0..{}", self.name, crate::grain::MAX));
+        }
+        self.grain = grain;
+        Ok(self)
     }
 
     /// an identity P is the same as none
@@ -103,7 +114,8 @@ impl Target {
     }
 
     pub fn to_json(&self) -> Value {
-        json!({ "name": self.name, "source": self.source, "effects_off": self.effects_off, "post": self.post })
+        json!({ "name": self.name, "source": self.source, "effects_off": self.effects_off, "grain": self.grain,
+                "post": self.post })
     }
 }
 
@@ -114,6 +126,8 @@ enum Item {
     Toning(usize),
     /// its own hue table with P
     Post(usize),
+    /// the grain stubs and their table, once for all targets
+    Grain,
 }
 
 fn toning(stock: &[u8], t: &Target) -> Toning {
@@ -133,6 +147,9 @@ fn items(stock: &[u8], targets: &[Target]) -> Vec<(Item, u32)> {
         if t.post.is_some() {
             out.push((Item::Post(k), crate::postmatrix::SIZE));
         }
+    }
+    if targets.iter().any(|t| t.grain > 0) {
+        out.push((Item::Grain, crate::grain::SIZE));
     }
     out
 }
@@ -169,6 +186,10 @@ pub fn apply(img: &mut [u8], stock: &[u8], targets: &[Target], places: &[u32]) -
             let at = place(Item::Post(k)).ok_or("no place for a post matrix")?;
             crate::postmatrix::install(img, &t.post_tables(), at, p).map_err(|e| format!("{}: {e}", t.name))?;
         }
+    }
+    let grain: Vec<(u32, u8)> = targets.iter().filter(|t| t.grain > 0).map(|t| (looks::index_of(&t.name), t.grain)).collect();
+    if !grain.is_empty() {
+        crate::grain::install(img, place(Item::Grain).ok_or("no place for the grain stubs")?, &grain)?;
     }
     Ok(())
 }
