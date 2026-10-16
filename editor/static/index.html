@@ -27,6 +27,9 @@
       <span data-i18n="open_photo">Open photo</span>
       <input type="file" id="file" accept=".dng,.DNG,.json" hidden>
     </label>
+    <button class="btn" id="folder-open" type="button"
+      data-i18n="load_folder" data-i18n-title="load_folder_t">Load image folder</button>
+    <input type="file" id="folder-file" webkitdirectory hidden>
     <button class="btn primary" id="export-open" type="button">Export</button>
   </div>
 </header>
@@ -48,6 +51,7 @@
     </div>
     <div class="canvas-wrap" id="wrap">
       <canvas id="view"></canvas>
+      <canvas class="cover" id="preview-cover" hidden></canvas>
       <div class="split" id="split" hidden><div class="grip"></div></div>
       <div class="labels" id="labels" hidden><span id="label-l"></span><span id="label-r"></span></div>
       <div class="empty" id="empty">
@@ -60,6 +64,9 @@
         </ol>
       </div>
       <div class="busy" id="busy" hidden data-i18n="busy">Loading photo …</div>
+    </div>
+    <div class="filmstrip" id="filmstrip" hidden>
+      <div class="strip" id="strip"></div>
     </div>
     <details class="drawer" id="shot-drawer">
       <summary><span data-i18n="drawer">Camera settings of the photo</span> <span class="muted" data-i18n="drawer_hint">· affect the preview only</span></summary>
@@ -380,5 +387,6 @@
 <script src="app.js"></script>
 <script src="presets.js"></script>
 <script src="lut.js"></script>
+<script src="filmstrip.js"></script>
 </body>
 </html>

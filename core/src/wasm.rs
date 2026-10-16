@@ -152,6 +152,18 @@ impl Editor {
         self.shot.as_ref().map_or(0, |s| s.height)
     }
 
+    /// file ranges of the embedded JPEGs of a DNG and the display flip, as
+    /// JSON `{"ranges": [[off, len], ...], "flip": n}` (largest first), from
+    /// the IFD headers only — the filmstrip's thumbnails and instant preview;
+    /// no raw decode, the opened shot is left untouched
+    pub fn dng_previews(&self, data: &[u8]) -> String {
+        let info = serde_json::json!({
+            "ranges": dng::preview_ranges(data),
+            "flip": dng::preview_flip(data),
+        });
+        serde_json::to_string(&info).unwrap_or_else(|_| r#"{"ranges":[],"flip":0}"#.into())
+    }
+
     /// meta, linear image and camera image of the opened DNG
     pub fn prepare_dng(&mut self, camera_rgba: Option<Vec<u8>>, filename: &str) -> Result<Prepared, JsError> {
         let shot = self.shot.take().ok_or_else(|| JsError::new("no DNG opened"))?;

@@ -72,6 +72,11 @@ const ops = {
     const camera = cam ? await encodeJpeg(cam, meta.width, meta.height) : null;
     return [{ meta, linear, camera }, [linear.buffer]];
   },
+  // the embedded JPEGs of a DNG: {ranges: [[off, len], ...] (largest first),
+  // flip} from the IFD headers only — the filmstrip's thumbnails. No raw
+  // decode, the opened shot is left untouched. Returns an object: a bare
+  // array result would be read as [result, transferables] above.
+  dng_preview: ({ bytes }) => JSON.parse(editor.dng_previews(new Uint8Array(bytes))),
 };
 
 // called by the core during a LUT fit (wasm.rs): progress for the running request

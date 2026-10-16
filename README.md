@@ -86,7 +86,9 @@ read from the file you provide, on your machine.
 ### In the browser
 
 Open [the editor](https://judgem00.github.io/gr3-look-editor/) and drop
-Ricoh's update file (`fwdc239b.bin` or `fwdc243b.bin`) onto it, then a DNG. Everything runs in your browser as WebAssembly: the
+Ricoh's update file (`fwdc239b.bin` or `fwdc243b.bin`) onto it, then a DNG.
+**Load image folder** shows the camera JPEGs of all DNGs in a folder as a
+filmstrip; click a thumbnail or use ← / → to switch photos. Everything runs in your browser as WebAssembly: the
 firmware and your photos are not uploaded anywhere. **Create update file**
 on the Export tab gives you `FWDC239B.BIN` or `FWDC243B.BIN` to download.
 
