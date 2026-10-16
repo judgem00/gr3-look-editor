@@ -447,7 +447,7 @@ function sectionDirty(sec, T) {
     case "curves": return curvesEdited(T);
     case "wheels": return gradedOf(T).length > 0;
     case "hsl": return !hslCurvesFlat(hsl.looks[T]);   // the user's curves; a film's base is not an edit
-    case "adv": return matrixTyped(T) || !!postOf(T);
+    case "adv": return matrixTyped(T) || postEdited(T);
   }
   return false;
 }
@@ -474,10 +474,10 @@ function resetSection(sec) {
   const e = editOf(T);
   switch (sec) {
     case "base": Object.assign(e, { sat: 1, hue: 0, calib: neutralCalib() }); break;
-    case "adv": e.base = null; targetSpec(T).post = null; break;
+    case "adv": e.base = null; targetSpec(T).post = startPost(T) && startPost(T).slice(); break;
     case "curves":
       for (const i of targetChannels(T)) delete state.chan.edits[i];
-      applyExtCurves(T, extOf(T));
+      applyStartCurves(T);
       relink();
       chanEditor.deselect();
       requestTone();

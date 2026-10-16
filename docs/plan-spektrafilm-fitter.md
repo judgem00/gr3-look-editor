@@ -403,6 +403,15 @@ on Negative Film gives flat curves and an untouched section, the preview
 keeps the film's HSL, −20 % saturation shows as −20 % steps, Reset keeps
 the base, presets keep both.
 
+Likewise for matrix, RGB curves and P (2026-10-16): a fit sets the
+target's start (`edit.lut.start`: matrix, curves by channel, P);
+`startMatrix`, `curveStart` and the new `startPost` use it, so resets go
+back to the fit and the section dots show only the user's changes. The
+export still compares with the firmware, so the fit's curves and P go out.
+Checked in the browser: no dots after applying Portra, dots after edits,
+"Reset curve" and the section resets return exactly to the fit, presets
+keep the start, an older preset gets it on load.
+
 ## Open points
 
 - Display LUTs: "LUT on Standard" assumes the LUT was made for an image

@@ -260,7 +260,11 @@ function applyTarget(T, spec, warn, hslIn) {
     if (setsOf(T).includes(n)) state.grade[n] = normGrade(g); else warn.push(t("e_set", { name: n }));
   }
   if (spec.hsl) hslIn[T] = spec.hsl;
-  if (ed.lut && typeof ed.lut === "object") s.lut = ed.lut;
+  if (ed.lut && typeof ed.lut === "object") {
+    s.lut = ed.lut;
+    // presets from before the start was kept: the fit as the preset holds it
+    if (!s.lut.start) lutStartFrom(T, spec);
+  }
 }
 
 async function loadPreset(file) {

@@ -108,11 +108,24 @@ function applyLutFit(T, spec) {
   delete hsl.looks[T];
   const warn = [], hslIn = {};
   applyTarget(T, spec, warn, hslIn);
+  lutStartFrom(T, spec);
   warn.push(...hslLoad(hslIn, true));
   relink();
   chanEditor.deselect();
   select(T);
   if (warn.length) notice(t("preset_hints", { list: warn.join("; ") }), true);
+}
+
+// what a fitted target starts from (targets.js lutStart): the fit's matrix,
+// curves and post matrix, kept in edit.lut.start so a preset keeps it too
+function lutStartFrom(T, spec) {
+  const s = targetSpec(T);
+  if (!s.lut) return;
+  const m = (spec.matrices && spec.matrices[T]) || (spec.edit && spec.edit.matrix && spec.edit.matrix.base);
+  const idx = targetChannels(T);
+  const curves = Array.isArray(spec.curves) && spec.curves.length === idx.length
+    ? Object.fromEntries(idx.map((i, k) => [i, spec.curves[k].map((v) => Math.round(v))])) : null;
+  s.lut.start = { matrix: m ? m.slice() : null, curves, post: spec.post ? spec.post.slice() : null };
 }
 
 // ΔE2000 of the fit on colours it was not fitted on (lutfit.rs metrics)

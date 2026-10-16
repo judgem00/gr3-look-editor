@@ -52,7 +52,12 @@ const NO_SOURCE = ["Retro", "BleechBypass_GR", "BleechBypass_GR · Var. 2", "Ble
 const sourcesFor = (name) => state.fw.sources.filter((n) => n === name || !NO_SOURCE.includes(n));
 
 // the matrix the target starts from: its source's, or the extra base's
-const startMatrix = (name) => (extOf(name) ? extMatrix(extOf(name)) : sourceLook(name).matrix);
+// a target fitted to a LUT or a film (lut.js) starts from the fit: matrix,
+// curves and post matrix; resets go back there, not to the source
+const lutStart = (name) => (state.targets[name] && state.targets[name].lut && state.targets[name].lut.start) || null;
+const startMatrix = (name) => (lutStart(name) && lutStart(name).matrix) ||
+  (extOf(name) ? extMatrix(extOf(name)) : sourceLook(name).matrix);
+const startPost = (name) => (lutStart(name) && lutStart(name).post) || null;
 
 // ---- colour (matrix) -----------------------------------------------------------
 
@@ -84,9 +89,24 @@ const targetChannels = (name) => setsOf(name).flatMap((n) => chanSet(n));
 const ownerOfChannel = (idx) => (idx < 12 ? CROSS : lookSets()[Math.floor((idx - 12) / 3)]);
 // the curve a channel starts from: an extra base's, or the firmware's (neutral)
 function curveStart(idx) {
-  const x = extOf(ownerOfChannel(idx));
+  const T = ownerOfChannel(idx);
+  const fitted = lutStart(T) && lutStart(T).curves && lutStart(T).curves[idx];
+  if (fitted) return fitted.slice();
+  const x = extOf(T);
   return x && x.channel_curve ? x.channel_curve.map((v) => Math.round(v)) : null;
 }
+// every channel of the target back to its start (an extra base's or a fit's curve, else none)
+function applyStartCurves(name) {
+  for (const i of targetChannels(name)) {
+    const c0 = curveStart(i);
+    if (c0) state.chan.edits[i] = { base: c0, points: IDENT.map((p) => p.slice()) };
+  }
+}
+// the post matrix differs from where the target started
+const postEdited = (name) => {
+  const p = postOf(name), p0 = startPost(name);
+  return !!p !== !!p0 || (!!p && !same(p, p0));
+};
 function curvesEdited(name) {
   return targetChannels(name).some((i) => {
     const e = state.chan.edits[i];

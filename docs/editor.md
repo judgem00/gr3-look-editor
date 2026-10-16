@@ -218,7 +218,12 @@ its own ColorMatrix set and its own matrix in the free area `0x53002080…`
   the steps the base gets alone, so flat curves show flat steps); the
   section's dot and its Reset act on the user's curves only, the base
   stays. A fitted film already uses most of the stage's 11 adjustments, so
-  further curves share them with the film's. The fitted look sits
+  further curves share them with the film's. The same holds for matrix,
+  RGB curves and post matrix: the fit is the target's **start**
+  (`edit.lut.start`, kept in presets; derived from the fit in presets
+  from before), so "Reset curve" and the sections' Reset go back to the
+  film, not to the source, and the dots mark only the user's changes on
+  top. The fitted look sits
   on Standard's curve at the default gain; the camera sets the gain per
   shot at runtime, and the look follows it like any look does.
 - **Films** (source picker, group "Films (spektrafilm)"; the same five
