@@ -13,6 +13,7 @@ pub mod fit;
 pub mod gamma;
 pub mod grain;
 pub mod grfw;
+pub mod grlog;
 pub mod looks;
 pub mod lutfit;
 pub mod multiaxial;

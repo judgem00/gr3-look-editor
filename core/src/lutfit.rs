@@ -26,7 +26,7 @@ use crate::postmatrix;
 use crate::session::look_sets;
 use serde_json::{json, Value};
 
-type M3 = [f64; 9];
+pub(crate) type M3 = [f64; 9];
 
 /// image controls a LUT can be fitted for: their source is Standard. Bleach
 /// Bypass (P on three tables), Cross Process (Color Tone curves) and HDR Tone
@@ -183,12 +183,12 @@ impl Lut {
 
 // ---- colour ----------------------------------------------------------------------
 
-fn srgb_decode(v: f64) -> f64 {
+pub(crate) fn srgb_decode(v: f64) -> f64 {
     let v = v.clamp(0.0, 1.0);
     if v <= 0.04045 { v / 12.92 } else { ((v + 0.055) / 1.055).powf(2.4) }
 }
 
-fn srgb_encode(v: f64) -> f64 {
+pub(crate) fn srgb_encode(v: f64) -> f64 {
     let v = v.clamp(0.0, 1.0);
     if v <= 0.0031308 { v * 12.92 } else { 1.055 * v.powf(1.0 / 2.4) - 0.055 }
 }
@@ -257,11 +257,11 @@ fn mul(a: &M3, b: &M3) -> M3 {
     std::array::from_fn(|n| (0..3).map(|k| a[3 * (n / 3) + k] * b[3 * k + n % 3]).sum())
 }
 
-fn apply(m: &M3, v: [f64; 3]) -> [f64; 3] {
+pub(crate) fn apply(m: &M3, v: [f64; 3]) -> [f64; 3] {
     std::array::from_fn(|r| m[3 * r] * v[0] + m[3 * r + 1] * v[1] + m[3 * r + 2] * v[2])
 }
 
-fn inverse(m: &M3) -> M3 {
+pub(crate) fn inverse(m: &M3) -> M3 {
     let [a, b, c, d, e, f, g, h, i] = *m;
     let det = a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g);
     [(e * i - f * h) / det, (c * h - b * i) / det, (b * f - c * e) / det,
@@ -269,7 +269,7 @@ fn inverse(m: &M3) -> M3 {
      (d * h - e * g) / det, (b * g - a * h) / det, (a * e - b * d) / det]
 }
 
-const IDENTITY: M3 = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
+pub(crate) const IDENTITY: M3 = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
 
 /// 6 values -> 3x3 with rows summing to 1 (off-diagonals free)
 fn rows_sum1(v: &[f64]) -> M3 {
