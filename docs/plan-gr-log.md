@@ -5,7 +5,8 @@ shot in manual exposure, with LUTs that take it back to a finished image in
 post (the camera's Standard, Rec.709, or a spektrafilm film).
 
 Status: phases 1–3 done (core, editor, test firmware), see the results
-below; camera test open. Builds on the per-look curves
+below. On the GR III it works in principle (user-confirmed, 2026-10-16);
+the measured camera test (phase 4) comes later. Builds on the per-look curves
 ([plan-look-curves.md](plan-look-curves.md)), the LUT fitter's `grlog`
 encoding ([plan-spektrafilm-fitter.md](plan-spektrafilm-fitter.md)) and the
 video patches in gr3x-fw-hack (`docs/video.md`: manual exposure `manual
@@ -218,4 +219,7 @@ check`), the look and the video image differ only in the 102 bytes of the
 patches, `verify-tuning.py --patched` (the selector stub with the video
 patches, still and live, every look), `verify-targets.py --patched` (every
 other look stock). `osd` is flashed here for the first time.
+
+On the camera (2026-10-16): GR-Log and the video patches work in
+principle (the user's check, no measurements yet).
 Shooting guide: `work/grlog-test/HOW_TO_SHOOT.txt` (German).
