@@ -1,7 +1,7 @@
 // Export and presets (docs/plan-gui-redesign.md, "Export" and "Preset format (v2)").
 //
 // The export sends one object per changed target, the way the core takes it:
-//   {"targets": {Name: {source, effects_off, matrices, hsl, curves | channels, edit}}}
+//   {"targets": {Name: {source, effects_off, grain, matrices, hsl, curves | channels, edit}}}
 // `curves` are [R, G, B] for every target but Cross Process, whose Color Tone
 // curves go as `channels` {index: [256]}. `edit` is the editor's own state
 // (sliders, extra base, curve points, wheels); the core keeps it in the preset
@@ -16,7 +16,7 @@
 
 function targetExport(T) {
   const s = targetSpec(T), e = editOf(T);
-  const out = { source: s.source, effects_off: s.effects_off };
+  const out = { source: s.source, effects_off: s.effects_off, grain: s.grain };
   const m = {};
   if (!same(effective(T), sourceLook(T).matrix)) m[T] = effective(T);
   // Bleach Bypass as its own source keeps three variants with sets of their own
@@ -198,6 +198,10 @@ function applyTarget(T, spec, warn, hslIn) {
   if (ed.ext) {
     if (state.extBases.some((x) => x.id === ed.ext)) Object.assign(s, { ext: ed.ext, source: T });
     else warn.push(t("e_ext", { name: ed.ext }));
+  }
+  if (spec.grain != null) {
+    if ([0, 1, 2, 3].includes(spec.grain)) s.grain = spec.grain;
+    else warn.push(t("e_grain", { look: label(T) }));
   }
 
   // the post matrix: nine numbers with rows summing to 1 (the core checks the range)

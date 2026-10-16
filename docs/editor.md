@@ -151,6 +151,12 @@ its own ColorMatrix set and its own matrix in the free area `0x53002080…`
   image control with a colour matrix of its own (no longer shared with
   Standard). Key, contrast, highlight and shadow then stay at 0 in the
   camera ([look-mapping.md](look-mapping.md#hdr-without-its-effects)).
+- **Grain:** the third picker gives the target grain (weak, medium,
+  strong; the firmware's 3, 2, 1), also where the
+  camera menu has none (every colour look but Negative Film). The camera adds
+  it after development, also in in-camera RAW development; the preview does
+  not show it. On Negative Film it replaces the menu's grain setting
+  ([grain.md](grain.md)).
 - **Colour wheels** (shadows, midtones, highlights, global, with luminance
   and balance) as in Lightroom Color Grading. They are converted into the
   R/G/B channel curves of the selected set and therefore act
@@ -258,7 +264,8 @@ via "Load preset" in the title bar or by drag & drop onto the preview; "Load
 example preset" loads the bundled `editor/static/presets/example.looks.json`.
 A preset replaces all current changes: sliders, tone curve, contrast
 families, channel curve points (also of other image controls, `look_curves`),
-colour wheels, look takeover and HDR effects off (`effects_off`). The base
+colour wheels, look takeover, HDR effects off (`effects_off`) and grain
+(`grain`). The base
 matrix is only stored if it was entered by hand; otherwise it comes from the
 firmware on load. From there you can keep working and export again.
 
