@@ -1,6 +1,6 @@
 //! Phase 3 of docs/plan-gr-log.md: the editor's export with GR-Log on
-//! Bleach Bypass (all other looks stock), for the video patches of
-//! gr3x-fw-hack to ride on (`tools/video-test.py build … --image`).
+//! Bleach Bypass (all other looks stock), for the video patches to ride on
+//! (`tools/video-test.py build … --image`).
 //!
 //!     cargo run --release --example grlog_flash --manifest-path core/Cargo.toml [-- --hc]
 //!

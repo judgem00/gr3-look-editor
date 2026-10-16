@@ -23,4 +23,5 @@ pub mod space;
 pub mod targets;
 pub mod tone;
 pub mod tonecontrol;
+pub mod video;
 pub mod wasm;

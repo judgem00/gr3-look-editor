@@ -44,7 +44,11 @@ function targetExport(T) {
   return out;
 }
 
-const exportBody = () => ({ targets: Object.fromEntries(changedTargets().map((T) => [T, targetExport(T)])) });
+const exportBody = () => {
+  const body = { targets: Object.fromEntries(changedTargets().map((T) => [T, targetExport(T)])) };
+  if ($("video-export").checked) body.video = true;
+  return body;
+};
 // what the last export contained; a later edit makes its downloads stale
 const exportKey = () => JSON.stringify(exportBody());
 
@@ -62,6 +66,7 @@ function renderExportDialog() {
   $("flash-4").innerHTML = t("flash_4", { list: list.length ? list.map((n) => esc(label(n))).join(", ") : "—" });
   if (!$("downloads").hidden && state.lastExport !== exportKey()) {
     $("downloads").hidden = true;
+    $("video-applied").hidden = true;
     $("export").classList.add("primary");
     $("export-msg").textContent = "";
   }
@@ -73,6 +78,7 @@ $("export-open").onclick = () => {
   $("export-dlg").showModal();
 };
 $("risk-ok").onchange = () => renderExportDialog();
+$("video-export").onchange = () => renderExportDialog();
 
 $("export").onclick = async () => {
   $("export-msg").className = "note";
@@ -89,12 +95,26 @@ $("export").onclick = async () => {
     $("export-msg").textContent = t("done_web");
     state.lastExport = JSON.stringify(body);
     if (r.space) renderSpace(r.space);
+    renderVideoApplied(r.video);
     offerDownloads(r.downloads || {}, r.update_file);
   } else {
     $("export-msg").className = "note warn";
     $("export-msg").textContent = await errorText(res);
   }
 };
+
+// the video patches the last export applied (video.rs): address + description
+function renderVideoApplied(video) {
+  const box = $("video-applied");
+  if (!video || !video.length) { box.hidden = true; return; }
+  box.hidden = false;
+  $("video-list").innerHTML = video.map((s) => {
+    const i = String(s).indexOf(" ");
+    return i < 0
+      ? `<li class="muted">${esc(s)}</li>`
+      : `<li><code>${esc(s.slice(0, i))}</code> <span class="muted">${esc(s.slice(i + 1))}</span></li>`;
+  }).join("");
+}
 
 function offerDownloads(urls, updateFile) {
   const set = (id, url, name) => {
@@ -282,6 +302,7 @@ async function loadPreset(file) {
     else if (V1_KEYS.some((k) => k in p)) p = fromV1(p, warn);
     else throw new Error(t("e_preset"));
     applyPreset(p, warn);
+    $("video-export").checked = !!p.video;
     relink();
     chanEditor.deselect();
     if (state.current) { renderHsl(); requestHsl(); }

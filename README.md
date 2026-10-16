@@ -46,6 +46,14 @@ Advanced options:
 
 - editing the other image controls
 - a tone curve that applies to all image controls
+- **video: manual exposure mode (M)** — the Export dialog's "Video"
+  checkbox enables M on the mode dial in movie mode (the firmware otherwise
+  forces P), lets the dials set shutter/aperture/ISO, shows them in the
+  overlay and doubles the 24/30p bitrate. These are the AE-engine patches
+  (`video-test.py build manual mlive7 dials osd bitrate`), developed and
+  camera-tested on the GR III on top of
+  [hhornbacher/gr3x-fw-hack](https://github.com/hhornbacher/gr3x-fw-hack)'s
+  firmware exploration, now built into the editor's export.
 
 Colour curves (Hue vs Hue, Hue vs Sat and Hue vs Lum, as in DaVinci Resolve)
 change single colours. They use the camera's hue-selective stage
