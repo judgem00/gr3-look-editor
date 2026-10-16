@@ -280,3 +280,21 @@ dialog a { color: var(--accent); }
 a.btn { text-decoration: none; }
 header .btn { white-space: nowrap; }
 @media (max-width: 1100px) { header { flex-wrap: wrap; row-gap: 8px; } header .fw { flex-basis: 120px; } }
+
+/* fit to a LUT (lut.js) */
+#lut-open { justify-self: start; }
+#lut-dlg { width: min(520px, calc(100vw - 32px)); }
+#lut-dlg > * + * { margin-top: 10px; }
+#lut-dlg.busy { cursor: progress; }
+#lut-dlg select { width: 100%; }
+.lut-report { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+.lut-report th, .lut-report td { padding: 3px 6px; text-align: right; border-bottom: 1px solid var(--line); }
+.lut-report th:first-child { text-align: left; font-weight: normal; color: var(--muted); }
+.lut-report thead th { color: var(--muted); font-weight: normal; }
+.lut-report tr.final td, .lut-report tr.final th { color: var(--text); font-weight: 600; }
+.pick .note a { color: var(--accent); }
+.pick-row .num:empty { visibility: hidden; }
+
+/* credits (index.html #credits) */
+button.link { background: none; border: 0; padding: 0; color: var(--accent); font: inherit; cursor: pointer; text-decoration: underline; }
+.howto.credits li { margin: 6px 0; }

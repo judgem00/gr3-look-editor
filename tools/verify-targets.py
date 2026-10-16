@@ -135,6 +135,13 @@ def same_but_gamma(a, b):
     return not [r for r in VT.diff_runs(a[0], b[0]) if not (lo <= r[0] and r[0] + r[1] <= hi)]
 
 
+def same_but_csp(a, b):
+    """a target with a post matrix: everything but the nine YCbCr registers
+    (those: verify-tuning.py --post)"""
+    lo, hi = VT.CSP
+    return not [r for r in VT.diff_runs(a[0], b[0]) if not (lo <= r[0] and r[0] + r[1] <= hi)] and a[1] == b[1]
+
+
 def same(a, b):
     # info+0x82af follows the look history (verify-tuning.py, TRANSITION)
     return not VT.diff_runs(a[0], b[0]) and a[1] == b[1]
@@ -178,6 +185,10 @@ def check_patched(image, preset, rep):
         src_case = [c for c in PATCHED_CASES if c[0] == src_cases[0]]
         ref = runs(ref_img, src_case, sats)
         eq, what = (same_but_gamma, " (but the gamma LUTs)") if n == "CrossProcess" else (same, "")
+        if t.get("post"):
+            if n == "CrossProcess":
+                raise SystemExit("--patched: Cross Process with a post matrix is not modelled here")
+            eq, what = same_but_csp, " (but the YCbCr registers: P)"
         for (name, live, sat), out in got.items():
             if name in cases:
                 rep.check(eq(out, ref[(src_cases[0], live, sat)]),

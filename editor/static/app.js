@@ -152,7 +152,7 @@ const FS = `#version 300 es
 precision highp float;
 in vec2 uv; out vec4 o;
 uniform sampler2D uImg, uLut, uLutRef, uRes, uCam;
-uniform mat3 uM, uMRef, uHue;
+uniform mat3 uM, uMRef, uHue, uPost;
 uniform bool uMono, uResidual, uVigOn, uChromaOn, uTcOn;
 uniform sampler2D uTc;       // the camera's shadow correction: gain per 12-bit value / 4 (1024)
 uniform float uChroma[16];   // the camera's chroma roll-off: factor per 16 levels of Y
@@ -200,6 +200,9 @@ vec3 render(mat3 m, sampler2D curve, bool ma) {
     c *= texelFetch(uTc, ivec2(i, 0), 0).r;
   }
   vec3 g = lut3(curve, c * uScale / 16.) / 16384.;
+  // the target's post matrix P, then the hue setting: the camera's YCbCr
+  // stage computes H B P (postmatrix.rs); the stock look has no P
+  if (ma) g = uPost * g;
   g = uHue * g;
   if (uResidual) g = vec3(lut(uRes, clamp(g.r, 0., 1.) * 255.),
                           lut(uRes, clamp(g.g, 0., 1.) * 255.),
@@ -271,10 +274,10 @@ function previewLooks() {
   const T = state.current;
   if (!T) {
     const l = state.stock[(state.shot && state.shot.shot_look) || "Standard"] || state.stock.Standard;
-    return { m: l.matrix, look: l, ref: l.matrix, refLook: l, mono: l.mono_mix };
+    return { m: l.matrix, look: l, ref: l.matrix, refLook: l, mono: l.mono_mix, post: ident() };
   }
   const own = state.stock[T];
-  return { m: effective(T), look: sourceLook(T), ref: own.matrix, refLook: own, mono: false };
+  return { m: effective(T), look: sourceLook(T), ref: own.matrix, refLook: own, mono: false, post: postOf(T) || ident() };
 }
 
 function draw() {
@@ -292,6 +295,7 @@ function draw() {
   gl.uniformMatrix3fv(uni("uM"), false, transpose(m));
   gl.uniformMatrix3fv(uni("uMRef"), false, transpose(mRef));
   gl.uniformMatrix3fv(uni("uHue"), false, transpose(hueMatrix(p.look)));
+  gl.uniformMatrix3fv(uni("uPost"), false, transpose(p.post));
   gl.uniform1i(uni("uMono"), p.mono ? 1 : 0);
   gl.uniform1i(uni("uResidual"), state.residual && state.shot.residual ? 1 : 0);
   // part of the fine match: fitted on the camera JPEG like the residual
@@ -358,6 +362,7 @@ function renderPickers() {
   if (!state.fw) return;
   const T = state.current;
   const tsel = $("target");
+  if (!T) $("print-row").hidden = true;
   tsel.innerHTML = `<option value="">${esc(t("target_choose"))}</option>` + targetNames().map((n) =>
     `<option value="${esc(n)}">${esc(label(n))} — ${esc(targetState(n))}${targetChanged(n) ? " ●" : ""}</option>`).join("");
   tsel.value = T || "";
@@ -370,18 +375,26 @@ function renderPickers() {
   const looks = sourcesFor(T).map((n) =>
     opt(`look:${n}`, n === T ? t("src_own", { look: label(n) }) : label(n), SOURCE_HINTS[n] && t(SOURCE_HINTS[n])));
   const exts = state.extBases.map((x) => opt(`ext:${x.id}`, extText(x.label), extText(x.hint)));
-  ssel.innerHTML = `<optgroup label="${esc(t("src_looks"))}">${looks.join("")}</optgroup>` +
+  // a target fitted to a LUT shows the LUT, one from the film library the film
+  // (both compute on Standard's tone curve)
+  const film = filmOf(T);
+  const fitted = !film && lutName(T);
+  ssel.innerHTML = (fitted ? `<optgroup label="${esc(t("src_lut_group"))}">${opt("lut", fitted, t("src_lut_t"))}</optgroup>` : "") +
+    filmOptions(T, opt) +
+    `<optgroup label="${esc(t("src_looks"))}">${looks.join("")}</optgroup>` +
     (exts.length ? `<optgroup label="${esc(t("src_extra"))}">${exts.join("")}</optgroup>` : "");
-  ssel.value = s.ext ? `ext:${s.ext}` : `look:${s.source}`;
-  ssel.title = s.ext ? extText(extOf(T).tip) : "";
+  ssel.value = film ? `film:${film.film}` : fitted ? "lut" : s.ext ? `ext:${s.ext}` : `look:${s.source}`;
+  ssel.title = film ? film.title : fitted ? t("src_lut_t") : s.ext ? extText(extOf(T).tip) : "";
+  renderPrintRow(T);
 
   // at most one line about the target's rules
   const note = $("pick-note");
   const key = T === HDR ? "pick_hdr"
     : T === BLEACH && s.source !== BLEACH ? "pick_bleach"
     : T === CROSS ? "pick_cross" : null;
-  note.hidden = !key;
-  if (key) note.textContent = t(key);
+  note.hidden = !key && !film;
+  if (film) note.innerHTML = t("pick_film");      // the attribution spektrafilm's licence asks for
+  else if (key) note.textContent = t(key);
 }
 
 $("target").onchange = (e) => select(e.target.value || null);
@@ -389,11 +402,19 @@ $("source").onchange = (e) => setSource(state.current, e.target.value);
 
 // switch the target's base; curves, wheels, HSL and the sliders stay
 function setSource(T, value) {
-  if (!T) return;
+  if (!T || value === "lut") return;
+  if (value.startsWith("film:")) {
+    // a film of the library: its own print, or the print it had
+    const f = filmOf(T), film = value.slice(5);
+    return applyFilm(T, film, f && f.film === film ? f.print : null);
+  }
   const s = targetSpec(T);
   const ext = value.startsWith("ext:") ? value.slice(4) : null;
   const source = ext ? T : value.slice(5);
-  if (s.ext === ext && s.source === source) return;
+  // another source: the fitted values stay, the target no longer says it is the LUT
+  const wasLut = !!s.lut;
+  s.lut = null;
+  if (s.ext === ext && s.source === source) { if (wasLut) update(); return; }
   clearExtCurves(T, extOf(T));
   s.source = source;
   s.ext = ext;
@@ -425,8 +446,8 @@ function sectionDirty(sec, T) {
     case "base": return baseColourChanged(T);
     case "curves": return curvesEdited(T);
     case "wheels": return gradedOf(T).length > 0;
-    case "hsl": return hslChangedOf(T);
-    case "adv": return matrixTyped(T);
+    case "hsl": return !hslCurvesFlat(hsl.looks[T]);   // the user's curves; a film's base is not an edit
+    case "adv": return matrixTyped(T) || postEdited(T);
   }
   return false;
 }
@@ -453,10 +474,10 @@ function resetSection(sec) {
   const e = editOf(T);
   switch (sec) {
     case "base": Object.assign(e, { sat: 1, hue: 0, calib: neutralCalib() }); break;
-    case "adv": e.base = null; break;
+    case "adv": e.base = null; targetSpec(T).post = startPost(T) && startPost(T).slice(); break;
     case "curves":
       for (const i of targetChannels(T)) delete state.chan.edits[i];
-      applyExtCurves(T, extOf(T));
+      applyStartCurves(T);
       relink();
       chanEditor.deselect();
       requestTone();
@@ -465,7 +486,13 @@ function resetSection(sec) {
       for (const n of setsOf(T)) delete state.grade[n];
       requestTone();
       break;
-    case "hsl": delete hsl.looks[T]; renderHsl(); requestHsl(); break;
+    case "hsl": {
+      // the user's curves go; a fitted film's or LUT's base stays
+      const base = hsl.looks[T] && hsl.looks[T].base;
+      delete hsl.looks[T];
+      if (base) hslOf(T).base = base;
+      renderHsl(); requestHsl(); break;
+    }
   }
   update();
 }
@@ -532,6 +559,36 @@ function renderAdvanced() {
     .join(" · ") + (sums.some((s) => Math.abs(s - 1) > 0.001) ? ` <span class="bad">${t("cast")}</span>` : "");
   const look = state.looks[T];
   $("addr").textContent = look ? `0x${look.address.toString(16)}` : "";
+  renderPost(T);
+}
+
+// the post matrix P (after the tone curve, docs/plan-post-matrix.md): typed in
+// or from a preset; the core refuses rows that do not sum to 1 and values the
+// camera's registers cannot hold
+function renderPost(T) {
+  const p = postOf(T) || ident();
+  const box = $("post");
+  box.innerHTML = "";
+  p.forEach((v, i) => {
+    const inp = document.createElement("input");
+    inp.type = "number";
+    inp.step = "0.01";
+    inp.value = v.toFixed(4);
+    if (Math.abs(v - (i % 4 === 0 ? 1 : 0)) > 1e-9) inp.classList.add("diff");
+    inp.onchange = () => {
+      const val = parseFloat(inp.value);
+      if (Number.isNaN(val)) return renderPost(T);
+      const cur = (postOf(T) || ident()).slice();
+      cur[i] = val;
+      // keep the row summing to 1: the diagonal takes up the difference
+      const r = Math.floor(i / 3);
+      if (i !== 4 * r) cur[4 * r] = 1 - (cur[3 * r] + cur[3 * r + 1] + cur[3 * r + 2] - cur[4 * r]);
+      targetSpec(T).post = cur;
+      update();
+    };
+    box.appendChild(inp);
+    if (i % 3 === 2) box.appendChild(document.createElement("span"));
+  });
 }
 
 // the header's export button and the list in the export dialog
@@ -550,6 +607,7 @@ function update() {
   renderSections();
   renderChannelPanel();
   renderChanges();
+  renderLutButton();
   syncTargets();
   draw();
 }
@@ -1275,6 +1333,7 @@ function renderWheels() {
 }
 
 $("help-open").onclick = () => $("help").showModal();
+for (const b of document.querySelectorAll(".credits-open")) b.onclick = () => $("credits").showModal();
 
 function renderVignetteNote() {
   const v = state.shot && state.shot.vignette;

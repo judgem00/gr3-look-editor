@@ -1,0 +1,24 @@
+Film looks for the GR III / GR IIIx Look Editor
+================================================
+
+spektrafilm.json in this folder is derived from spektrafilm by Andrea Volpato
+(https://github.com/andreavolpato/spektrafilm), whose profiles and LUTs are
+licensed CC BY-SA 4.0 (LICENSE.txt, unchanged). The derived file is licensed
+CC BY-SA 4.0 as well. The editor's code is not part of it (MIT).
+
+Modified by the GR III Look Editor project
+(https://github.com/judgem00/gr3-look-editor), 2026-10-15:
+
+- Rendered with spektrafilm 0.3.4 (commit 3bb2c2d 2026-06-07) in its per-pixel mode
+  (no grain, halation or other spatial effects): every negative film on
+  every print medium (papers and cine print films), every slide film scanned
+  directly; 132 looks. Input scene-linear sRGB, output sRGB.
+- Normalised like a scan: the print exposure (negatives) or the film
+  exposure (slides) puts 18 % grey at sRGB 0.46, and one scale for all
+  channels takes white to sRGB 0.98. Black and the medium's tint stay.
+- Sampled as 33^3 LUTs (tools/spektrafilm-lut.py --all) and fitted to the
+  GR III's look parameters -- look matrix, RGB curves, HSL and a 3x3 after
+  the tone curve -- by core/src/lutfit.rs (core/examples/film_library.rs).
+  The file holds those fitted parameters and the fit's error (ΔE2000)
+  against the LUT, not the LUTs. The camera reproduces the film only
+  approximately (on average 1.9 ΔE2000).

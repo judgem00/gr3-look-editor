@@ -14,7 +14,7 @@ Nothing is uploaded.
 ```
 camera RGB -> WB (AsShotNeutral or colour temperature), clipped at the smallest gain -> lens shading correction -> sensor CCM -> look matrix -> A[saturation] -> (mono mix)
            -> MultiAxial (colour ranges) -> shadow correction -> camera tone curve (per channel for Cross Process)
-           -> hue rotation (YCbCr) -> (residual correction, highlight chroma roll-off)
+           -> post matrix P (a target's) -> hue rotation (YCbCr) -> (residual correction, highlight chroma roll-off)
 ```
 
 Saturation and hue are the camera's image control settings; their matrices
@@ -74,6 +74,14 @@ come from the firmware ([docs/look-mapping.md](look-mapping.md)).
   It is part of "Fine-match to camera JPEG". Error above Y 176: MR024685
   5.1 → 3.0, MR024661 7.6 → 4.8, MR022009 5.9 → 4.4 levels. Where the
   camera does it is not known; the CSP block's chroma limits are a candidate.
+
+- **Post matrix P:** a target can have a 3×3 after the tone curve
+  ([plan-post-matrix.md](plan-post-matrix.md)), set under Advanced or from a
+  preset. The preview applies it to the tone-mapped RGB before the hue
+  rotation, as the camera's YCbCr stage does. When a shot was taken with a
+  look that has P, the fits against the camera JPEG first undo P on the JPEG
+  (`postmatrix::undo`); otherwise the highlight roll-off would learn P's
+  desaturation.
 
 Views: **Edited**, **Before / After** (firmware original against the edit,
 colour and tone curve), **Compare camera**, **Camera JPEG**.
@@ -184,6 +192,55 @@ its own ColorMatrix set and its own matrix in the free area `0x53002080…`
   ([docs/look-mapping.md](look-mapping.md)). The sliders show their effect as
   a colour gradient; a low colour temperature renders the photo blue, a high
   one warm. Not exported, not stored in presets.
+- **Fit to a LUT** (button under the source; Standard, Vivid, Positive
+  Film, Retro, Negative Film): the core fits the target's look to a 3D LUT
+  (`.cube`, up to 65³) -- look matrix, RGB curves, HSL and post matrix,
+  each optional except matrix and curves -- on the camera's own encodings
+  (`core/src/lutfit.rs`, [plan-spektrafilm-fitter.md](plan-spektrafilm-fitter.md)).
+  The LUT's input is asked for: **a finished image** (the LUT applied to the
+  camera's Standard rendering, the usual "creative LUT"), **linear sRGB**,
+  or **GR log** (`tools/spektrafilm-lut.py` writes it into the file as
+  `# GR-INPUT: grlog -8 12`; spektrafilm films normalised like a print
+  scan). The fit takes about 20 s in the browser (the worker reports each
+  pass) and replaces the target's source (Standard), colour, curves, wheels
+  and HSL; everything stays editable. The dialog shows ΔE2000 against the
+  LUT on test colours the fit did not see, for matrix + curves, the model
+  with HSL and P, and the result as exported. The preset keeps
+  `edit.lut` (file name, title, SHA-256, input, report), not the LUT.
+  The source picker then shows the LUT (its title, else the file name),
+  and so do the target list, the export list and the preset notice; the
+  look still computes on Standard's tone curve. Picking another source
+  keeps the fitted values and drops the LUT's name. The fit's HSL goes
+  in as a **base** under the HSL curves (`hsl.base`, `multiaxial::Hsl`):
+  the curves stay flat for the user's own adjustments, and the core
+  combines both before it encodes the stage -- hue and luminance add,
+  saturation multiplies. The dashed steps show the user's part (against
+  the steps the base gets alone, so flat curves show flat steps); the
+  section's dot and its Reset act on the user's curves only, the base
+  stays. A fitted film already uses most of the stage's 11 adjustments, so
+  further curves share them with the film's. The same holds for matrix,
+  RGB curves and post matrix: the fit is the target's **start**
+  (`edit.lut.start`, kept in presets; derived from the fit in presets
+  from before), so "Reset curve" and the sections' Reset go back to the
+  film, not to the source, and the dots mark only the user's changes on
+  top. The fitted look sits
+  on Standard's curve at the default gain; the camera sets the gain per
+  shot at runtime, and the look follows it like any look does.
+- **Films** (source picker, group "Films (spektrafilm)"; the same five
+  targets): 20 films from spektrafilm, every negative on each of 8 print
+  media (6 papers, the cine print films 2383 and 2393) and 4 slide films
+  scanned directly, 132 looks, fitted beforehand
+  (`editor/static/films/spektrafilm.json`, 747 KB, loaded once the firmware
+  is in). Choosing a film applies its fit at once, like a LUT fit; for a
+  negative a **Print** row under the source picks the print medium (the
+  film's own first, each with its ΔE2000). The note under the pickers
+  carries the attribution spektrafilm's licence asks for. Built by
+  `tools/spektrafilm-lut.py --all` (one process per core, 15 s on 18
+  cores) and `core/examples/film_library.rs` (one thread per core, 79 s);
+  `core/tests/lutfit.rs` exports every look. The fit does not depend on the
+  target (all colour looks share the YCbCr and hue data it uses), so one
+  fit per film and print serves every target. The data is CC BY-SA 4.0
+  (`films/LICENSE.txt`, `films/CHANGELOG.txt`), the editor's code MIT.
 
 ## Export
 

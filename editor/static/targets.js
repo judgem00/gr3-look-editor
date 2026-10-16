@@ -4,8 +4,10 @@
 // changing its source keeps them; only the base underneath changes.
 //
 // Per target the editor keeps
-//   state.targets[name]  { source, ext, effects_off }  (ext: id of an extra base;
-//                        effects_off: HDR Tone only, always on for it)
+//   state.targets[name]  { source, ext, effects_off, post, lut }  (ext: id of an
+//                        extra base; effects_off: HDR Tone only, always on for it;
+//                        post: 3x3 after the tone curve or null, postmatrix.rs;
+//                        lut: the LUT it was fitted to, lut.js, or null)
 //   state.edits[name]    { base | null, sat, hue, calib }  (base null: the source's matrix)
 //   state.chan.edits / state.grade  by channel index / set name, as before
 //   hsl.looks[name]      HSL curves (hsl.js)
@@ -24,9 +26,18 @@ const isTarget = (name) => targetNames().includes(name);
 function targetSpec(name) {
   // HDR Tone as a target always has its effects off (no local tone mapping):
   // the modified firmware never carries them, and only then is its matrix its own
-  if (!state.targets[name]) state.targets[name] = { source: name, ext: null, effects_off: name === HDR };
+  if (!state.targets[name]) state.targets[name] = { source: name, ext: null, effects_off: name === HDR, post: null, lut: null };
   return state.targets[name];
 }
+
+// the LUT the target was fitted to (lut.js): its title, or the file name
+const lutName = (name) => {
+  const l = state.targets[name] && state.targets[name].lut;
+  return l ? l.title || String(l.name || "LUT").replace(/\.cube$/i, "") : null;
+};
+
+// fitted from the film library (lut.js) rather than an uploaded LUT
+const lutFilm = (name) => !!(state.targets[name] && state.targets[name].lut && state.targets[name].lut.library);
 
 const extOf = (name) => {
   const id = state.targets[name] && state.targets[name].ext;
@@ -41,7 +52,12 @@ const NO_SOURCE = ["Retro", "BleechBypass_GR", "BleechBypass_GR · Var. 2", "Ble
 const sourcesFor = (name) => state.fw.sources.filter((n) => n === name || !NO_SOURCE.includes(n));
 
 // the matrix the target starts from: its source's, or the extra base's
-const startMatrix = (name) => (extOf(name) ? extMatrix(extOf(name)) : sourceLook(name).matrix);
+// a target fitted to a LUT or a film (lut.js) starts from the fit: matrix,
+// curves and post matrix; resets go back there, not to the source
+const lutStart = (name) => (state.targets[name] && state.targets[name].lut && state.targets[name].lut.start) || null;
+const startMatrix = (name) => (lutStart(name) && lutStart(name).matrix) ||
+  (extOf(name) ? extMatrix(extOf(name)) : sourceLook(name).matrix);
+const startPost = (name) => (lutStart(name) && lutStart(name).post) || null;
 
 // ---- colour (matrix) -----------------------------------------------------------
 
@@ -73,9 +89,24 @@ const targetChannels = (name) => setsOf(name).flatMap((n) => chanSet(n));
 const ownerOfChannel = (idx) => (idx < 12 ? CROSS : lookSets()[Math.floor((idx - 12) / 3)]);
 // the curve a channel starts from: an extra base's, or the firmware's (neutral)
 function curveStart(idx) {
-  const x = extOf(ownerOfChannel(idx));
+  const T = ownerOfChannel(idx);
+  const fitted = lutStart(T) && lutStart(T).curves && lutStart(T).curves[idx];
+  if (fitted) return fitted.slice();
+  const x = extOf(T);
   return x && x.channel_curve ? x.channel_curve.map((v) => Math.round(v)) : null;
 }
+// every channel of the target back to its start (an extra base's or a fit's curve, else none)
+function applyStartCurves(name) {
+  for (const i of targetChannels(name)) {
+    const c0 = curveStart(i);
+    if (c0) state.chan.edits[i] = { base: c0, points: IDENT.map((p) => p.slice()) };
+  }
+}
+// the post matrix differs from where the target started
+const postEdited = (name) => {
+  const p = postOf(name), p0 = startPost(name);
+  return !!p !== !!p0 || (!!p && !same(p, p0));
+};
 function curvesEdited(name) {
   return targetChannels(name).some((i) => {
     const e = state.chan.edits[i];
@@ -106,11 +137,16 @@ function clearExtCurves(name, x) {
 // ---- what is changed -----------------------------------------------------------
 
 const hslChangedOf = (name) => !hslNeutral(hsl.looks[name]);
+// the post matrix (after the tone curve): null or identity = none
+const postOf = (name) => {
+  const p = state.targets[name] && state.targets[name].post;
+  return p && !same(p, ident()) ? p : null;
+};
 function targetChanged(name) {
   if (!state.fw || !state.stock[name]) return false;
   const s = targetSpec(name);
   return s.source !== name || !!s.ext || !same(effective(name), state.stock[name].matrix) ||
-    curvesForExport(name).length > 0 || hslChangedOf(name);
+    curvesForExport(name).length > 0 || hslChangedOf(name) || !!postOf(name);
 }
 const changedTargets = () => targetNames().filter(targetChanged);
 
@@ -118,6 +154,7 @@ const changedTargets = () => targetNames().filter(targetChanged);
 function targetState(name) {
   const s = targetSpec(name), x = extOf(name);
   if (x) return extText(x.label);
+  if (lutName(name)) return t(lutFilm(name) ? "tg_film" : "tg_lut", { name: lutName(name) });
   if (s.source !== name) return t("tg_from", { look: label(s.source) });
   return targetChanged(name) ? t("tg_own") : t("tg_stock");
 }
@@ -131,6 +168,7 @@ function changesOf(name) {
   if (sets.size) out.push(name === CROSS ? t("ex_curves_sets", { list: SET_ORDER.filter((n) => sets.has(n)).map(setLabel).join(", ") }) : t("ex_curves"));
   if (gradedOf(name).length) out.push(t("ex_wheels"));
   if (hslChangedOf(name)) out.push(t("ex_hsl"));
+  if (postOf(name)) out.push(t("ex_post"));
   if (targetSpec(name).effects_off) out.push(t("ex_hdr_off"));
   return out;
 }
@@ -156,10 +194,12 @@ async function runSync() {
   try {
     for (const name of targetNames()) {
       const s = targetSpec(name);
-      const want = targetChanged(name) ? { source: s.source, effects_off: s.effects_off } : null;
+      const want = targetChanged(name) ? { source: s.source, effects_off: s.effects_off, post: postOf(name) } : null;
       const have = (state.fw.targets || []).find((x) => x.name === name);
-      const ok = want ? have && have.source === want.source && have.effects_off === want.effects_off
-        : !have || (name === CROSS && have.source === CROSS && !have.effects_off);
+      const samePost = (a, b) => (!a && !b) || (!!a && !!b && a.every((v, k) => v === b[k]));
+      const ok = want ? have && have.source === want.source && have.effects_off === want.effects_off &&
+          samePost(have.post, want.post)
+        : !have || (name === CROSS && have.source === CROSS && !have.effects_off && !have.post);
       if (ok) continue;
       const res = await api("/api/target", {
         method: "POST",

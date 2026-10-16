@@ -22,7 +22,9 @@ const HSL_CHANNELS = {
   lum: { key: "hsl_hl", max: 100, fmt: (v) => `${v > 0 ? "+" : ""}${Math.round(v)}` },
 };
 const hsl = {
-  looks: {},        // look name -> { curves: {hue, sat, lum: [[g, v], ...]}, protect }
+  looks: {},        // look name -> { curves: {hue, sat, lum: [[g, v], ...]}, protect, base? }
+                    // base: a fitted film's or LUT's curves (lutfit.rs), not shown;
+                    // the core combines it with the curves (multiaxial.rs)
   channel: "sat",
   enc: null,        // /api/hsl answer for the current look
   encLook: null,
@@ -41,7 +43,10 @@ function hslOf(name) {
   if (!hsl.looks[name]) hsl.looks[name] = { curves: hslNewCurves(), protect: hslNewProtect() };
   return hsl.looks[name];
 }
-const hslNeutral = (h) => !h || Object.values(h.curves).every((c) => c.every((p) => !p[1]));
+// the user's curves are flat; with a base the look still has HSL
+const hslCurvesFlat = (h) => !h || Object.values(h.curves).every((c) => c.every((p) => !p[1]));
+const hslHasBase = (h) => !!h && !!h.base && Object.values(h.base).some((c) => c.some((p) => p[1]));
+const hslNeutral = (h) => hslCurvesFlat(h) && !hslHasBase(h);
 const hslChangedLooks = () => Object.keys(hsl.looks).filter((n) => !hslNeutral(hsl.looks[n]));
 // what export and preset get: looks with an effect only
 const hslForExport = () => Object.fromEntries(hslChangedLooks().map((n) => [n, hsl.looks[n]]));
@@ -365,9 +370,11 @@ function renderHslStatus() {
   const e = hsl.enc && hsl.encLook === state.current ? hsl.enc : null;
   const notes = e && e.notes && e.notes.length ? e.notes : [];
   el.className = "note muted";
-  el.textContent = hslNeutral(hslOf(state.current)) ? t("hsl_none")
-    : e ? [t("hsl_budget", { banks: e.banks_used - 1, max: 11, edges: e.axes.map((a) => a.filter(Boolean).length).join(" · ") }),
-      ...notes.map((n) => t("hsl_simplified", { what: n }))].join(" ") : "";
+  const h = hslOf(state.current);
+  el.textContent = hslNeutral(h) ? t("hsl_none")
+    : e ? [hslHasBase(h) ? t("hsl_base") : "",
+      t("hsl_budget", { banks: e.banks_used - 1, max: 11, edges: e.axes.map((a) => a.filter(Boolean).length).join(" · ") }),
+      ...notes.map((n) => t("hsl_simplified", { what: n }))].filter(Boolean).join(" ") : "";
 }
 
 // called once from app.js when the page starts
@@ -382,22 +389,31 @@ function initHsl() {
 }
 
 // a preset's "hsl": {look: {curves | bands, protect}}; returns warnings.
-// Bands (presets from before the curves) become curve points.
-function hslLoad(p) {
-  hsl.looks = {};
+// Bands (presets from before the curves) become curve points. `keep` keeps
+// the other looks' HSL (a single target, lut.js).
+function hslLoad(p, keep = false) {
+  if (!keep) hsl.looks = {};
   const warn = [];
   const num = (v, lo, hi, d) => (Number.isFinite(+v) ? Math.max(lo, Math.min(hi, +v)) : d);
   for (const [name, v] of Object.entries(p || {})) {
-    if (!state.looks[name] || !v || !(v.curves || Array.isArray(v.bands))) { warn.push(t("e_look", { name })); continue; }
+    if (!state.looks[name] || !v || !(v.curves || v.base || Array.isArray(v.bands))) { warn.push(t("e_look", { name })); continue; }
     const curves = { hue: [], sat: [], lum: [] };
     for (const ch of Object.keys(curves)) {
       const max = HSL_CHANNELS[ch].max;
       const src = (v.curves && v.curves[ch]) || [];
       curves[ch] = src.filter((q) => Array.isArray(q) && q.length === 2)
         .map((q) => [num(q[0], 0, HSL_CIRCLE - 1, 0), num(q[1], -max, max, 0)]);
-      if (v.curves && !curves[ch].length) curves[ch] = hslAnchors();
+      if ((v.curves || v.base) && !curves[ch].length) curves[ch] = hslAnchors();
     }
-    if (!v.curves) {
+    // a fitted film's or LUT's HSL under the curves: kept as it is, not shown
+    let base = null;
+    if (v.base && typeof v.base === "object") {
+      base = {};
+      for (const ch of ["hue", "sat", "lum"])
+        base[ch] = ((v.base[ch]) || []).filter((q) => Array.isArray(q) && q.length === 2 && q.every(Number.isFinite))
+          .map((q) => [num(q[0], 0, HSL_CIRCLE - 1, 0), num(q[1], -HSL_CHANNELS[ch].max, HSL_CHANNELS[ch].max, 0)]);
+    }
+    if (!v.curves && !v.base) {
       for (const b of v.bands) {
         const lo = +b.center - b.width / 2, hi = +b.center + b.width / 2, f = +b.feather || 0;
         for (const ch of Object.keys(curves)) {
@@ -414,6 +430,7 @@ function hslLoad(p) {
       protect: { shadows: num(pr.shadows, 0, 2048, 0), highlights: num(pr.highlights, 2048, 4096, 4096),
         highlight_weight: num(pr.highlight_weight, 0, 1, 1) },
     };
+    if (base) hsl.looks[name].base = base;
   }
   return warn;
 }

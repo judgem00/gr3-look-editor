@@ -16,6 +16,7 @@
   </div>
   <button class="btn ghost" id="help-open" type="button" data-i18n="help_open">How it works</button>
   <a class="btn ghost" href="tutorial.html" data-i18n="tutorial">Tutorial</a>
+  <button class="btn ghost credits-open" type="button" data-i18n="credits">Credits</button>
   <div class="open">
     <button class="btn accent" id="example-preset" type="button" data-i18n="example_preset">Load example preset</button>
     <label class="btn">
@@ -112,7 +113,12 @@
         <label for="source"><span class="num">2</span><span data-i18n="source">Source</span></label>
         <select id="source" disabled></select>
       </div>
+      <div class="pick-row" id="print-row" hidden>
+        <label for="print"><span class="num"></span><span data-i18n="print">Print</span></label>
+        <select id="print"></select>
+      </div>
       <p class="note" id="pick-note" hidden></p>
+      <button class="btn" id="lut-open" type="button" data-i18n="lut_open" hidden>Fit to a LUT …</button>
     </div>
 
     <!-- one scrolling column of the target's edits -->
@@ -195,6 +201,8 @@
             <h3 data-i18n-title="matrix_note"><span data-i18n="matrix_adv">Matrix values</span> <span class="addr" id="addr"></span></h3>
             <div class="matrix" id="matrix"></div>
             <div class="sums" id="sums"></div>
+            <h3 data-i18n-title="post_note"><span data-i18n="post_adv">Post matrix (after the tone curve)</span></h3>
+            <div class="matrix" id="post"></div>
           </div>
           <h3 data-i18n="copy_adv">Copy curves</h3>
           <canvas id="chan-effective" width="560" height="300" data-i18n-title="dashed_neutral"></canvas>
@@ -232,8 +240,34 @@
     <p class="note muted" data-i18n-html="gate_where"></p>
     <p class="note muted" data-i18n="gate_local"></p>
     <p class="note warn" data-i18n="gate_unofficial"></p>
+    <p class="note muted"><button class="link credits-open" type="button" data-i18n="credits_title">Credits and licences</button></p>
   </div>
 </section>
+
+<dialog id="lut-dlg">
+  <h2><span data-i18n="lut_title">Fit to a LUT</span> · <span id="lut-target"></span></h2>
+  <p class="note muted" data-i18n-html="lut_intro"></p>
+  <label class="btn wide">
+    <span id="lut-file-name" data-i18n="lut_pick">Choose a .cube file …</span>
+    <input type="file" id="lut-file" accept=".cube,.CUBE" hidden>
+  </label>
+  <div class="slider"><label for="lut-input" data-i18n="lut_input">The LUT expects</label>
+    <select id="lut-input">
+      <option value="display" data-i18n="lut_in_display">a finished image (applied to Standard)</option>
+      <option value="linear" data-i18n="lut_in_linear">linear sRGB</option>
+      <option value="grlog" data-i18n="lut_in_grlog">GR log (spektrafilm tool)</option>
+    </select></div>
+  <label class="check"><input type="checkbox" id="lut-post" checked>
+    <span data-i18n="lut_post">Post matrix (after the tone curve)</span></label>
+  <label class="check"><input type="checkbox" id="lut-hsl" checked>
+    <span data-i18n="lut_hsl">HSL</span></label>
+  <p class="note warn" data-i18n="lut_replaces"></p>
+  <button class="btn primary wide" id="lut-fit" data-i18n="lut_fit" disabled>Fit</button>
+  <p class="note" id="lut-msg"></p>
+  <table class="lut-report" id="lut-report" hidden></table>
+  <p class="note muted" id="lut-report-note" data-i18n="lut_report_note" hidden></p>
+  <form method="dialog"><button class="btn" data-i18n="close">Close</button></form>
+</dialog>
 
 <dialog id="export-dlg">
   <h2 data-i18n="export_title">Export</h2>
@@ -283,11 +317,27 @@
       <li data-i18n-html="help_hsl"></li>
       <li data-i18n-html="help_space"></li>
       <li data-i18n-html="help_presets"></li>
+      <li data-i18n-html="help_films"></li>
     </ul>
   </details>
   <p class="note" data-i18n-html="help_tutorial"></p>
   <p class="note warn" data-i18n="help_risk"></p>
+  <p class="note muted"><button class="link credits-open" type="button" data-i18n="credits_title">Credits and licences</button></p>
   <form method="dialog"><button class="btn primary" data-i18n="help_go">Let's go</button></form>
+</dialog>
+
+<dialog id="credits">
+  <h2 data-i18n="credits_title">Credits and licences</h2>
+  <p class="note" data-i18n="credits_intro"></p>
+  <ul class="howto credits">
+    <li data-i18n-html="credits_films"></li>
+    <li data-i18n-html="credits_fw"></li>
+    <li data-i18n-html="credits_libs"></li>
+    <li data-i18n-html="credits_tools"></li>
+  </ul>
+  <p class="note muted" data-i18n-html="credits_ricoh"></p>
+  <p class="note muted" data-i18n-html="credits_editor"></p>
+  <form method="dialog"><button class="btn" data-i18n="close">Close</button></form>
 </dialog>
 
 <script src="i18n.js"></script>
@@ -297,5 +347,6 @@
 <script src="targets.js"></script>
 <script src="app.js"></script>
 <script src="presets.js"></script>
+<script src="lut.js"></script>
 </body>
 </html>

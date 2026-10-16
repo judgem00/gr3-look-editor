@@ -12,11 +12,13 @@ const api = (() => {
   let urls = [];
   let firmwareReady = null;
 
-  function call(op, args, transfer = []) {
+  function call(op, args, transfer = [], onProgress = null) {
     if (!worker) {
       worker = new Worker("worker.js", { type: "module" });
       worker.onmessage = ({ data }) => {
         const p = pending.get(data.id);
+        if (!p) return;
+        if (data.progress !== undefined) { if (p.onProgress) p.onProgress(data.progress); return; }
         pending.delete(data.id);
         if (data.ok) p.resolve(data.result); else p.reject(new Error(data.error));
       };
@@ -27,7 +29,7 @@ const api = (() => {
     }
     const id = ++seq;
     return new Promise((resolve, reject) => {
-      pending.set(id, { resolve, reject });
+      pending.set(id, { resolve, reject, onProgress });
       worker.postMessage({ id, op, args }, transfer);
     });
   }
@@ -117,6 +119,13 @@ const api = (() => {
       return fail(err.message);
     }
   }
+
+  // the LUT fitter (lutfit.rs): not fetch-like, the fit reports its progress
+  web.lut = async (text) => { await gate(); return call("lut", { text }); };
+  web.lutFit = async (text, body, onProgress) => {
+    await gate();
+    return call("lut_fit", { text, body: JSON.stringify(body) }, [], onProgress);
+  };
 
   return web;
 })();

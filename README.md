@@ -157,15 +157,39 @@ cargo run --release --example golden --manifest-path core/Cargo.toml
 
 ## Credits
 
-Builds on the firmware exploration in
-[hhornbacher/gr3x-fw-hack](https://github.com/hhornbacher/gr3x-fw-hack).
+Thank you to the projects this editor builds on:
 
-The per-look curve selector follows
-[idontknownihil/gr3-film-mods](https://github.com/idontknownihil/gr3-film-mods),
-which found the variant patch, the RAM pointer rewrite of the curve library
-and the HDR effect switches and tested them on a GR III; `tools/emu.py` is
-adapted from its Unicorn harness (MIT). Its film fits are not used here.
+- **[spektrafilm](https://github.com/andreavolpato/spektrafilm) by Andrea
+  Volpato: the film looks.** The editor's 132 film looks were fitted to
+  spektrafilm's film and print profiles: every film and print was rendered
+  with spektrafilm as a 3D LUT (`tools/spektrafilm-lut.py`), and the
+  camera's look parameters were fitted to that LUT (`core/src/lutfit.rs`,
+  `core/examples/film_library.rs`). The fitted data in
+  `editor/static/films/` is derived from those profiles and licensed
+  CC BY-SA 4.0 (`LICENSE.txt`, `CHANGELOG.txt` there). spektrafilm's
+  simulation code (GPLv3) only runs offline in `tools/` and is not part of
+  the editor; spektrafilm and its author are not involved in this project.
+- **[hhornbacher/gr3x-fw-hack](https://github.com/hhornbacher/gr3x-fw-hack):**
+  the firmware exploration this editor builds on.
+- **[idontknownihil/gr3-film-mods](https://github.com/idontknownihil/gr3-film-mods):**
+  the per-look curve selector -- the variant patch, the RAM pointer rewrite
+  of the curve library and the HDR effect switches, tested on a GR III;
+  `tools/emu.py` is adapted from its Unicorn harness (MIT). Its film fits
+  are not used here.
+- Compiled into the editor (MIT or Apache-2.0): serde, serde_json, itoa,
+  zmij, memchr, sha2, digest, block-buffer, crypto-common, generic-array,
+  typenum, wasm-bindgen, bumpalo, once_cell, cfg-if.
+- Used offline only: [Unicorn Engine](https://www.unicorn-engine.org)
+  (GPLv2) for the firmware checks; colour-science, NumPy, SciPy and
+  scikit-image (BSD) for fits and evaluations; wasm-pack for the build.
+
+GR, GR III and GR IIIx are products and trademarks of Ricoh Imaging. This
+is an unofficial project, not affiliated with or endorsed by Ricoh Imaging.
+The editor does not distribute Ricoh's firmware.
+
+The editor shows the same list under **Credits**.
 
 ## License
 
-MIT, see [LICENSE](LICENSE).
+MIT, see [LICENSE](LICENSE). Except `editor/static/films/`: derived from
+spektrafilm, licensed CC BY-SA 4.0 (`editor/static/films/LICENSE.txt`).

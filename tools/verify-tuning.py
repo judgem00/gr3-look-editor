@@ -6,6 +6,7 @@ as ARM code.
     .venv/bin/python tools/verify-tuning.py            # all checks and questions
     .venv/bin/python tools/verify-tuning.py --only q2
     .venv/bin/python tools/verify-tuning.py --patched IMAGE   # an exported image
+    .venv/bin/python tools/verify-tuning.py --post IMAGE PRESET [--post-base IMAGE_WITHOUT_P]
 
 The selector is modelled in Python: a hook at 0x536dd450 (the site the stub
 will branch from) does what the stub will do -- for an assigned look it
@@ -14,10 +15,14 @@ and sets the variant SI+0x38A98 = 4, otherwise variant 0 -- and returns
 through the context fill's epilogue. Cross Process Color Tone 1..3 are
 three ordinary entries that point at the stock curves 3-5, 6-8 and 9-11.
 
+q5 checks the post-gamma matrix data patch of docs/plan-post-matrix.md (a
+look's own hue table) the same way.
+
 Compared per Make: the info block (R2Y register image at +0x120 and the
 LUT tables) and GammaTuning's four 256-entry tables (R, G, B, luma).
 """
 import argparse
+import json
 import struct
 import sys
 
@@ -379,6 +384,197 @@ def q4_hdr(rtos, r):
         r.check(Run(rtos).make(look, st) == Run(patched).make(look, st), f"patch leaves {name} alone")
 
 
+# Post-gamma matrix P (docs/plan-post-matrix.md): a look gets its own hue table,
+# whose 9 matrices carry H(k) B P B^-1, so the YCbCr stage computes H(k) B P.
+TONE_TABLE = 0x55018E4C          # .data, per table index -> set; set word 0 -> hue table
+HUE_TABLE = 0x5501988C           # the hue table every colour look shares (9 pointers)
+YCC_BASE = 0x53DC1444            # RGB -> YCbCr, 3x3 int32, 256 = 1.0
+CSP = (0x12A0, 0x12B2)           # info: the 9 YCbCr registers, 9 bit two's complement
+HUE = 0x77E                      # shooting info: hue setting 0..8 (= -4..+4)
+LUMA_MIX = [[0.5 + 0.5 * 77 / 256, 0.5 * 150 / 256, 0.5 * 29 / 256],
+            [0.5 * 77 / 256, 0.5 + 0.5 * 150 / 256, 0.5 * 29 / 256],
+            [0.5 * 77 / 256, 0.5 * 150 / 256, 0.5 + 0.5 * 29 / 256]]
+POST_TESTS = [   # name, look, settings, tone table entries, P (rows sum to 1)
+    ("Positive Film, R/B swap", 17, {}, [17], [[0, 0, 1], [0, 1, 0], [1, 0, 0]]),
+    ("Negative Film, Portra 400 fit", 22, {}, [25],
+     [[0.9740, 0.0928, -0.0668], [0.0810, 0.8078, 0.1112], [0.0130, 0.1346, 0.8524]]),
+    ("Bleach Bypass v1-v3, luma mix", 18, {0x786: 1}, [18, 22, 23], LUMA_MIX),
+    ("Bleach Bypass v2", 18, {0x786: 2}, [18, 22, 23], LUMA_MIX),
+    ("Bleach Bypass v3", 18, {0x786: 3}, [18, 22, 23], LUMA_MIX),
+]
+
+
+def mat_mul(a, b):
+    return [[sum(a[i][k] * b[k][j] for k in range(3)) for j in range(3)] for i in range(3)]
+
+
+def mat_inv(m):
+    (a, b, c), (d, e, f), (g, h, i) = m
+    det = a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g)
+    return [[(e * i - f * h) / det, (c * h - b * i) / det, (b * f - c * e) / det],
+            [(f * g - d * i) / det, (a * i - c * g) / det, (c * d - a * f) / det],
+            [(d * h - e * g) / det, (b * g - a * h) / det, (a * e - b * d) / det]]
+
+
+def i32s(e, a, n=9):
+    return list(struct.unpack(f"<{n}i", e.read(a, 4 * n)))
+
+
+def rows(v):
+    return [v[0:3], v[3:6], v[6:9]]
+
+
+def csp_calc(h, base):
+    """the YCbCr calc 0x536e4720: (H x base + 0x1000) >> 13, 9 bit"""
+    out = []
+    for i in range(3):
+        for j in range(3):
+            s = (sum(h[i][k] * base[k][j] for k in range(3)) + 0x1000) & 0xFFFFFFFF
+            out.append((((s >> 13) & 0x1FF) ^ 0x100) - 0x100)
+    return out
+
+
+def csp_regs(info):
+    return [((struct.unpack_from("<H", info, CSP[0] + 2 * k)[0] & 0x1FF) ^ 0x100) - 0x100
+            for k in range(9)]
+
+
+def post_matrices(e, p):
+    """registers wanted per hue step (rows exact: 256 / 0 / 0) and the Q13 matrices that give them"""
+    base = rows(i32s(e, YCC_BASE))
+    inv = mat_inv(base)
+    want, stored = [], []
+    for k in range(9):
+        h = rows(i32s(e, e.r32(HUE_TABLE + 4 * k)))
+        ideal = mat_mul(mat_mul([[v / 8192 for v in r] for r in h], base), p)
+        reg = [[round(v) for v in r] for r in ideal]
+        # rows sum to exactly 256 / 0 / 0: move the entries that rounded the most
+        for row, ideal_row, target in zip(reg, ideal, (256, 0, 0)):
+            while sum(row) != target:
+                step = 1 if sum(row) < target else -1
+                j = max(range(3), key=lambda j: (ideal_row[j] - row[j]) * step)
+                row[j] += step
+        s = [[round(v * 8192) for v in r] for r in mat_mul(reg, inv)]
+        want.append(sum(reg, []))
+        stored.append(s)
+    return base, want, stored
+
+
+def install_post(e, tables, p):
+    """the data patch in the emulator's RAM: set, hue table, 9 matrices; tone table entries"""
+    base, want, stored = post_matrices(e, p)
+    x = e.alloc(4 + 36 + 9 * 36)
+    e.w32(x, x + 4)
+    for k, s in enumerate(stored):
+        e.w32(x + 4 + 4 * k, x + 0x28 + 36 * k)
+        e.u.mem_write(x + 0x28 + 36 * k, struct.pack("<9i", *sum(s, [])))
+    for t in tables:
+        e.w32(TONE_TABLE + 4 * t, x)
+    return base, want, stored
+
+
+def q5_post(rtos, r):
+    print("\n[q5] post-gamma matrix: a look's own hue table (docs/plan-post-matrix.md)")
+    probe = Run(rtos)
+    base = rows(i32s(probe.e, YCC_BASE))
+    stock_h = [rows(i32s(probe.e, probe.e.r32(HUE_TABLE + 4 * k))) for k in range(9)]
+    # the model of the calc, on stock: every hue step of Standard
+    for live in (False, True):
+        got = [csp_regs(probe.make(11, {HUE: k}, live)[0]) for k in range(9)]
+        r.check(got == [csp_calc(h, base) for h in stock_h],
+                f"{'live ' if live else 'still'} stock Standard, hue -4..+4: registers = (H x base + 0x1000) >> 13")
+    for name, look, st, tables, p in POST_TESTS:
+        for live in (False, True):
+            tag = f"{'live ' if live else 'still'} {name}"
+            run = Run(rtos)
+            _, want, stored = install_post(run.e, tables, p)
+            r.check(all(csp_calc(s, base) == w for s, w in zip(stored, want)),
+                    f"{tag}: stored matrices give the wanted registers (model)")
+            bad, outside, grey = [], [], True
+            for k in range(9):
+                got = run.make(look, {**st, HUE: k}, live)
+                ref = Run(rtos).make(look, {**st, HUE: k}, live)
+                regs = csp_regs(got[0])
+                if regs != want[k]:
+                    bad.append(f"hue {k - 4:+d}: {regs} vs {want[k]}")
+                grey &= [sum(regs[0:3]), sum(regs[3:6]), sum(regs[6:9])] == [256, 0, 0]
+                outside += [f"hue {k - 4:+d} {fmt_runs([d])}" for d in diff_runs(ref[0], got[0])
+                            if d[0] < CSP[0] or d[0] + d[1] > CSP[1]]
+                if ref[1] != got[1]:
+                    outside.append(f"hue {k - 4:+d} gamma tables")
+            r.check(not bad, f"{tag}: registers = H(k) B P for hue -4..+4", "; ".join(bad[:3]))
+            r.check(grey, f"{tag}: rows 256 / 0 / 0 (grey stays grey)")
+            r.check(not outside, f"{tag}: nothing else in the info block changes", "; ".join(outside[:3]))
+            # every other look, in the same history right after the target, equals stock
+            others = []
+            for oname, olook, ost in CASES:
+                if olook == look:
+                    continue
+                for k in (4, 8):
+                    run.make(look, {**st, HUE: k}, live)
+                    got = run.make(olook, {**ost, HUE: k}, live)
+                    ref = Run(rtos).make(olook, {**ost, HUE: k}, live)
+                    if diff_runs(ref[0], got[0]) or ref[1] != got[1]:
+                        others.append(f"{oname} hue {k - 4:+d} {fmt_runs(diff_runs(ref[0], got[0]))}")
+            r.check(not others, f"{tag}: every other look unchanged, also right after it", "; ".join(others[:3]))
+
+
+# menu index -> target name in an export v2 preset
+TARGET_NAMES = {11: "Standard", 12: "Vivid", 17: "PositiveFilm", 18: "BleechBypass_GR", 19: "Retro",
+                20: "HdrCuisine", 21: "CrossProcess", 22: "NegativeFilm"}
+
+
+def check_post(path, preset_path, r, base_path=None):
+    """an exported image with post matrices (docs/plan-post-matrix.md, Phase 2): every
+    target with P against its source in stock, every other look against stock.
+
+    With base_path (the same preset exported without P): every look against the
+    same look there, so targets with their own matrix, curves and HSL (a fitted
+    film, docs/plan-spektrafilm-fitter.md) can be checked -- only the nine YCbCr
+    registers may differ, and those must be H(k) B P."""
+    print(f"\n[post] {path}: post matrices against the preset {preset_path}"
+          + (f", reference without P {base_path}" if base_path else ""))
+    with open(preset_path) as f:
+        targets = json.load(f)["targets"]
+    rtos, stock = emu.load_rtos(path), emu.load_rtos(emu.IMAGE)
+    reference = emu.load_rtos(base_path) if base_path else stock
+    probe = Run(stock)
+    base = rows(i32s(probe.e, YCC_BASE))
+    hue = [rows(i32s(probe.e, probe.e.r32(HUE_TABLE + 4 * k))) for k in range(9)]
+    looks = {v: k for k, v in TARGET_NAMES.items()}
+    for live in (False, True):
+        real, ref = Run(rtos), Run(reference)        # one history each
+        for name, look, st in CASES + CASES[::-1]:
+            spec = targets.get(TARGET_NAMES[look])
+            src_look, src_st = look, st
+            source = spec.get("source") if spec else None
+            if source and source != TARGET_NAMES[look] and not base_path:
+                if source not in looks:
+                    raise SystemExit(f"--post: source {source!r} is not modelled here")
+                # a look built from another one computes as that look's first case
+                src_look, src_st = next((l, s) for _, l, s in CASES if l == looks[source])
+            p = spec.get("post") if spec else None
+            bad = []
+            for k in (0, 4, 8):
+                got = real.make(look, {**st, HUE: k}, live)
+                want = ref.make(src_look, {**src_st, HUE: k}, live)
+                runs = diff_runs(want[0], got[0])
+                outside = [d for d in runs if d[0] < CSP[0] or d[0] + d[1] > CSP[1]]
+                if outside or want[1] != got[1]:
+                    bad.append(f"hue {k - 4:+d}: {fmt_runs(outside) or 'gamma tables'}")
+                regs = csp_regs(got[0])
+                if p:
+                    ideal = mat_mul(mat_mul([[v / 8192 for v in row] for row in hue[k]], base), rows(p))
+                    if any(abs(regs[3 * i + j] - ideal[i][j]) > 1 for i in range(3) for j in range(3)) or \
+                            [sum(regs[0:3]), sum(regs[3:6]), sum(regs[6:9])] != [256, 0, 0]:
+                        bad.append(f"hue {k - 4:+d}: registers {regs}")
+                elif regs != csp_regs(want[0]):
+                    bad.append(f"hue {k - 4:+d}: registers changed")
+            what = f"P {[round(v, 3) for v in p]}" if p else \
+                ("as without P" if base_path else "as its source" if spec else "stock")
+            r.check(not bad, f"{'live ' if live else 'still'} {name}: {what}", "; ".join(bad[:3]))
+
+
 # the selector as exported (core/src/curvesel.rs)
 STUB, STUB_TABLE, ENTRIES = 0x53003D00, 0x53003D80, 15
 SITE_STOCK = 0x159632D0
@@ -430,7 +626,7 @@ def check_patched(path, r):
 
 
 STEPS = {"stock": check_stock, "assigned": check_assigned, "q1": q1_order,
-         "q2": q2_sequences, "q3": q3_select, "q4": q4_hdr}
+         "q2": q2_sequences, "q3": q3_select, "q4": q4_hdr, "q5": q5_post}
 
 
 def main():
@@ -438,9 +634,15 @@ def main():
     ap.add_argument("--image", default=emu.IMAGE, help="unpacked firmware image")
     ap.add_argument("--only", choices=STEPS, action="append")
     ap.add_argument("--patched", help="exported image with the selector: check it against the model")
+    ap.add_argument("--post", nargs=2, metavar=("IMAGE", "PRESET"),
+                    help="exported image with post matrices and its preset (export v2)")
+    ap.add_argument("--post-base", metavar="IMAGE",
+                    help="with --post: the same preset exported without P, the reference for every look")
     args = ap.parse_args()
     r = Report()
-    if args.patched:
+    if args.post:
+        check_post(*args.post, r, args.post_base)
+    elif args.patched:
         check_patched(args.patched, r)
     else:
         rtos = emu.load_rtos(args.image)

@@ -9,6 +9,7 @@
 //! - Bleach Bypass built from another source is one look: tables 18, 22 and
 //!   23 share its private set.
 //! - HDR takes another source or a matrix of its own only with its effects off.
+//! - A target can have a post matrix P after the tone curve (postmatrix.rs).
 
 use crate::looks::{self, Toning, BLEACH_TABLES, SET_SIZE, TONING_TABLE};
 use serde_json::{json, Value};
@@ -27,6 +28,8 @@ pub struct Target {
     pub source: String,
     /// HDR only: its tone mapping and strength off (curvesel::hdr_effects_off)
     pub effects_off: bool,
+    /// 3x3 after the tone curve, rows summing to 1 (postmatrix.rs)
+    pub post: Option<[f64; 9]>,
 }
 
 /// looks a target can start from: every colour look and table variant except
@@ -56,7 +59,14 @@ impl Target {
         if name == HDR && source != HDR && !effects_off {
             return Err(format!("{HDR} takes another source only with its effects off"));
         }
-        Ok(Target { name: name.into(), source: source.into(), effects_off })
+        Ok(Target { name: name.into(), source: source.into(), effects_off, post: None })
+    }
+
+    /// an identity P is the same as none
+    pub fn with_post(mut self, post: Option<[f64; 9]>) -> Target {
+        const ID: [f64; 9] = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
+        self.post = post.filter(|p| *p != ID);
+        self
     }
 
     /// does its colour data come from another look?
@@ -67,6 +77,11 @@ impl Target {
     /// the look tables it covers
     pub fn tables(&self) -> Vec<u32> {
         if self.name == BLEACH && self.foreign() { BLEACH_TABLES.to_vec() } else { vec![table(&self.name)] }
+    }
+
+    /// the tables its post matrix goes to: Bleach Bypass's three variants always
+    pub fn post_tables(&self) -> Vec<u32> {
+        if self.name == BLEACH { BLEACH_TABLES.to_vec() } else { self.tables() }
     }
 
     /// does it get a ColorMatrix set of its own, and is that set at a fixed place?
@@ -88,7 +103,7 @@ impl Target {
     }
 
     pub fn to_json(&self) -> Value {
-        json!({ "name": self.name, "source": self.source, "effects_off": self.effects_off })
+        json!({ "name": self.name, "source": self.source, "effects_off": self.effects_off, "post": self.post })
     }
 }
 
@@ -97,6 +112,8 @@ impl Target {
 enum Item {
     Set(usize),
     Toning(usize),
+    /// its own hue table with P
+    Post(usize),
 }
 
 fn toning(stock: &[u8], t: &Target) -> Toning {
@@ -112,6 +129,9 @@ fn items(stock: &[u8], targets: &[Target]) -> Vec<(Item, u32)> {
         }
         if toning(stock, t).needs_tables() {
             out.push((Item::Toning(k), 2 * TONING_TABLE));
+        }
+        if t.post.is_some() {
+            out.push((Item::Post(k), crate::postmatrix::SIZE));
         }
     }
     out
@@ -142,6 +162,13 @@ pub fn apply(img: &mut [u8], stock: &[u8], targets: &[Target], places: &[u32]) -
             None => place(Item::Set(k)).ok_or("no place for a colour set")?,
         };
         looks::private_set_at(img, &t.tables(), set, toning(stock, t), place(Item::Toning(k)))?;
+    }
+    // after inherit_from: P works on the hue matrices the target uses now
+    for (k, t) in targets.iter().enumerate() {
+        if let Some(p) = &t.post {
+            let at = place(Item::Post(k)).ok_or("no place for a post matrix")?;
+            crate::postmatrix::install(img, &t.post_tables(), at, p).map_err(|e| format!("{}: {e}", t.name))?;
+        }
     }
     Ok(())
 }
