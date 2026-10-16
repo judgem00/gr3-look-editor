@@ -117,14 +117,15 @@
         <label for="print"><span class="num"></span><span data-i18n="print">Print</span></label>
         <select id="print"></select>
       </div>
-      <div class="pick-row" id="hc-row" hidden>
-        <label for="hc"><span class="num"></span><span data-i18n="hc">Highlight correction</span></label>
-        <select id="hc">
-          <option value="off" data-i18n="hc_off">off</option>
-          <option value="on" data-i18n="hc_on">on</option>
-        </select>
-      </div>
-      <p class="note" id="hc-note" hidden></p>
+      <details class="pick-sub" id="hc-box" hidden>
+        <summary><span id="hc-sum">Film fitted for: highlight correction off</span></summary>
+        <p class="note" data-i18n="hc_explain"></p>
+        <div class="seg small" id="hc" role="group">
+          <button type="button" data-hc="off" data-i18n="hc_off">without highlight correction</button>
+          <button type="button" data-hc="on" data-i18n="hc_on">with highlight correction</button>
+        </div>
+        <p class="note warn" id="hc-note" hidden></p>
+      </details>
       <div class="pick-row">
         <label for="grain"><span class="num">3</span><span data-i18n="grain">Grain</span></label>
         <select id="grain" disabled></select>

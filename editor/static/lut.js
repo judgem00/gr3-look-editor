@@ -211,7 +211,7 @@ function filmOptions(T, opt) {
 
 // the print row under the source: shown for a negative from the library
 function renderPrintRow(T) {
-  renderHcRow(T);
+  renderHcBox(T);
   const f = T && filmOf(T);
   const looks = f ? filmLooks(f.film, !!f.hc) : [];
   $("print-row").hidden = !(f && f.print && looks.length);
@@ -246,39 +246,40 @@ $("print").onchange = (e) => {
   if (f) applyFilm(state.current, f.film, e.target.value);   // the print changes, the setting stays
 };
 
-// the highlight correction row: for every target a LUT or film can go on
-function renderHcRow(T) {
-  const show = !!T && LUT_TARGETS.includes(T);
-  $("hc-row").hidden = !show;
+// the film's fit for the camera's highlight correction: a box of its own under
+// the print, so it does not read as a camera switch; for every LUT target
+function renderHcBox(T) {
+  const box = $("hc-box");
+  box.hidden = !T || !LUT_TARGETS.includes(T);
   $("hc-note").hidden = true;
-  if (!show) return;
+  if (box.hidden) return;
   const on = hcOf(T);
-  const sel = $("hc");
-  sel.value = hcKey(on);
-  sel.title = t("hc_t");
-  // "on" needs the second library for a film target
+  $("hc-sum").textContent = t("hc_sum", { state: t(on ? "hc_sum_on" : "hc_sum_off") });
   const f = filmOf(T);
-  sel.querySelector('option[value="on"]').disabled = !!f && !films.libs.on;
+  for (const b of $("hc").querySelectorAll("button")) {
+    b.classList.toggle("on", (b.dataset.hc === "on") === on);
+    // "with" needs the second library for a film target
+    b.disabled = b.dataset.hc === "on" && !!f && !films.libs.on;
+  }
   const photo = state.shot && state.shot.highlight_correction;
   const fitted = state.targets[T] && state.targets[T].lut;
-  const word = (v) => t(v ? "hc_w_on" : "hc_off");
+  const word = (v) => t(v ? "hc_w_on" : "hc_off_w");
   if (fitted && typeof photo === "boolean" && photo !== on) {
     $("hc-note").textContent = t("hc_photo", { photo: word(photo), fitted: word(on) });
     $("hc-note").hidden = false;
+    box.open = true;
   }
 }
 
-$("hc").onchange = (e) => {
+for (const b of $("hc").querySelectorAll("button")) b.onclick = () => {
   const T = state.current;
-  const on = e.target.value === "on";
-  setHc(on);
+  const on = b.dataset.hc === "on";
+  if (T && hcOf(T) === on) return;
   const f = T && filmOf(T);
-  if (f && !!f.hc !== on) return applyFilm(T, f.film, f.print, on);   // the same film, fitted for the setting
-  if (T && state.targets[T] && state.targets[T].lut && !!state.targets[T].lut.hc !== on) {
-    notice(t("hc_lut_refit"), true);
-    e.target.value = hcKey(!on);
-    return;
-  }
+  const l = T && state.targets[T] && state.targets[T].lut;
+  if (l && !f) return notice(t("hc_lut_refit"), true);   // a LUT of the user's: only its dialog can refit
+  setHc(on);
+  if (f) return applyFilm(T, f.film, f.print, on);       // the same film, fitted for the setting
   renderPickers();
 };
 
@@ -287,7 +288,7 @@ function hcFromShot(meta) {
   const v = meta && meta.highlight_correction;
   if (typeof v === "boolean" && v !== hcState.on) {
     setHc(v);
-    notice(t("hc_loaded", { photo: t(v ? "hc_w_on" : "hc_off") }));
+    notice(t("hc_loaded", { photo: t(v ? "hc_w_on" : "hc_off_w") }));
   }
   renderPickers();
 }

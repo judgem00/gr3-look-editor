@@ -362,7 +362,7 @@ function renderPickers() {
   if (!state.fw) return;
   const T = state.current;
   const tsel = $("target");
-  if (!T) $("print-row").hidden = $("hc-row").hidden = $("hc-note").hidden = true;
+  if (!T) $("print-row").hidden = $("hc-box").hidden = true;
   tsel.innerHTML = `<option value="">${esc(t("target_choose"))}</option>` + targetNames().map((n) =>
     `<option value="${esc(n)}">${esc(label(n))} — ${esc(targetState(n))}${targetChanged(n) ? " ●" : ""}</option>`).join("");
   tsel.value = T || "";

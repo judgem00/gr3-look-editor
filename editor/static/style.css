@@ -294,6 +294,11 @@ header .btn { white-space: nowrap; }
 .lut-report tr.final td, .lut-report tr.final th { color: var(--text); font-weight: 600; }
 .pick .note a { color: var(--accent); }
 .pick-row .num:empty { visibility: hidden; }
+/* the film's fit for the camera's highlight correction (lut.js renderHcBox) */
+.pick-sub { margin-left: 86px; }
+.pick-sub[open] summary { margin-bottom: 6px; }
+.pick-sub .seg.small { margin: 6px 0 2px; }
+.pick-sub .note + .note { margin-top: 6px; }
 
 /* credits (index.html #credits) */
 button.link { background: none; border: 0; padding: 0; color: var(--accent); font: inherit; cursor: pointer; text-decoration: underline; }
