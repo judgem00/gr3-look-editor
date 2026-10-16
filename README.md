@@ -162,6 +162,12 @@ cargo run --release --example golden --manifest-path core/Cargo.toml
 | [image-pipeline.md](docs/image-pipeline.md) | the whole RAW→YCbCr pipeline of the image processor |
 | [editor.md](docs/editor.md) | the editor in detail |
 | [plan-look-curves.md](docs/plan-look-curves.md) | curves and HSL for every colour look: plan and verification |
+| [firmware/system.md](docs/firmware/system.md) | the camera system: hardware, daemons and libraries (German) |
+| [firmware/video.md](docs/firmware/video.md) | video pipeline, encoder bitrates, manual exposure, the video patches (German) |
+| [firmware/custom-looks-plan.md](docs/firmware/custom-looks-plan.md) | plan: real custom colour profiles from the firmware's own tables (German) |
+| [firmware/colour-pipeline-data.md](docs/firmware/colour-pipeline-data.md) | where the colour data sits in the image pipeline (German) |
+| [firmware/measurement-protocol.md](docs/firmware/measurement-protocol.md) | measuring the image pipeline with the camera itself (German) |
+| [firmware/web-version-plan.md](docs/firmware/web-version-plan.md) | the web version of the editor: plan and status (German) |
 
 ## Credits
 
