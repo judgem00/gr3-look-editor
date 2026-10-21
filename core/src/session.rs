@@ -2,7 +2,7 @@
 //! file the user dropped in, the decoded image and the current look data.
 //! Requests and answers are JSON, routed by editor/static/bridge.js.
 
-use crate::{chan, curvesel, gamma, grfw, looks, lutfit, multiaxial, space, tone};
+use crate::{chan, curvesel, gamma, grfw, looks, lutfit, multiaxial, rampatch, space, tone};
 use crate::targets::{self, Target, CROSS};
 use crate::gamma::{Engine, ToneParams};
 use serde_json::{json, Map, Value};
@@ -459,10 +459,63 @@ impl Session {
     /// A body with "targets" is the target-first format (export_targets);
     /// otherwise the earlier editor's, with the session's targets.
     pub fn export(&self, body: &Value) -> Result<(Value, Vec<u8>, String), String> {
+        let Exported { img, space, video, tone_ignored, preset } = self.export_image(body)?;
+        let (mut result, packed) = self.pack(img, space)?;
+        report(&mut result, video, tone_ignored);
+        Ok((result, packed, serde_json::to_string_pretty(&preset).unwrap()))
+    }
+
+    /// POST /api/ram: the same export as a RAM patch for the SD card test path
+    /// (rampatch.rs, docs/plan-ram-loader.md). `base` is what the camera runs:
+    /// the update file flashed last, or RTOS.BIN of a RAM dump; None = stock.
+    /// Returns (result JSON, LOOK.PAT, preset JSON text).
+    pub fn export_ram(&self, body: &Value, base: Option<&[u8]>) -> Result<(Value, Vec<u8>, String), String> {
+        let Exported { img, space, video, tone_ignored, preset } = self.export_image(body)?;
+        let outside = rampatch::outside_view(&self.stock, &img);
+        if let Some(&first) = outside.first() {
+            return Err(format!(
+                "{} changed bytes lie outside the RTOS RAM (first at file offset {first:#x}); a RAM patch cannot carry them",
+                outside.len()
+            ));
+        }
+        let decoded;
+        let (base_view, base_kind) = match base {
+            None => (rampatch::view(&self.stock)?, "stock"),
+            Some(d) if d.starts_with(b"RICOH") => {
+                let mut c = grfw::Container::parse(d.to_vec())?;
+                let problems = c.check(Some(self.container.project), Some(self.container.fw_type()));
+                if !problems.is_empty() {
+                    return Err(format!("camera firmware: {}", problems.join("; ")));
+                }
+                decoded = c.decode()?;
+                (rampatch::view(&decoded)?, "update file")
+            }
+            Some(d) => (rampatch::view(d)?, "RAM dump"),
+        };
+        let patch = rampatch::diff(base_view, rampatch::view(&img)?);
+        let count = |k: rampatch::Kind| patch.runs.iter().filter(|r| r.kind == k).count();
+        let pat = rampatch::encode(&patch);
+        let mut result = json!({
+            "ram_patch": "LOOK.PAT",
+            "base": base_kind,
+            "runs": patch.runs.len(),
+            "bytes": patch.runs.iter().map(|r| r.before.len()).sum::<usize>(),
+            "kinds": {"free": count(rampatch::Kind::Free), "data": count(rampatch::Kind::Data),
+                      "code": count(rampatch::Kind::Code)},
+            "base_code_crc32": format!("{:08x}", patch.base_code_crc),
+            "patched_code_crc32": format!("{:08x}", patch.patched_code_crc),
+            "sha256": sha256_hex(&pat),
+            "space": space,
+        });
+        report(&mut result, video, tone_ignored);
+        Ok((result, pat, serde_json::to_string_pretty(&preset).unwrap()))
+    }
+
+    fn export_image(&self, body: &Value) -> Result<Exported, String> {
         if body.get("targets").is_some() { self.export_targets(body) } else { self.export_v1(body) }
     }
 
-    fn export_v1(&self, body: &Value) -> Result<(Value, Vec<u8>, String), String> {
+    fn export_v1(&self, body: &Value) -> Result<Exported, String> {
         let empty = Map::new();
         let matrices = body.get("matrices").and_then(|v| v.as_object()).unwrap_or(&empty);
         // the tone curve for all image controls is gone (plan-gui-redesign.md)
@@ -556,14 +609,7 @@ impl Session {
             "video": video.as_ref().map(|(names, _)| names.clone()),
         });
         let space = space::report_with(&self.stock, sets.len(), look_curves.len(), &targets::item_sizes(&self.stock, &self.targets));
-        let (mut result, packed) = self.pack(img, space)?;
-        if let Some((_, applied)) = video {
-            result["video"] = json!(applied);
-        }
-        if tone_ignored {
-            result["tone_ignored"] = json!(true);
-        }
-        Ok((result, packed, serde_json::to_string_pretty(&preset).unwrap()))
+        Ok(Exported { img, space, video: video.map(|(_, applied)| applied), tone_ignored, preset })
     }
 
     /// The target-first export (plan-gui-redesign.md):
@@ -577,7 +623,7 @@ impl Session {
     ///
     /// Only the targets change; every other look stays byte-identical to
     /// stock. `edit` is the editor's own state, kept in the preset as it is.
-    fn export_targets(&self, body: &Value) -> Result<(Value, Vec<u8>, String), String> {
+    fn export_targets(&self, body: &Value) -> Result<Exported, String> {
         let specs = body["targets"].as_object().ok_or("targets: need an object")?;
         let mut list = vec![];
         for (name, spec) in specs {
@@ -664,11 +710,7 @@ impl Session {
             "video": video.as_ref().map(|(names, _)| names.clone()),
         });
         let space = space::report_with(&self.stock, sets.len(), look_curves.len(), &targets::item_sizes(&self.stock, &list));
-        let (mut result, packed) = self.pack(img, space)?;
-        if let Some((_, applied)) = video {
-            result["video"] = json!(applied);
-        }
-        Ok((result, packed, serde_json::to_string_pretty(&preset).unwrap()))
+        Ok(Exported { img, space, video: video.map(|(_, applied)| applied), tone_ignored: false, preset })
     }
 
     /// apply the video patches a request asks for (video.rs), if any;
@@ -702,6 +744,25 @@ impl Session {
             "space": space,
         });
         Ok((result, packed))
+    }
+}
+
+/// an export before it is packed: the patched image and what to report
+struct Exported {
+    img: Vec<u8>,
+    space: Value,
+    /// one line per applied video patch
+    video: Option<Vec<String>>,
+    tone_ignored: bool,
+    preset: Value,
+}
+
+fn report(result: &mut Value, video: Option<Vec<String>>, tone_ignored: bool) {
+    if let Some(applied) = video {
+        result["video"] = json!(applied);
+    }
+    if tone_ignored {
+        result["tone_ignored"] = json!(true);
     }
 }
 

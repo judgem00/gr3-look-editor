@@ -3,7 +3,8 @@
 As of 2026-10-21. Status: phase 0 done, T1 passed on the camera
 ([firmware/ram-loader.md](firmware/ram-loader.md)): the camera runs the
 build flashed on 2026-10-18, the free space and all export sites hold their
-file values at run time.
+file values at run time. Phase 1 (patch format and export) done; next is
+phase 2, the loader.
 
 ## Goal
 
@@ -94,27 +95,39 @@ runtime data, and the three questions are answered in
 
 ### Phase 1: patch format and export
 
-- `core/src/rampatch.rs`:
-  - `diff(stock, built) -> Vec<Run>`: compare in RTOS addresses (text and
-    `.data` ranges from `addr.rs`). Leave out the image checksum word
-    (`grfw::fix_image_checksum`) and everything outside RAM. Join runs
-    that are less than 16 bytes apart.
-  - Classify each run as `data` or `code` (code ranges: text section, and
-    the stubs that `grain.rs`/`curvesel.rs` write). Code entry branches
-    are written last.
-  - Write `LOOK.PAT`: magic `GRLP0001`, CRC-32 of the base image, number
-    of runs, then per run address, length, kind, before bytes, after
-    bytes, then a CRC-32 over everything.
-- `Session::export_ram(body)`: the same targets and placement as
-  `export_targets`, but returns `LOOK.PAT` plus the fixed card files
-  (loader binary, `STARTUP.TTL`, `LOAD.SH`) as a ZIP.
-- Editor: next to the update file export, a button "Test via SD card
-  (RAM, no flash)". Text near it: SD scripts must be on, the look is gone
-  after power-off.
-- Tests: `diff` of stock against stock is empty; a look with matrix,
-  HSL, curves, grain and P gives runs only in the expected ranges;
-  applying the runs to the stock image gives the export image byte for
-  byte (outside the checksum word).
+Done 2026-10-21. As built:
+
+- `core/src/rampatch.rs` compares two images in their **RAM view**:
+  `0x53000000` up to the end of the `.data` copy source (`0x540b55c0`).
+  Bytes of the copy source go to `.data` at `0x55000000`. A RAM dump
+  (`RTOS.BIN`) is such a view already, so it can serve as the base. Runs
+  closer than 16 bytes are joined.
+- Three kinds, written in this order: **free** (the editor's free space,
+  and code that was all zero, i.e. a code cave like `video.rs`
+  `HOLD_CAVE`), **data** (`.data`), **code** (everything else, e.g. the
+  grain branches). Nothing leads into a free run before the data and code
+  runs are written.
+- `LOOK.PAT` (format in the module doc): magic `GRLP0001`, run count,
+  byte count, CRC-32 of the base code (`0x53000000..0x5407b540`) and of
+  the patched code, then per run address, length, kind, before and after
+  bytes, then a CRC-32 over everything. The loader can check the base code
+  CRC against the RAM before it writes: T1 showed that this range does not
+  change at run time.
+- `Session::export_ram(body, base)`: the same request as `export`. `base`
+  is what the camera runs: an update file (decoded and checked like
+  Ricoh's), `RTOS.BIN` of a dump, or none (stock). Refuses a look that
+  changes bytes outside the RAM view. The card files (loader, scripts)
+  come with phase 2; the export gives `LOOK.PAT` only.
+- Editor: export dialog, section "Test without flashing (SD card,
+  experimental)": optional file for what the camera runs, button, download
+  of `LOOK.PAT`.
+- Tests (`core/tests/rampatch.rs`): applying the patch to the base view
+  gives the export's view byte for byte, from stock and from another
+  build; a dump and the update file it came from give the same patch;
+  the kinds come in write order and the grain sites are code runs; a
+  damaged file and another build are refused. Against the camera's build
+  of 2026-10-18 the base code CRC is `1f906534`, the same as in the dump of
+  T1.
 
 ### Phase 2: loader on the camera
 

@@ -2,7 +2,9 @@
 
 Stand 2026-10-21. Plan: [../plan-ram-loader.md](../plan-ram-loader.md).
 Bisher gebaut: Phase 0 (RAM-Dump und Vergleich), auf der Kamera gelaufen
-(T1, siehe Ergebnisse).
+(T1, siehe Ergebnisse), und Phase 1: der Editor exportiert einen Look als
+RAM-Patch `LOOK.PAT` (`core/src/rampatch.rs`, Format dort). Der Loader, der
+ihn auf der Kamera schreibt (Phase 2), fehlt noch.
 
 ## Mechanismus
 

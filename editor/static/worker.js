@@ -51,6 +51,15 @@ const ops = {
     e.free();
     return [out, [update.buffer]];
   },
+  // the same as a RAM patch for the SD card (rampatch.rs); base: what the
+  // camera runs, or null for stock
+  ram({ body, base }) {
+    const e = editor.export_ram(body, base ? new Uint8Array(base) : new Uint8Array(0));
+    const patch = e.take_update();
+    const out = { result: JSON.parse(e.result), patch };
+    e.free();
+    return [out, [patch.buffer]];
+  },
   // a .cube: what it holds
   lut: ({ text }) => JSON.parse(editor.lut_info(text)),
   // the LUT fitter: blocks this worker for some seconds, reporting each step

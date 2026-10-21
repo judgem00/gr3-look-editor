@@ -10,6 +10,7 @@ const api = (() => {
   const pending = new Map();
   const shot = { linear: null, camera: null };
   let urls = [];
+  let ramUrl = null;
   let firmwareReady = null;
 
   function call(op, args, transfer = [], onProgress = null) {
@@ -113,6 +114,14 @@ const api = (() => {
         const preset = URL.createObjectURL(new Blob([r.preset], { type: "application/json" }));
         urls = [update, preset];
         return json({ ...r.result, web: true, downloads: { update, preset } });
+      }
+      // opts.base: an ArrayBuffer with what the camera runs (moved to the worker)
+      if (path === "api/ram" && method === "POST") {
+        const base = opts.base || null;
+        const r = await call("ram", { body, base }, base ? [base] : []);
+        if (ramUrl) URL.revokeObjectURL(ramUrl);
+        ramUrl = URL.createObjectURL(new Blob([r.patch], { type: "application/octet-stream" }));
+        return json({ ...r.result, download: ramUrl });
       }
       return fail(`no such request: ${method} ${url}`, 404);
     } catch (err) {

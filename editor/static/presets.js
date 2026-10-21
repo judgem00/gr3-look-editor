@@ -63,6 +63,11 @@ function renderExportDialog() {
     return `<li><b>${esc(label(T))}</b> <span class="muted">· ${esc(from)}</span>${what.length ? `<br><span class="muted">${esc(what.join(", "))}</span>` : ""}</li>`;
   }).join("");
   $("export").disabled = !list.length || !$("risk-ok").checked;
+  $("ram-export").disabled = !list.length;
+  if (!$("dl-ram").hidden && state.lastRam !== exportKey()) {
+    $("dl-ram").hidden = true;
+    $("ram-msg").textContent = "";
+  }
   $("flash-4").innerHTML = t("flash_4", { list: list.length ? list.map((n) => esc(label(n))).join(", ") : "—" });
   if (!$("downloads").hidden && state.lastExport !== exportKey()) {
     $("downloads").hidden = true;
@@ -100,6 +105,38 @@ $("export").onclick = async () => {
   } else {
     $("export-msg").className = "note warn";
     $("export-msg").textContent = await errorText(res);
+  }
+};
+
+// the SD card test path (docs/plan-ram-loader.md): the look as a RAM patch
+// against what the camera runs (an update file or RTOS.BIN of a RAM dump)
+$("ram-base").onchange = () => {
+  $("ram-base-note").hidden = !!$("ram-base").files[0];
+  $("dl-ram").hidden = true;
+  $("ram-msg").textContent = "";
+};
+$("ram-export").onclick = async () => {
+  $("ram-msg").className = "note";
+  $("ram-msg").textContent = t("ram_creating");
+  const body = exportBody();
+  const f = $("ram-base").files[0];
+  const res = await api("/api/ram", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    base: f ? await f.arrayBuffer() : null,
+  });
+  if (res.ok) {
+    const r = await res.json();
+    state.lastRam = JSON.stringify(body);
+    $("ram-msg").className = "note ok";
+    $("ram-msg").textContent = t("ram_done", { runs: r.runs, bytes: r.bytes, base: f ? f.name : t("ram_stock") });
+    $("dl-ram").href = r.download;
+    $("dl-ram").hidden = false;
+    $("dl-ram").focus();
+  } else {
+    $("ram-msg").className = "note warn";
+    $("ram-msg").textContent = await errorText(res);
   }
 };
 
