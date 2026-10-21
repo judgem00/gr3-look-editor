@@ -234,6 +234,25 @@ Ablauf wie T2 (`SD_LOAD`, `t3/LOOK.PAT`), dann:
 2. Ein paar weitere Fotos mit Negative Film: läuft stabil?
 3. Ausschalten, `SCRIPT` löschen, einschalten: Negative Film ohne Korn.
 
+**T3, 2026-10-21, GR III:** bestanden. `LOAD.OK` (3 Bereiche, 112 Bytes,
+danach `c8e18542`, `already 0`), Negative Film zeigt starkes Korn. Der
+RTOS-Kern führt den neuen Code also sofort aus; `cacheflush` von Linux aus
+reicht auch für Instruktionen. Feinstruktur im Bildzentrum (Median der
+Abweichung vom weichgezeichneten Bild, Graustufen, volle Auflösung):
+
+| Foto | Feinstruktur |
+|---|---|
+| MR029984, Negative Film ohne Korn (Gegenprobe zu T2, 19:31:16) | 1,0 |
+| MR029985, Standard, Kontrolle (19:34:31) | 1,0 |
+| MR029987, Negative Film mit T3-Patch (19:34:50) | 3,0 |
+
+Das JPEG mit Korn ist 13,6 MB groß statt 11,1 MB.
+
+Zeit: Das Standard-Foto entstand um 19:34:31, `LOAD.LCK` um 19:34:34,
+`LOAD.OK` um 19:34:38. Fotografieren geht also schon, bevor Linux den Loader
+startet; der Loader selbst braucht wieder etwa 4 s. Die Zeit bis Linux bereit
+ist, bleibt unbekannt.
+
 Mögliche Ausgänge: Korn sichtbar heißt, der Kern führt den neuen Code aus.
 Kein Korn, aber `LOAD.OK`: der Kern hält noch die alten Instruktionen im
 Cache (das wäre die offene Frage, die grkit auch nennt). Hängt die Kamera:
