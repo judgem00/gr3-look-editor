@@ -209,6 +209,36 @@ Standard ist unverändert warm. Gegenprobe: `SCRIPT` von der Karte gelöscht,
 neu eingeschaltet, Negative Film sieht wieder normal aus. Der Patch gilt also
 nur bis zum Ausschalten.
 
+### T3: Code (Korn)
+
+Prüft, ob der RTOS-Kern geänderte Instruktionen ausführt (Instruction-Cache).
+`work/ramload/t3/`: das Preset vom 18.10., dazu Negative Film als eigenes
+Ziel mit Korn 1 (stärkste Stufe, [../grain.md](../grain.md)). Der Kamera-Build
+hat kein Korn, also kommt neuer Code dazu. Der Patch hat drei Bereiche, 112
+Bytes, in dieser Reihenfolge:
+
+| Adresse | Bytes | Art | Inhalt |
+|---|---|---|---|
+| `0x53001b54` | 104 | frei | Korn-Stub und Tabelle; vorher nur Nullen |
+| `0x535031b0` | 4 | Code | Fill-Stelle: `bl 0x53001b88` (Stub + 13 Wörter) |
+| `0x535131c0` | 4 | Code | Gate-Stelle: `b 0x53001b54` |
+
+Basis-CRC `1f906534`, danach `c8e18542`, SHA-256 von `LOOK.PAT`
+`61365262…`. Am Mac getestet (`test-load.sh`), alle Fälle bestanden.
+
+Ablauf wie T2 (`SD_LOAD`, `t3/LOOK.PAT`), dann:
+
+1. Etwa 1 Minute warten, ein Foto mit Standard (Kontrolle, ohne Korn), eines
+   mit Negative Film: erwartet starkes Korn im aufgenommenen Bild. Das
+   Live-Bild zeigt kein Korn (auch nicht nach dem Flash).
+2. Ein paar weitere Fotos mit Negative Film: läuft stabil?
+3. Ausschalten, `SCRIPT` löschen, einschalten: Negative Film ohne Korn.
+
+Mögliche Ausgänge: Korn sichtbar heißt, der Kern führt den neuen Code aus.
+Kein Korn, aber `LOAD.OK`: der Kern hält noch die alten Instruktionen im
+Cache (das wäre die offene Frage, die grkit auch nennt). Hängt die Kamera:
+Akku heraus, ohne Karte starten.
+
 ## Wiederherstellung
 
 Der Dump schreibt nichts in den Kameraspeicher; der Loader nur in den RAM,
