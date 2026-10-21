@@ -1,0 +1,17 @@
+mpause 2000
+sendln 'lcmd_resp on'
+filedelete 'C:\SCRIPT\RAMLOAD\DUMP.OK'
+filedelete 'C:\SCRIPT\RAMLOAD\DUMP.ERR'
+filedelete 'C:\SCRIPT\RAMLOAD\DUMP.LCK'
+attempts = 0
+:run
+sendln 'lcmd sh /media/storage1/SCRIPT/RAMLOAD/DUMP.SH'
+filesearch 'C:\SCRIPT\RAMLOAD\DUMP.OK'
+if result != 0 goto done
+filesearch 'C:\SCRIPT\RAMLOAD\DUMP.ERR'
+if result != 0 goto done
+mpause 1000
+attempts = attempts + 1
+if attempts < 120 goto run
+:done
+end
