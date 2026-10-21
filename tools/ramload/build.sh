@@ -13,6 +13,10 @@
 #
 # Only these four folders are replaced; everything else in out (dumps,
 # firmware backups) stays.
+#
+# It also refreshes bin/LOAD.BIN, the loader the editor puts into its card
+# package (core/src/cardzip.rs): commit it whenever load.c, loadcore.h,
+# common.h or core.h change, so git diff shows a stale binary.
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 repo=$(cd "$here/../.." && pwd)
@@ -38,6 +42,8 @@ cp "$here/card/dump.ttl" "$out/SD_DUMP/SCRIPT/STARTUP.TTL"
 cp "$here/card/DUMP.SH" "$tmp/DUMP.BIN" "$out/SD_DUMP/SCRIPT/RAMLOAD/"
 cp "$here/card/load.ttl" "$out/SD_LOAD/SCRIPT/STARTUP.TTL"
 cp "$here/card/LOAD.SH" "$tmp/LOAD.BIN" "$out/SD_LOAD/SCRIPT/RAMLOAD/"
+mkdir -p "$here/bin"
+cp "$tmp/LOAD.BIN" "$here/bin/LOAD.BIN"
 
 # GR III: the ModeSet file is named after the RTOS major and minor numbers
 # (GR IIIx: 00078490.609). Command and DEVELOP.MOD as grkit writes them
