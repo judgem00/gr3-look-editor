@@ -188,6 +188,27 @@ Ablauf:
    Karte zurück, einschalten: Negative Film wieder wie vorher.
 6. `SCRIPT/RAMLOAD/LOAD.OK` bzw. `LOAD.ERR` und die Fotos auswerten.
 
+**T2, 2026-10-21, GR III:** bestanden. Der Loader schrieb beim ersten
+Einschalten (`LOAD.OK`: 1 Bereich, 18 Bytes, Basis `1f906534`, danach
+`739d2e24`, `already 0`). Damit funktionieren auf der Kamera auch das
+Schreiben über `/dev/mem` und `cacheflush`, und die Bildverarbeitung liest
+die geänderte Matrix ohne Neustart. `LOAD.LCK` 19:27:02, `LOAD.OK` 19:27:06:
+das Laden selbst (beide CRC-Läufe über 17 MB) dauert etwa 4 s. Wie lange
+Linux nach dem Einschalten braucht, ist noch nicht gemessen.
+
+Zwei Fotos unter Glühlampenlicht, gleiche Einstellungen (1/25 s, f/2.8,
+ISO 320, AWB), 12 s auseinander, Dateien in `work/ramload/t2/`:
+
+| | Rot | Grün | Blau |
+|---|---|---|---|
+| MR029982, Standard (Kontrolle) | 93,4 | 42,5 | 13,4 |
+| MR029983, Negative Film (Patch) | 14,6 | 42,5 | 93,8 |
+
+Mittelwerte des JPEGs (8 Bit): Rot und Blau vertauscht, Grün gleich.
+Standard ist unverändert warm. Gegenprobe: `SCRIPT` von der Karte gelöscht,
+neu eingeschaltet, Negative Film sieht wieder normal aus. Der Patch gilt also
+nur bis zum Ausschalten.
+
 ## Wiederherstellung
 
 Der Dump schreibt nichts in den Kameraspeicher; der Loader nur in den RAM,
