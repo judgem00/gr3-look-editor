@@ -253,6 +253,10 @@ Zeit: Das Standard-Foto entstand um 19:34:31, `LOAD.LCK` um 19:34:34,
 startet; der Loader selbst braucht wieder etwa 4 s. Die Zeit bis Linux bereit
 ist, bleibt unbekannt.
 
+Gegenprobe: `SCRIPT` gelöscht, neu eingeschaltet, Negative Film ohne Korn.
+Offen: Stabilität bei mehreren Korn-Fotos hintereinander (nur ein Foto mit
+Patch).
+
 Mögliche Ausgänge: Korn sichtbar heißt, der Kern führt den neuen Code aus.
 Kein Korn, aber `LOAD.OK`: der Kern hält noch die alten Instruktionen im
 Cache (das wäre die offene Frage, die grkit auch nennt). Hängt die Kamera:
