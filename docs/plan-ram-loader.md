@@ -3,8 +3,8 @@
 As of 2026-10-21. Status: phase 0 done, T1 passed on the camera
 ([firmware/ram-loader.md](firmware/ram-loader.md)): the camera runs the
 build flashed on 2026-10-18, the free space and all export sites hold their
-file values at run time. Phase 1 (patch format and export) done; next is
-phase 2, the loader.
+file values at run time. Phase 1 (patch format and export) done. Phase 2
+(the loader) built and tested on the Mac; next is T2 on the camera.
 
 ## Goal
 

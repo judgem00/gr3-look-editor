@@ -1,0 +1,17 @@
+mpause 2000
+sendln 'lcmd_resp on'
+filedelete 'C:\SCRIPT\RAMLOAD\LOAD.OK'
+filedelete 'C:\SCRIPT\RAMLOAD\LOAD.ERR'
+filedelete 'C:\SCRIPT\RAMLOAD\LOAD.LCK'
+attempts = 0
+:run
+sendln 'lcmd sh /media/storage1/SCRIPT/RAMLOAD/LOAD.SH'
+filesearch 'C:\SCRIPT\RAMLOAD\LOAD.OK'
+if result != 0 goto done
+filesearch 'C:\SCRIPT\RAMLOAD\LOAD.ERR'
+if result != 0 goto done
+mpause 1000
+attempts = attempts + 1
+if attempts < 60 goto run
+:done
+end

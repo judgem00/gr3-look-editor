@@ -134,7 +134,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("outdir")
     ap.add_argument("image", nargs="?", default=os.path.join(REPO, "work", "fwdc239b", "unpackedFW"))
-    ap.add_argument("--binary", default=os.path.join(REPO, "work", "ramload", "SD_ROOT", "SCRIPT",
+    ap.add_argument("--binary", default=os.path.join(REPO, "work", "ramload", "SD_DUMP", "SCRIPT",
                                                       "RAMLOAD", "DUMP.BIN"))
     ap.add_argument("--poke", action="append", default=[], metavar="ADDR=WORD")
     a = ap.parse_args()

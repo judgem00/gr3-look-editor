@@ -3,8 +3,9 @@
 Stand 2026-10-21. Plan: [../plan-ram-loader.md](../plan-ram-loader.md).
 Bisher gebaut: Phase 0 (RAM-Dump und Vergleich), auf der Kamera gelaufen
 (T1, siehe Ergebnisse), und Phase 1: der Editor exportiert einen Look als
-RAM-Patch `LOOK.PAT` (`core/src/rampatch.rs`, Format dort). Der Loader, der
-ihn auf der Kamera schreibt (Phase 2), fehlt noch.
+RAM-Patch `LOOK.PAT` (`core/src/rampatch.rs`, Format dort). Phase 2, der
+Loader, ist gebaut und am Mac getestet; auf der Kamera noch nicht gelaufen
+(T2).
 
 ## Mechanismus
 
@@ -54,14 +55,18 @@ Dateien in `tools/ramload/`:
   - `DUMP.OK` zuletzt, oder `DUMP.ERR` mit Fehlercode
   Prüft vor dem Lesen die Literale (`.data` muss bei `0x55000000` liegen),
   sonst `DUMP.ERR` mit Code 3/4.
-- `card/STARTUP.TTL`, `card/DUMP.SH`: Start über `lcmd`, höchstens 2 Minuten
-  Wiederholung.
-- `build.sh`: baut `DUMP.BIN` mit clang/lld
+- `card/dump.ttl` (wird `SCRIPT/STARTUP.TTL`), `card/DUMP.SH`: Start über
+  `lcmd`, höchstens 2 Minuten Wiederholung.
+- `build.sh`: baut `DUMP.BIN` und `LOAD.BIN` mit clang/lld
   (`--target=armv7-linux-gnueabi -mfpu=none -mfloat-abi=soft`; ohne
   `-mfpu=none` vektorisiert clang die CRC-Schleife mit NEON) und legt in
   `work/ramload/` an:
-  - `SD_ROOT/` – Inhalt ins Wurzelverzeichnis der Karte
+  - `SD_DUMP/` – Inhalt ins Wurzelverzeichnis der Karte: Dump
+  - `SD_LOAD/` – Inhalt ins Wurzelverzeichnis, dazu `LOOK.PAT`: Loader
   - `SCRIPT_ON/`, `SCRIPT_OFF/` – ModeSet-Dateien zum Ein- und Ausschalten
+  Es ersetzt nur diese vier Ordner. (Bis 2026-10-21 löschte es ganz
+  `work/ramload/`; dabei gingen der Dump von T1 und die Firmware-Sicherung
+  verloren, siehe Ergebnisse.)
 - `test-dump.py`: führt `DUMP.BIN` in Unicorn gegen einen simulierten
   Kamera-RAM aus (Image bei `0x53000000`, `.data` kopiert, BSS null) und
   emuliert die Syscalls. `--poke ADDR=WORD` simuliert Schreibzugriffe der
@@ -92,7 +97,7 @@ Stock) und meldet genau die beiden Stellen. Der Dump des Stock-Images ergibt
 2. SD-Skripte einschalten: Inhalt von `work/ramload/SCRIPT_ON/` ins
    Wurzelverzeichnis, Kamera aus, mit gedrückter MENU einschalten, warten bis
    sie sich selbst ausschaltet. Danach die beiden Dateien löschen.
-3. Inhalt von `work/ramload/SD_ROOT/` ins Wurzelverzeichnis.
+3. Inhalt von `work/ramload/SD_DUMP/` ins Wurzelverzeichnis.
 4. Kamera normal einschalten (ohne MENU), 2 Minuten warten, ausschalten.
 5. `SCRIPT/RAMLOAD` von der Karte kopieren, dann:
    `python3 tools/ram-compare.py <ordner> --builds ~/Downloads/FWDC239B-*.BIN`
@@ -110,8 +115,10 @@ Karte nehmen (T1: erst danach klappte es).
 **T1, 2026-10-21, GR III:** Der Dump lief beim ersten Einschalten nach dem
 ModeSet durch (`DUMP.OK`). SD-Skript, `lcmd` und das Lesen von `/dev/mem`
 funktionieren also. Die Startup-Literale und die Build-Kennung `0x1b150a02`
-stimmen mit dem Stock-Image überein. Dump in
-`work/ramload/dump-2026-10-21/`.
+stimmen mit dem Stock-Image überein. Der Dump selbst ist verloren
+(`build.sh` hat `work/ramload/` gelöscht); die Ergebnisse unten stammen aus
+dem Vergleich davor. Die Firmware-Sicherung ist wiederhergestellt: aus
+`my-look.looks.json` (noch auf der Karte) neu exportiert, SHA-256 gleich.
 
 1. **Firmware:** Die Kamera läuft mit dem Build, der am 18.10. auf der Karte
    lag (`work/ramload/card-fw/FWDC239B.BIN`, SHA-256 `1d48bf8758c4ddca…`,
@@ -132,9 +139,59 @@ Folge für Phase 1: Basis des RAM-Patches ist das Image, das die Kamera
 gerade laufen hat, also derzeit der Build von der Karte, nicht Stock. Der
 Patch muss vor dem Schreiben genau diese Bytes vorfinden.
 
+## Phase 2: Loader
+
+- `loadcore.h`: Prüfen und Schreiben, ohne Linux-Aufrufe. Vor dem ersten
+  Schreibzugriff: `LOOK.PAT` unbeschädigt (Magic, CRC, Größen, jeder Bereich
+  in Code oder `.data`), CRC-32 des Codes im RAM gleich der Basis des
+  Patches, alte Bytes jedes Bereichs stimmen. Steht der Patch schon im RAM
+  (zweiter Lauf nach demselben Einschalten), ändert er nichts. Danach in
+  Dateireihenfolge schreiben, nach jedem Bereich `flush`; schlägt ein
+  `flush` fehl, weicht das Zurücklesen ab oder stimmt der Code-CRC danach
+  nicht, schreibt er alle Bereiche auf ihre alten Bytes zurück.
+  Statuscodes stehen im Kopf der Datei.
+- `load.c`: liest `SCRIPT/RAMLOAD/LOOK.PAT`, mappt `/dev/mem` lesend und
+  schreibend (`O_RDWR | O_SYNC`) und schreibt `LOAD.OK` oder `LOAD.ERR`.
+  `flush` ist `dsb sy` plus der ARM-Syscall `cacheflush`, wie bei grkit.
+- `card/load.ttl`, `card/LOAD.SH`: wie beim Dump, höchstens 1 Minute.
+- `test-load.sh [BASIS [PRESET]]`: baut `loadcore.h` am Mac mit einem
+  Testprogramm (`test-load.c`) und spielt alle Fälle gegen Puffer mit dem
+  RAM-Abbild der Basis durch (`view.py`): Laden, zweiter Lauf, andere
+  Firmware (5), beschädigter Patch (4), Bereich außerhalb (6), alte Bytes
+  falsch (7), teilweise geschrieben (8), `flush` scheitert (9), Schreiben
+  geht verloren (10), Code-CRC danach falsch (11); nach jedem Fehler muss der
+  RAM wie vorher sein. Gegenprobe: ohne Zurückschreiben schlagen 9–11 fehl.
+  Nicht abgedeckt: die Linux-Aufrufe selbst (`open`, `mmap`, `cacheflush`).
+- `core/examples/ram_patch.rs`: `LOOK.PAT` aus Preset und Basis, ohne
+  Browser.
+
+### T2: nur Daten
+
+`work/ramload/t2/`: das Preset vom 18.10. unverändert, dazu Negative Film
+als eigenes Ziel mit vertauschtem Rot und Blau (Matrix `[0,0,1, 0,1,0,
+1,0,0]`). Der Patch gegen den Kamera-Build hat genau einen Bereich: 18
+Bytes bei `0x53dc2ad0`, die 3×3-Look-Matrix von Negative Film (Q13, vorher
+`[8939,-1642,895, 1247,5915,1030, 57,2165,5970]`). Keine Instruktion ändert
+sich. Basis-CRC `1f906534`, danach `739d2e24`, SHA-256 von `LOOK.PAT`
+`b5ebaba1…`.
+
+Ablauf:
+
+1. SD-Skripte sind seit T1 an. Kein `FWDC239B.BIN` im Wurzelverzeichnis.
+2. Inhalt von `work/ramload/SD_LOAD/` ins Wurzelverzeichnis,
+   `work/ramload/t2/LOOK.PAT` nach `SCRIPT/RAMLOAD/`.
+3. Kamera normal einschalten, etwa 1 Minute warten.
+4. Ein Foto mit Standard (Kontrolle), eines mit Negative Film: erwartet
+   vertauschte Farben (blauer Himmel orange, Hauttöne bläulich), Standard
+   unverändert. Auch das Live-Bild ansehen.
+5. Ausschalten, Karte heraus, `SCRIPT` vom Mac aus umbenennen oder löschen,
+   Karte zurück, einschalten: Negative Film wieder wie vorher.
+6. `SCRIPT/RAMLOAD/LOAD.OK` bzw. `LOAD.ERR` und die Fotos auswerten.
+
 ## Wiederherstellung
 
-Der Dump schreibt nichts in den Kameraspeicher. Hängt die Kamera trotzdem:
+Der Dump schreibt nichts in den Kameraspeicher; der Loader nur in den RAM,
+bis zum Ausschalten. Hängt die Kamera trotzdem:
 Akku raus, Karte raus, ohne Karte starten. Das `SCRIPT`-Verzeichnis löschen
 deaktiviert das Skript; die SD-Skript-Einstellung bleibt an, bis sie mit
 `SCRIPT_OFF` ausgeschaltet wird.

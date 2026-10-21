@@ -15,96 +15,14 @@
      DUMP.OK    written last, after a complete dump
      DUMP.ERR   an error code instead of DUMP.OK
    DUMP.LCK admits one run at a time; STARTUP.TTL deletes it first. */
-typedef unsigned char u8;
-typedef unsigned int u32;
+#include "common.h"
 
-#define RTOS_BASE 0x53000000U
-#define DATA_VMA 0x55000000U
-/* startup literals: .data source, .data start, .data size, BSS start, BSS end */
-#define STARTUP 0x53000450U
 #define IDENTITY 0x53002038U
 /* never dump more than this from DATA_VMA, whatever the literals say */
 #define DATA_LIMIT 0x01000000U
-#define DIR "/media/storage1/SCRIPT/RAMLOAD/"
-
-static long sys(u32 n, u32 a, u32 b, u32 c, u32 d, u32 e, u32 f)
-{
-    register u32 r0 __asm__("r0") = a;
-    register u32 r1 __asm__("r1") = b;
-    register u32 r2 __asm__("r2") = c;
-    register u32 r3 __asm__("r3") = d;
-    register u32 r4 __asm__("r4") = e;
-    register u32 r5 __asm__("r5") = f;
-    register u32 r7 __asm__("r7") = n;
-    __asm__ volatile("svc 0" : "+r"(r0) : "r"(r1), "r"(r2), "r"(r3), "r"(r4), "r"(r5), "r"(r7)
-                     : "memory", "cc");
-    return (long)r0;
-}
-#define SYS_EXIT 1
-#define SYS_WRITE 4
-#define SYS_OPEN 5
-#define SYS_CLOSE 6
-#define SYS_MUNMAP 91
-#define SYS_FSYNC 118
-#define SYS_MMAP2 192
-#define O_RDONLY 0
-#define O_WRONLY 1
-#define O_CREAT 0100
-#define O_EXCL 0200
-#define O_TRUNC 01000
-#define O_SYNC 04010000
-#define PROT_READ 1
-#define MAP_SHARED 1
 
 static long mem_fd;
 
-static u32 crc_table[256];
-static void crc_init(void)
-{
-    for (u32 i = 0; i < 256; ++i) {
-        u32 c = i;
-        for (int k = 0; k < 8; ++k) c = c & 1 ? 0xedb88320U ^ (c >> 1) : c >> 1;
-        crc_table[i] = c;
-    }
-}
-
-static long create(const char *path, u32 flags)
-{
-    return sys(SYS_OPEN, (u32)path, O_WRONLY | O_CREAT | flags, 0644, 0, 0, 0);
-}
-static int write_all(long fd, const u8 *p, u32 n)
-{
-    while (n) {
-        long w = sys(SYS_WRITE, (u32)fd, (u32)p, n, 0, 0, 0);
-        if (w <= 0) return 0;
-        p += w;
-        n -= (u32)w;
-    }
-    return 1;
-}
-
-/* a small text buffer for INFO.TXT and DUMP.ERR */
-static char text[1024];
-static u32 used;
-static void put(const char *s) { while (*s && used < sizeof text) text[used++] = *s++; }
-static void hex(u32 v)
-{
-    put("0x");
-    for (int i = 7; i >= 0; --i) {
-        char c = "0123456789abcdef"[(v >> (i * 4)) & 15];
-        if (used < sizeof text) text[used++] = c;
-    }
-}
-static void line(const char *name, u32 v) { put(name); put(" "); hex(v); put("\n"); }
-static void save(const char *path)
-{
-    long fd = create(path, O_TRUNC);
-    if (fd >= 0) {
-        write_all(fd, (const u8 *)text, used);
-        sys(SYS_FSYNC, (u32)fd, 0, 0, 0, 0, 0);
-        sys(SYS_CLOSE, (u32)fd, 0, 0, 0, 0, 0);
-    }
-}
 static void fail(u32 code, u32 detail)
 {
     used = 0;
@@ -137,7 +55,7 @@ static u32 dump(const char *path, u32 start, u32 end, u32 code)
         u32 n = end - address > sizeof buffer ? sizeof buffer : end - address;
         for (u32 i = 0; i < n / 4; ++i) buffer[i] = mem[(address - start) / 4 + i];
         const u8 *bytes = (const u8 *)buffer;
-        for (u32 i = 0; i < n; ++i) crc = crc_table[(crc ^ bytes[i]) & 0xff] ^ (crc >> 8);
+        crc = crc_update(crc, bytes, n);
         if (!write_all(out, bytes, n)) fail(code + 2, address);
         address += n;
     }
