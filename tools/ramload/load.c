@@ -7,7 +7,7 @@
    The checks and writes are in loadcore.h (tested on the Mac by
    test-load.c); this file reads LOOK.PAT, maps the RAM and writes the result
    files. The way it writes follows grkit's installer (github.com/ahonn/grkit,
-   runtime/installer.c, MIT, Copyright (c) ahonn): /dev/mem with O_SYNC,
+   runtime/installer.c; MIT, see LICENSE-grkit.txt): /dev/mem with O_SYNC,
    then `dsb` and the cacheflush syscall over each written range.
 
    Output, in the folder of this program:

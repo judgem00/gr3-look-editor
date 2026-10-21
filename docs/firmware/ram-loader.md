@@ -9,8 +9,9 @@ Loader, ist gebaut und am Mac getestet; auf der Kamera noch nicht gelaufen
 
 ## Mechanismus
 
-Übernommen als Idee von [grkit](https://github.com/ahonn/grkit) (MIT), das
-auf GR III 2.10 so Filmlooks lädt:
+Übernommen von [grkit](https://github.com/ahonn/grkit) (MIT), das auf
+GR III 2.10 so Filmlooks lädt. Welche Teile von grkit stammen, und dessen
+Lizenz: `tools/ramload/LICENSE-grkit.txt` (auch im Einrichtungspaket).
 
 1. **SD-Skripte einschalten** (einmalig, eine Kameraeinstellung): ModeSet-Datei
    `00078350.588` mit `[SCRIPT_EN_MODE EN]\r\n` und `DEVELOP.MOD` (10 feste

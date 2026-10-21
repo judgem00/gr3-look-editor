@@ -4,7 +4,7 @@
 
    Runs in the camera's Linux, started by SCRIPT/STARTUP.TTL through `lcmd`.
    No libc: raw EABI syscalls. Modelled on the dump tool of grkit
-   (github.com/ahonn/grkit, runtime/dump/dump.c, MIT, Copyright (c) ahonn).
+   (github.com/ahonn/grkit, runtime/dump/dump.c; MIT, see LICENSE-grkit.txt).
 
    Output, in the folder of this program:
      RTOS.BIN   0x53000000 up to the end of the image (.data copy source plus

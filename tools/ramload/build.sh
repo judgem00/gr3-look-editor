@@ -47,7 +47,7 @@ cp "$tmp/LOAD.BIN" "$here/bin/LOAD.BIN"
 
 # GR III: the ModeSet file is named after the RTOS major and minor numbers
 # (GR IIIx: 00078490.609). Command and DEVELOP.MOD as grkit writes them
-# (crates/grkit-core/src/runtime.rs, MIT).
+# (crates/grkit-core/src/runtime.rs; MIT, see LICENSE-grkit.txt).
 develop='\007\001\054\037\020\003\036\026\005\055'
 printf '[SCRIPT_EN_MODE EN]\r\n' > "$out/SCRIPT_ON/00078350.588"
 printf '[SCRIPT_EN_MODE DIS]\r\n' > "$out/SCRIPT_OFF/00078350.588"
