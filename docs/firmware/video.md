@@ -566,6 +566,14 @@ folgen deutlich den Rädern — der Wert im Modell wird im Video also
 nachgeführt. Aber alle oben links, teils überlagert: Positionstabelle
 (0, 0) für Video. Daraufhin die beiden Positionspatches.
 
+### Kameratest 2 (2026-10-22): `osd2` — **Zeit und Blende im Video-M sichtbar**
+
+RAM-Patch mit Positionen (`LOOK.PAT` 14 Bereiche, Code-CRC danach
+`e809f2d0`), neue Karte (exFAT) mit dem Einrichtungspaket. Nutzer: Zeit und
+Blende stehen im Video-M an ihrem Platz und folgen den Rädern. `osd2`
+gehört zu `MANUAL`, also zur Video-Option des Editors (Flash-Export und
+RAM-Patch). Geflasht ist es noch nicht.
+
 ## ND-Filter im Video-M (Stand 2026-10-16)
 
 Beobachtung (Kamera, Firmware mit `manual mlive7 dials osd bitrate`): Im
