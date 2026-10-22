@@ -220,7 +220,8 @@ its own ColorMatrix set and its own matrix in the free area `0x53002080…`
   The source picker then shows the LUT (its title, else the file name),
   and so do the target list, the export list and the preset notice; the
   look still computes on Standard's tone curve. Picking another source
-  keeps the fitted values and drops the LUT's name. The fit's HSL goes
+  drops the fit with it (matrix, curves, wheels, HSL, post matrix): the
+  target starts over from that source, only its grain stays. The fit's HSL goes
   in as a **base** under the HSL curves (`hsl.base`, `multiaxial::Hsl`):
   the curves stay flat for the user's own adjustments, and the core
   combines both before it encodes the stage -- hue and luminance add,

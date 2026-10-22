@@ -428,10 +428,10 @@ function setSource(T, value) {
   const s = targetSpec(T);
   const ext = value.startsWith("ext:") ? value.slice(4) : null;
   const source = ext ? T : value.slice(5);
-  // another source: the fitted values stay, the target no longer says it is the LUT
-  const wasLut = !!s.lut;
-  s.lut = null;
-  if (s.ext === ext && s.source === source) { if (wasLut) update(); return; }
+  // leaving a LUT or a film: its fit goes with it (matrix, curves, wheels, HSL,
+  // post matrix), the target starts over from the new source; grain stays
+  if (s.lut) return leaveLut(T, source, ext);
+  if (s.ext === ext && s.source === source) return;
   clearExtCurves(T, extOf(T));
   s.source = source;
   s.ext = ext;
@@ -440,6 +440,22 @@ function setSource(T, value) {
   relink();
   chanEditor.deselect();
   update();
+  requestTone();
+}
+
+function leaveLut(T, source, ext) {
+  const grain = targetSpec(T).grain;
+  clearExtCurves(T, extOf(T));
+  delete state.targets[T];
+  delete state.edits[T];
+  for (const i of targetChannels(T)) delete state.chan.edits[i];
+  for (const n of setsOf(T)) delete state.grade[n];
+  delete hsl.looks[T];
+  Object.assign(targetSpec(T), { source, ext, grain: grain || 0 });
+  applyExtCurves(T, extOf(T));
+  relink();
+  chanEditor.deselect();
+  select(T);
   requestTone();
 }
 
