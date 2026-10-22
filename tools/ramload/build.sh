@@ -8,6 +8,8 @@
 # out/SD_DUMP      copy its contents to the card root: dump the RAM (phase 0)
 # out/SD_LOAD      copy its contents to the card root, and LOOK.PAT from the
 #                  editor into SCRIPT/RAMLOAD: load a look into RAM
+# out/SD_NDMON     the same as SD_LOAD, then the read-only ND monitor
+#                  (docs/firmware/nd-monitor.md)
 # out/SCRIPT_ON    ModeSet files that turn SD scripts on (MENU held at power-on)
 # out/SCRIPT_OFF   the same, to turn them off again
 #
@@ -25,7 +27,7 @@ lld=$(command -v ld.lld)
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
-for prog in dump load; do
+for prog in dump load ndmon; do
     clang --target=armv7-linux-gnueabi -march=armv7-a -marm -O2 -ffreestanding \
         -fno-builtin -mfpu=none -mfloat-abi=soft -fno-stack-protector -fomit-frame-pointer -fno-pic \
         -c "$here/$prog.c" -o "$tmp/$prog.o"
@@ -34,14 +36,16 @@ for prog in dump load; do
 done
 
 mkdir -p "$out"
-for d in SD_DUMP SD_LOAD SCRIPT_ON SCRIPT_OFF SD_ROOT; do
+for d in SD_DUMP SD_LOAD SD_NDMON SCRIPT_ON SCRIPT_OFF SD_ROOT; do
     rm -rf "${out:?}/$d"
 done
-mkdir -p "$out/SD_DUMP/SCRIPT/RAMLOAD" "$out/SD_LOAD/SCRIPT/RAMLOAD" "$out/SCRIPT_ON" "$out/SCRIPT_OFF"
+mkdir -p "$out/SD_DUMP/SCRIPT/RAMLOAD" "$out/SD_LOAD/SCRIPT/RAMLOAD" "$out/SD_NDMON/SCRIPT/RAMLOAD" "$out/SCRIPT_ON" "$out/SCRIPT_OFF"
 cp "$here/card/dump.ttl" "$out/SD_DUMP/SCRIPT/STARTUP.TTL"
 cp "$here/card/DUMP.SH" "$tmp/DUMP.BIN" "$out/SD_DUMP/SCRIPT/RAMLOAD/"
 cp "$here/card/load.ttl" "$out/SD_LOAD/SCRIPT/STARTUP.TTL"
 cp "$here/card/LOAD.SH" "$tmp/LOAD.BIN" "$out/SD_LOAD/SCRIPT/RAMLOAD/"
+cp "$here/card/ndmon.ttl" "$out/SD_NDMON/SCRIPT/STARTUP.TTL"
+cp "$here/card/LOAD.SH" "$tmp/LOAD.BIN" "$here/card/NDMON.SH" "$tmp/NDMON.BIN" "$out/SD_NDMON/SCRIPT/RAMLOAD/"
 mkdir -p "$here/bin"
 cp "$tmp/LOAD.BIN" "$here/bin/LOAD.BIN"
 
@@ -55,7 +59,7 @@ printf "$develop" > "$out/SCRIPT_ON/DEVELOP.MOD"
 printf "$develop" > "$out/SCRIPT_OFF/DEVELOP.MOD"
 
 echo "$out"
-for d in SD_DUMP SD_LOAD SCRIPT_ON SCRIPT_OFF; do
+for d in SD_DUMP SD_LOAD SD_NDMON SCRIPT_ON SCRIPT_OFF; do
     find "$out/$d" -type f | sort | while read -r f; do
         printf '  %8d  %s\n' "$(wc -c < "$f")" "${f#"$out"/}"
     done

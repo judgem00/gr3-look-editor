@@ -1,0 +1,29 @@
+mpause 2000
+sendln 'lcmd_resp on'
+filedelete 'C:\SCRIPT\RAMLOAD\LOAD.OK'
+filedelete 'C:\SCRIPT\RAMLOAD\LOAD.ERR'
+filedelete 'C:\SCRIPT\RAMLOAD\LOAD.LCK'
+filedelete 'C:\SCRIPT\RAMLOAD\NDMON.OK'
+filedelete 'C:\SCRIPT\RAMLOAD\NDMON.ERR'
+filedelete 'C:\SCRIPT\RAMLOAD\NDMON.LCK'
+attempts = 0
+:load
+sendln 'lcmd sh /media/storage1/SCRIPT/RAMLOAD/LOAD.SH'
+filesearch 'C:\SCRIPT\RAMLOAD\LOAD.OK'
+if result != 0 goto monitor
+filesearch 'C:\SCRIPT\RAMLOAD\LOAD.ERR'
+if result != 0 goto monitor
+mpause 1000
+attempts = attempts + 1
+if attempts < 60 goto load
+:monitor
+attempts = 0
+:watch
+sendln 'lcmd sh /media/storage1/SCRIPT/RAMLOAD/NDMON.SH'
+filesearch 'C:\SCRIPT\RAMLOAD\NDMON.LCK'
+if result != 0 goto done
+mpause 1000
+attempts = attempts + 1
+if attempts < 60 goto watch
+:done
+end
