@@ -139,8 +139,9 @@ lässt sich direkt aus der verwendeten Kurve berechnen.
    MOV-Datei das kennzeichnet (CSP-Grenzen in `YCbCrOperation`).
 4. Rauschfilter im Video (`LumaNr`, `SuppreFilter`) folgen ISO-Tabellen;
    nicht untersucht.
-5. **ND im Video-M** — ruht (2026-10-16): drei Anläufe (`nd`, `ndprobe`,
-   `ndaction`) ohne Wirkung, siehe Abschnitt „ND-Filter im Video-M" (dort
+5. **ND im Video-M** — ruhte (2026-10-16): drei Anläufe (`nd`, `ndprobe`,
+   `ndaction`) ohne Wirkung; gelöst 2026-10-22 mit Patch `ndm` (RAM-Test,
+   Lauf 8), [nd-monitor.md](nd-monitor.md), siehe Abschnitt „ND-Filter im Video-M" (dort
    auch die offenen Spuren).
 
 ## Manuelle Belichtung im Video (Stand 2026-10-13, unvollständig)
@@ -681,3 +682,10 @@ Offene Spuren für einen späteren Anlauf:
 - Notnagel-Verdacht: `0x533BB820` (`02 00 00 0a` → `02 00 00 ea`) erzwingt den
   Umschalt-Zweig der Tastenaktion — nur sinnvoll, wenn der Pfad ausschließlich
   beim Tastendruck läuft.
+
+### Neuer Anlauf (2026-10-22)
+
+Mit den SD-Skripten aus [ram-loader.md](ram-loader.md): Video-M als RAM-Patch
+und ein nur lesender Monitor der ND-Kette. Liveview-Weg des ND
+(`LiveViewProcess`, Zustandsmaschine `0x5344d090`), Speicherschutz und
+Kameralauf ND1: [nd-monitor.md](nd-monitor.md).
