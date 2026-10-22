@@ -825,7 +825,7 @@ async function loadExtBases() {
 
 // ---- loading a DNG ----------------------------------------------------------
 
-async function loadDng(file, seq) {
+async function loadDng(file, seq, keep) {
   if (seq === undefined) seq = ++state.loadSeq;   // picked outside the filmstrip (Open photo, drop)
   $("busy").hidden = false;
   try {
@@ -837,7 +837,7 @@ async function loadDng(file, seq) {
     fd.append("file", file);
     const res = await api("/api/dng", { method: "POST", body: fd });
     if (!res.ok) throw new Error(await errorText(res));
-    await show(await res.json(), seq);
+    await show(await res.json(), seq, keep);
   } catch (err) {
     window.dispatchEvent(new Event("shot-failed"));   // the filmstrip hides its preview cover
     alert(t("load_failed", { msg: err.message }));
@@ -876,7 +876,7 @@ $("load-shot").onclick = async () => {
   update();
 };
 
-async function show(meta, seq) {
+async function show(meta, seq, keep) {
   // a newer photo was picked meanwhile: this load's result is no longer wanted
   if (seq !== undefined && seq !== state.loadSeq) return;
   const lin = new Float32Array(await (await api("/api/dng/linear")).arrayBuffer());
@@ -907,13 +907,22 @@ async function show(meta, seq) {
   window.dispatchEvent(new CustomEvent("shot-shown", { detail: meta }));   // the filmstrip highlights it
   hcFromShot(meta);
   state.wbShot = wbEstimate(meta.wb, wbCal());   // a new photo starts from its own white balance
-  wbAsShot();
+  if (keep) {
+    // the filmstrip keeps the preview settings (sliders, white balance, …);
+    // only the per-photo notes update
+    renderWb();
+    $("load-shot").disabled = !meta || !(Object.keys(meta.params || {}).length || meta.shot_look === "CrossProcess");
+    renderToneNote();
+  } else {
+    // otherwise a new photo starts with the preview settings at their defaults;
+    // only the white balance comes from the DNG ("Load preview settings from
+    // DNG" takes the rest)
+    wbAsShot();
+    applyShotParams(false);
+  }
   $("empty").hidden = true;
   $("shot-info").textContent = [meta.filename, meta.shot_look ? label(meta.shot_look) : meta.image_tone]
     .filter(Boolean).join(" · ");
-  // a new photo starts with the preview settings at their defaults; only the
-  // white balance comes from the DNG ("Load preview settings from DNG" takes the rest)
-  applyShotParams(false);
   renderVignetteNote();
   await fetchTone();
   update();

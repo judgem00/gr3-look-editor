@@ -210,7 +210,9 @@ function stripPrefetch(i) {
 }
 
 // one raw load at a time: switching during a load only replaces the pending
-// file, so skipped photos never reach the worker (fast flipping)
+// file, so skipped photos never reach the worker (fast flipping). The load
+// keeps the preview settings (app.js show's `keep`), so flipping through
+// photos compares them under one set of sliders.
 const stripLoader = { running: false, pending: null };
 async function stripLoad(file, seq) {
   stripLoader.pending = { file, seq };
@@ -219,7 +221,7 @@ async function stripLoad(file, seq) {
   while (stripLoader.pending) {
     const f = stripLoader.pending;
     stripLoader.pending = null;
-    await loadDng(f.file, f.seq);
+    await loadDng(f.file, f.seq, true);
   }
   stripLoader.running = false;
 }
