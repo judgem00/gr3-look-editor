@@ -6,15 +6,16 @@ use common::need;
 
 use grlook::{addr, grfw, video};
 
-/// the fourteen patches of the `manual mlive7 dials osd bitrate ndm` bundle:
+/// the fifteen patches of the `manual mlive7 dials osd2 bitrate ndm` bundle:
 /// address and length in bytes
 fn patches() -> Vec<(u32, usize)> {
     vec![
         (0x5301_A730, 36), // mlive7 stub over the dead AE_Mode handler
         (0x5346_C84C, 4),  // AE event loop: bl -> bl stub
-        (0x5301_A760, 44), // osd overlay predicate stub
-        (0x5317_BBA8, 4),  // shutter overlay item
-        (0x5317_BCC4, 4),  // aperture overlay item
+        (0x5301_A760, 32), // osd2 stubs
+        (0x532A_AD04, 4),  // shutter formatter: cmp -> bl stub
+        (0x5317_3A94, 4),  // aperture item: ldrb -> bl stub
+        (0x53B3_0B95, 2),  // overlay layout, movie row
         (0x5327_12AC, 4),  // CreateExposureMode: movie -> P branch
         (0x5329_52CC, 4),  // dial handler 1
         (0x5329_58B4, 4),  // dial handler 2
@@ -30,15 +31,16 @@ fn patches() -> Vec<(u32, usize)> {
 /// the bundle as it was flashed and camera-tested in work/grlog-test (before ndm)
 const FLASHED: &[&str] = &["manual", "mlive7", "dials", "osd", "bitrate"];
 
-/// bytes the full bundle changes in the stock image: 98 before ndm, 197 from ndm
-const CHANGED: usize = 295;
+/// bytes the full bundle changes in the stock image: 52 from manual, mlive7,
+/// dials and bitrate, 38 from osd2, 197 from ndm
+const CHANGED: usize = 287;
 
 fn decode(update: Vec<u8>) -> Vec<u8> {
     grfw::Container::parse(update).unwrap().decode().unwrap()
 }
 
 /// applying the bundle to the stock image changes exactly the CHANGED bytes
-/// at the fourteen patch addresses (each patch's stock bytes are checked by `apply`, so a
+/// at the fifteen patch addresses (each patch's stock bytes are checked by `apply`, so a
 /// moved build is refused rather than silently patched)
 #[test]
 fn patches_stock_at_exactly_the_known_addresses() {
@@ -75,6 +77,25 @@ fn export_applies_the_video_patches() {
     // everything before the last word (the image checksum, which `pack` refixes)
     let changed: Vec<usize> = (0..img.len() - 4).filter(|&i| img[i] != stock[i]).collect();
     assert_eq!(changed.len(), CHANGED, "only the video patches change the image");
+}
+
+/// the RAM patch for the card (stock base) gives the same code as the flash
+/// export: applied to the stock RTOS it reproduces the exported one, with
+/// the CRC the loader checks
+#[test]
+fn ram_patch_matches_the_flash_export() {
+    use grlook::rampatch;
+    let update = need!(common::update_file());
+    let stock = decode(update.clone());
+    let s = grlook::session::Session::open(update, "fwdc239b.bin").unwrap();
+    let body = serde_json::json!({"targets": {}, "video": true});
+    let (r, pat, _) = s.export_ram(&body, None).unwrap();
+    assert_eq!(r["video"].as_array().map(|a| a.len()), Some(patches().len()));
+    let p = rampatch::decode(&pat).unwrap();
+    let flash = decode(s.export(&body).unwrap().1);
+    let want = rampatch::view(&flash).unwrap();
+    assert_eq!(rampatch::apply(rampatch::view(&stock).unwrap(), &p).unwrap(), want);
+    assert_eq!(p.patched_code_crc, rampatch::crc32(&want[..(addr::DATA_LMA - rampatch::RTOS) as usize]));
 }
 
 /// against the camera-tested firmware: `work/grlog-test/video/unpackedFW-video`

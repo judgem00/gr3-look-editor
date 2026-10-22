@@ -485,6 +485,74 @@ Patch `osd`: Die beiden Aufrufe von `0x5317904c` gehen über einen Stub
 StillMovie == 1) sichtbar, sonst Originalbedingung. Offen ist, ob der
 Verteiler `0x5317ca24` im Video überhaupt läuft.
 
+Ergebnis (geflasht 2026-10, bestätigt 2026-10-22): ohne Wirkung. Der
+Verteiler gehört nicht zum Aufnahme-Overlay: Das Prädikat `0x5317904c`
+meldet Fehler mit `Controller/PlaybackSingleController.cpp` und
+`IsVisibleFooterItem`, es ist die Fußzeile der **Einzelbild-Wiedergabe**
+(Zustand `0x4000001`). Der zweite Verteiler `0x53182324` gehört zu
+`PlaybackMultiController.cpp`. Abgelöst durch `osd2`.
+
+### Patch `osd2` (2026-10-22)
+
+**Das Aufnahme-Overlay.** `LiveViewController::UpdateOsd` (`0x5317365c`,
+Name aus dem Assert) ruft 46 Elemente über eine Tabelle von
+Member-Funktionszeigern (`0x53b2fa48`, je `{Funktion, Anpassung}`), jedes
+mit `(this, Nummer, sichtbar)`. „Sichtbar“ kommt aus zwei Byte-Tabellen
+zu je 0x2f Bytes:
+
+- Layout `0x53b30b48 + 0x2f * [this+0x2d2]`, Byte `Nummer`;
+  `[this+0x2d2]` ist `GetCommonStillMovie()` (`0x53243e40`, gesetzt in
+  `0x5317341c`), Zeile 0 = Foto, Zeile 1 = Video;
+- Wert `0x53b2fbfc + 0x2f * [this+0x2d9]` (Anzeigestufe).
+
+In der Videozeile sind aus: 2, 3, 11, 15, 20, 21, 28–32, 35, 42.
+
+**Zeit und Blende** sind die Elemente 30 und 31. Sie lesen das
+Capture-Ready-Modell `[this+0x4e8]` (= `CaptureReadyModel + 0x10`,
+`0x532a4dac`; darin ab `+0x30` eine Kopie der CommonProperty-Daten, also
+Modus `+0x77f`, Video `+0x77e`, dazu nachgeführte Kopien `+0x940` = Video
+und `+0xb98` = Belichtungsmodus):
+
+| Element | Funktion | Wert | Formatierer | Video-Sperre |
+|---|---|---|---|---|
+| 30 Zeit | `0x5317397c` → `0x5317387c` | `+0x4ec` (float) | `0x532aae20` → `0x532aacc4` (`1/%d`) | `r5` = Video-Flag der CommonProperty (`0x53549958`): leerer String |
+| 31 Blende | `0x53173b60` → `0x53173a5c` | `+0x4f0` | `0x532ab0dc` → `0x532a9634` (`F%d.%d`) | `r2 = [+0x940]`: leerer String |
+
+Ein leerer String blendet das Element aus (`0x531416e8`-Vergleich). Im
+Video sperren also **zwei Stellen**: die Layoutzeile und der Formatierer.
+
+Patch `osd2` (Gruppe in `core/src/video.rs`, in `MANUAL` statt `osd`):
+
+| Stelle | Änderung |
+|---|---|
+| `0x5301a760` | 2 Stubs, 32 Bytes, im toten `AE_Mode`-Handler (dort lag der `osd`-Stub) |
+| `0x532aad04` | Zeit: `cmp r5, #0` → `bl` Stub 1: `cmp r5, #0; cmpne r7, #5; bx lr` (`r7` = Modus; NE = Video und nicht M → ausblenden wie ab Werk) |
+| `0x53173a94` | Blende: `ldrb r2, [r3, #0x940]` → `bl` Stub 2: `r2 = [r3+0x940]`, 0 wenn `[r3+0xb98] == 5` |
+| `0x53b30b95` | Layout, Videozeile: Elemente 30 und 31 an (`00 00` → `01 01`) |
+
+Modus 5 ist M (CommonProperty `+0x74f`, `0x5348dfbc`: 5 → interner Modus
+M); M mit ISO-Automatik meldet `CreateExposureMode` als 4, dort greift wie
+bei `mlive7` nichts. In Video P bleibt alles wie ab Werk: Die Elemente sind
+zwar im Layout an, aber der Formatierer liefert einen leeren String.
+
+Toter Platz: Die Funktion `0x5301a730..0x5301a878` (`AE_Mode`) hat keinen
+`bl`, keinen Zeiger im Image, keine movw/movt-Referenz und keinen Sprung
+von außen; die 32 Bytes ersetzen den Anfang des alten `osd`-Stubs, die
+übrigen 12 Bytes bleiben toter Originalcode.
+
+Geprüft: `tools/test-osd2.py` wendet die Gruppe aus `video.rs` auf das
+Stock-Image an und führt beide Patchstellen in Unicorn über den Stub zurück
+(Zeit: Video 0/1 × Modus 0, 1, 2, 4, 5, 7, 8; Blende: Video 0/1 × Modus 0,
+2, 4, 5; übrige Register und `sp` erhalten; Layout ändert genau 30/31): 23
+Fälle bestanden. `core/tests/video.rs`: 15 Patches, 287 geänderte Bytes
+(38 von `osd2`); RAM-Patch gegen Stock = Flash-Export (Code-CRC danach
+`81ffd138`). `LOOK.PAT` (`{"targets": {}, "video": true}`): 12 Bereiche,
+331 Bytes, SHA-256 `744921f6…`; Karte: `work/osd2/CARD`.
+
+Offen bis zum Kameratest: ob der Wert `+0x4ec`/`+0x4f0` im Video den
+Rädern folgt, und ob Zeit und Blende im Video-Layout mit anderen Elementen
+kollidieren.
+
 ## ND-Filter im Video-M (Stand 2026-10-16)
 
 Beobachtung (Kamera, Firmware mit `manual mlive7 dials osd bitrate`): Im
