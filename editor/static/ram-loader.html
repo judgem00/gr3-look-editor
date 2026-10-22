@@ -1,0 +1,359 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Test Without Flashing</title>
+<link rel="icon" href="data:,">
+<style>
+:root {
+  --bg: #121315; --panel: #1b1d20; --line: #2a2d31; --text: #e6e6e3; --muted: #8c8f94;
+  --accent: #e8b04a; --warn: #e0745a; --field: #24272b;
+  font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Inter", system-ui, sans-serif;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--text); }
+a { color: var(--accent); }
+header {
+  position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 16px;
+  padding: 10px 16px; border-bottom: 1px solid var(--line); background: rgba(18,19,21,.94); backdrop-filter: blur(6px);
+}
+.brand { font-weight: 700; letter-spacing: .04em; font-size: 13px; }
+.brand span { font-weight: 400; color: var(--muted); }
+header .grow { flex: 1; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.seg button { background: none; border: 0; color: var(--muted); padding: 5px 10px; cursor: pointer; font: 600 12px/1.4 inherit; font-family: inherit; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button.on { background: var(--field); color: var(--text); }
+.btn { display: inline-block; background: var(--field); color: var(--text); border: 1px solid var(--line);
+  border-radius: 6px; padding: 7px 14px; font: inherit; font-size: 13px; text-decoration: none; cursor: pointer; }
+.btn:hover { border-color: #444; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #1a1407; font-weight: 600; }
+
+main { max-width: 880px; margin: 0 auto; padding: 0 16px 64px; }
+.hero { padding: 48px 0 24px; }
+.hero h1 { font-size: 34px; line-height: 1.15; margin: 0 0 12px; letter-spacing: -.01em; }
+.hero p { color: var(--muted); max-width: 680px; margin: 0 0 18px; font-size: 16px; }
+.hero .row { display: flex; gap: 10px; flex-wrap: wrap; }
+h2 { font-size: 22px; margin: 48px 0 8px; }
+h2 .num { display: inline-grid; place-items: center; width: 28px; height: 28px; margin-right: 10px; border-radius: 50%;
+  background: var(--accent); color: #1a1407; font-size: 14px; vertical-align: 3px; }
+.lead { color: var(--muted); max-width: 760px; margin: 0 0 12px; }
+p b, li b, td b { color: var(--text); }
+.toc { display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 14px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); font-size: 13px; }
+.toc a { color: var(--muted); text-decoration: none; }
+.toc a:hover { color: var(--text); }
+ul.tips, ol.tips { color: var(--muted); padding-left: 20px; max-width: 760px; }
+ul.tips li, ol.tips li { margin: 6px 0; }
+.note { border-left: 3px solid var(--accent); background: rgba(232,176,74,.07); padding: 10px 14px; border-radius: 0 6px 6px 0; color: var(--muted); max-width: 760px; }
+.note.warn { border-color: var(--warn); background: rgba(224,116,90,.08); }
+code { font-size: 13px; background: var(--field); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+pre.tree { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; font-size: 13px; line-height: 1.5; overflow-x: auto; max-width: 760px; }
+pre.tree .c { color: var(--muted); }
+.table { overflow-x: auto; max-width: 760px; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: left; vertical-align: top; padding: 7px 10px; border-bottom: 1px solid var(--line); }
+th { color: var(--muted); font-weight: 600; font-size: 13px; }
+td { color: var(--muted); }
+td:first-child { white-space: nowrap; color: var(--text); }
+footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line); padding-top: 16px; margin-top: 56px; }
+
+@media (max-width: 760px) {
+  .hero h1 { font-size: 26px; }
+  header .brand span { display: none; }
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">GR III <span>Look Editor · Test without flashing</span></div>
+  <div class="grow"></div>
+  <div class="seg" id="lang" role="group" aria-label="Language">
+    <button data-lang="en" type="button">EN</button><button data-lang="de" type="button">DE</button>
+  </div>
+  <a class="btn primary" href="index.html" data-t="open_editor">Open the editor</a>
+</header>
+
+<main>
+  <section class="hero">
+    <h1 data-t="title">Test a look without flashing</h1>
+    <p data-t-html="intro"></p>
+    <p class="note warn" data-t-html="experimental"></p>
+    <div class="row">
+      <a class="btn primary" href="ramload/GR-RAMLOAD.zip" download data-t="dl_setup">Download setup package (GR-RAMLOAD.zip)</a>
+      <a class="btn" href="tutorial.html" data-t="to_tutorial">Editor tutorial</a>
+    </div>
+  </section>
+
+  <nav class="toc" id="toc"></nav>
+
+  <section id="how">
+    <h2 data-t="how_h">How it works</h2>
+    <ol class="tips">
+      <li data-t-html="how_1"></li>
+      <li data-t-html="how_2"></li>
+      <li data-t-html="how_3"></li>
+    </ol>
+    <p class="lead" data-t-html="how_need"></p>
+  </section>
+
+  <section id="s1">
+    <h2><span class="num">1</span><span data-t="s1_h">Turn on SD scripts (once)</span></h2>
+    <p class="lead" data-t-html="s1"></p>
+    <ol class="tips">
+      <li data-t-html="s1_1"></li>
+      <li data-t-html="s1_2"></li>
+      <li data-t-html="s1_3"></li>
+      <li data-t-html="s1_4"></li>
+    </ol>
+    <p class="note" data-t-html="s1_fw"></p>
+  </section>
+
+  <section id="s2">
+    <h2><span class="num">2</span><span data-t="s2_h">Put the loader on the card (once)</span></h2>
+    <p class="lead" data-t-html="s2"></p>
+<pre class="tree">SD card
+├── DCIM/
+└── SCRIPT/
+    ├── STARTUP.TTL
+    └── RAMLOAD/
+        ├── LOAD.BIN
+        ├── LOAD.SH
+        └── LOOK.PAT      <span class="c" data-t="tree_pat">← from the editor, step 3</span></pre>
+  </section>
+
+  <section id="s3">
+    <h2><span class="num">3</span><span data-t="s3_h">Create LOOK.PAT in the editor</span></h2>
+    <p class="lead" data-t-html="s3"></p>
+    <ol class="tips">
+      <li data-t-html="s3_1"></li>
+      <li data-t-html="s3_2"></li>
+      <li data-t-html="s3_3"></li>
+      <li data-t-html="s3_4"></li>
+    </ol>
+    <p class="note" data-t-html="s3_base"></p>
+  </section>
+
+  <section id="s4">
+    <h2><span class="num">4</span><span data-t="s4_h">Power on and shoot</span></h2>
+    <ol class="tips">
+      <li data-t-html="s4_1"></li>
+      <li data-t-html="s4_2"></li>
+      <li data-t-html="s4_3"></li>
+      <li data-t-html="s4_4"></li>
+    </ol>
+  </section>
+
+  <section id="s5">
+    <h2><span class="num">5</span><span data-t="s5_h">Check that it loaded</span></h2>
+    <p class="lead" data-t-html="s5"></p>
+    <div class="table">
+      <table>
+        <thead><tr><th data-t="col_file">File</th><th data-t="col_means">Meaning</th></tr></thead>
+        <tbody>
+          <tr><td><code>LOAD.OK</code></td><td data-t-html="f_ok"></td></tr>
+          <tr><td><code>LOAD.ERR</code></td><td data-t-html="f_err"></td></tr>
+          <tr><td data-t="f_none_k">neither</td><td data-t-html="f_none"></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="lead" data-t-html="err_lead" style="margin-top:20px"></p>
+    <div class="table">
+      <table>
+        <thead><tr><th data-t="col_err">error</th><th data-t="col_cause">Cause</th><th data-t="col_todo">What to do</th></tr></thead>
+        <tbody id="errors"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="s6">
+    <h2><span class="num">6</span><span data-t="s6_h">Next look, and back to normal</span></h2>
+    <ul class="tips">
+      <li data-t-html="s6_1"></li>
+      <li data-t-html="s6_2"></li>
+      <li data-t-html="s6_3"></li>
+      <li data-t-html="s6_4"></li>
+      <li data-t-html="s6_5"></li>
+    </ul>
+  </section>
+
+  <section id="help">
+    <h2 data-t="help_h">If something goes wrong</h2>
+    <ul class="tips">
+      <li data-t-html="help_1"></li>
+      <li data-t-html="help_2"></li>
+      <li data-t-html="help_3"></li>
+      <li data-t-html="help_4"></li>
+    </ul>
+    <p class="note warn" data-t="risk"></p>
+  </section>
+
+  <footer data-t-html="footer"></footer>
+</main>
+<script>
+// Texts in English and German; the choice is shared with the editor (localStorage "lang").
+const T = {
+  en: {
+    open_editor: "Open the editor",
+    title: "Test a look without flashing",
+    intro: "Instead of an update file, the editor can export a look as <code>LOOK.PAT</code>. A small loader on the SD card writes it into the camera's memory a few seconds after power-on. Nothing is flashed: after power-off the camera runs its firmware unchanged again. So you can try a look on real photos, change it and try again, and flash only the version you keep.",
+    experimental: "<b>Experimental, GR III only.</b> Tested on a GR III with firmware 2.10: colour changes and grain load and show up in the photos. The GR IIIx needs a different setup file and is not supported yet. Use it at your own risk.",
+    dl_setup: "Download setup package (GR-RAMLOAD.zip)",
+    to_tutorial: "Editor tutorial",
+    toc_how: "How it works", toc_1: "SD scripts", toc_2: "Loader", toc_3: "LOOK.PAT", toc_4: "Shoot", toc_5: "Check", toc_6: "Next look", toc_help: "Help",
+    how_h: "How it works",
+    how_1: "<b>Once per camera</b> you turn on the camera's SD scripts. From then on it runs <code>SCRIPT/STARTUP.TTL</code> from the card at each power-on.",
+    how_2: "<b>Once per card</b> you copy the loader (<code>SCRIPT/</code> from the setup package) to the card.",
+    how_3: "<b>For each look</b> you put a new <code>LOOK.PAT</code> next to the loader and switch the camera on. The loader checks that the patch fits the firmware in the camera, then writes it. If anything does not fit, it changes nothing.",
+    how_need: "You need: a GR III, an SD card, a card reader, the <a href=\"ramload/GR-RAMLOAD.zip\" download>setup package</a> and, if you have flashed a look before, the update file you flashed last (see step 3).",
+    s1_h: "Turn on SD scripts (once)",
+    s1: "This is a setting in the camera and stays on until you turn it off again (step 6). It does not change the firmware.",
+    s1_1: "Unpack <code>GR-RAMLOAD.zip</code>. Copy the two files from <code>ENABLE_SCRIPTS/</code> (<code>00078350.588</code> and <code>DEVELOP.MOD</code>) to the top-level folder of the card.",
+    s1_2: "Put the card in the camera. With the camera off, hold <b>MENU</b> and press the power button.",
+    s1_3: "The camera shows <b>Mode Set Command → Complete</b> and switches itself off.",
+    s1_4: "Delete the two files from the card again.",
+    s1_fw: "If a firmware update file (<code>FWDC239B.BIN</code>) lies in the top-level folder, the camera ignores the setup files. Take it off the card first.",
+    s2_h: "Put the loader on the card (once)",
+    s2: "Copy the folder <code>SCRIPT</code> from the package to the top-level folder of the card, next to <code>DCIM</code>. The look itself comes as <code>LOOK.PAT</code> into <code>SCRIPT/RAMLOAD/</code>:",
+    tree_pat: "← from the editor, step 3",
+    s3_h: "Create LOOK.PAT in the editor",
+    s3: "Edit your look as usual, then open <b>Export</b>.",
+    s3_1: "Open the section <b>Test without flashing (SD card, experimental)</b> at the bottom of the dialog.",
+    s3_2: "Under <b>Firmware on the camera</b>, choose the firmware the camera runs right now (see the box below).",
+    s3_3: "Click <b>Create RAM patch</b>, then <b>Download LOOK.PAT</b>. The dialog says how many changes and bytes the patch holds.",
+    s3_4: "Copy <code>LOOK.PAT</code> to <code>SCRIPT/RAMLOAD/</code> on the card. Keep the name exactly <code>LOOK.PAT</code>.",
+    s3_base: "<b>Which firmware to choose.</b> The patch holds only what differs from the firmware in the camera, so it fits exactly that one.<br>• Never flashed, or flashed back to Ricoh's file: choose <b>nothing</b>.<br>• Flashed a look from the editor: choose <b>that update file</b> (<code>FWDC239B.BIN</code>). The editor cannot tell which one it was, so keep the update file (or the preset it came from) whenever you flash.<br>A wrong choice does no harm: the loader then writes nothing and reports error 5.",
+    s4_h: "Power on and shoot",
+    s4_1: "Switch the camera on normally, <b>without</b> MENU.",
+    s4_2: "Wait about <b>one minute</b>. The camera's Linux has to start before the loader can run; the loading itself takes about 4 seconds. Photos taken earlier do not have the look yet. The camera shows nothing when it is done.",
+    s4_3: "Select the image control your look replaces and take your photos. For comparison, take one photo with an image control you did not change, for example Standard.",
+    s4_4: "Grain shows in the recorded photo only, not in the live view. That is the same after a flash.",
+    s5_h: "Check that it loaded",
+    s5: "Back at the computer, look into <code>SCRIPT/RAMLOAD/</code> on the card. The loader leaves one result file there at each power-on:",
+    col_file: "File", col_means: "Meaning",
+    f_ok: "The look was written. Inside: number of changes and bytes, the checksums before and after. <code>already 1</code> means it was already in memory (a second run after the same power-on).",
+    f_err: "Nothing was written; the camera runs as without the card. The first line is the <b>error</b> number, see below.",
+    f_none_k: "neither",
+    f_none: "The loader never ran: SD scripts are off (step 1), <code>SCRIPT</code> is not in the top-level folder, or the camera was switched off too early.",
+    err_lead: "Errors in <code>LOAD.ERR</code>. In every case the camera's memory is as before.",
+    col_err: "error", col_cause: "Cause", col_todo: "What to do",
+    e1: ["The memory of the camera could not be opened.", "Switch off and on again. If it stays, the setup does not work on this camera."],
+    e2: ["The memory could not be mapped.", "As error 1."],
+    e3: ["<code>LOOK.PAT</code> is missing or too large.", "Check name and folder: <code>SCRIPT/RAMLOAD/LOOK.PAT</code>."],
+    e4: ["<code>LOOK.PAT</code> is damaged.", "Download it again from the editor and copy it again."],
+    e5: ["The patch was made for another firmware than the one in the camera.", "Create it again with the right choice under <b>Firmware on the camera</b> (step 3)."],
+    e6: ["The patch would write outside the allowed memory.", "Should not happen with a file from the editor. Create it again."],
+    e7: ["The memory at one place holds other bytes than the patch expects.", "As error 5. The <code>detail</code> line gives the address."],
+    e8: ["Part of the patch is in memory already, part not, e.g. another <code>LOOK.PAT</code> was loaded before without power-off.", "Switch off, then on again."],
+    e9: ["Writing failed and was undone.", "Switch off and on again. If it repeats, do not go on and note the <code>detail</code> line."],
+    e10: ["Reading back differed; undone.", "As error 9."],
+    e11: ["The checksum after writing was wrong; undone.", "As error 9."],
+    s6_h: "Next look, and back to normal",
+    s6_1: "<b>Another look:</b> replace <code>LOOK.PAT</code> on the card, switch the camera off and on. Each power-on starts from the flashed firmware, so patches never stack.",
+    s6_2: "<b>Back to normal:</b> switch the camera off. Without the card, or without <code>SCRIPT</code> on it, it starts with its own firmware.",
+    s6_3: "<b>Pause the loader:</b> delete or rename the folder <code>SCRIPT</code> on the card.",
+    s6_4: "<b>Turn SD scripts off:</b> as in step 1, but with the two files from <code>DISABLE_SCRIPTS/</code>. Then delete them again.",
+    s6_5: "<b>Keep a look for good:</b> create an update file in the export dialog as usual and flash it. After that, choose this update file as the camera's firmware for the next <code>LOOK.PAT</code>.",
+    help_h: "If something goes wrong",
+    help_1: "<b>The camera hangs or does not react:</b> take the battery out, take the card out, put the battery back and switch on without the card. The patch is gone with the power; the flashed firmware is untouched.",
+    help_2: "<b>The look does not show:</b> check <code>LOAD.OK</code> first. If it is there, switch the image control away and back once, and make sure the photo was taken after the loader ran.",
+    help_3: "<b>Not together with other tools that use SD scripts</b> (for example grkit): they also use <code>SCRIPT/STARTUP.TTL</code>. Use a card of its own.",
+    help_4: "<b>Video</b> with a loaded look is not tested yet.",
+    risk: "At your own risk. This writes into the memory of the running camera; only the SD script setting is stored in the camera. This is an unofficial project, not affiliated with Ricoh Imaging.",
+    footer: "The way the loader is started from the SD card follows the idea of <a href=\"https://github.com/ahonn/grkit\" target=\"_blank\" rel=\"noopener\">grkit</a> (MIT). <a href=\"index.html\">Open the editor</a>.",
+  },
+  de: {
+    open_editor: "Editor öffnen",
+    title: "Einen Look ohne Flashen testen",
+    intro: "Statt einer Update-Datei kann der Editor einen Look als <code>LOOK.PAT</code> exportieren. Ein kleiner Loader auf der SD-Karte schreibt ihn ein paar Sekunden nach dem Einschalten in den Speicher der Kamera. Es wird nichts geflasht: Nach dem Ausschalten läuft die Kamera wieder mit ihrer Firmware. So probierst du einen Look an echten Fotos aus, änderst ihn, probierst wieder, und flashst nur die Fassung, die du behältst.",
+    experimental: "<b>Experimentell, nur GR III.</b> Getestet an einer GR III mit Firmware 2.10: Farbänderungen und Korn werden geladen und sind in den Fotos zu sehen. Die GR IIIx braucht eine andere Einrichtungsdatei und wird noch nicht unterstützt. Benutzung auf eigene Gefahr.",
+    dl_setup: "Einrichtungspaket herunterladen (GR-RAMLOAD.zip)",
+    to_tutorial: "Editor-Tutorial",
+    toc_how: "Wie es geht", toc_1: "SD-Skripte", toc_2: "Loader", toc_3: "LOOK.PAT", toc_4: "Fotografieren", toc_5: "Prüfen", toc_6: "Nächster Look", toc_help: "Hilfe",
+    how_h: "Wie es geht",
+    how_1: "<b>Einmal pro Kamera</b> schaltest du die SD-Skripte der Kamera ein. Ab dann führt sie bei jedem Einschalten <code>SCRIPT/STARTUP.TTL</code> von der Karte aus.",
+    how_2: "<b>Einmal pro Karte</b> kopierst du den Loader (<code>SCRIPT/</code> aus dem Einrichtungspaket) auf die Karte.",
+    how_3: "<b>Für jeden Look</b> legst du eine neue <code>LOOK.PAT</code> neben den Loader und schaltest die Kamera ein. Der Loader prüft, ob der Patch zur Firmware in der Kamera passt, und schreibt ihn erst dann. Passt etwas nicht, ändert er nichts.",
+    how_need: "Du brauchst: eine GR III, eine SD-Karte, ein Kartenlesegerät, das <a href=\"ramload/GR-RAMLOAD.zip\" download>Einrichtungspaket</a> und, falls du schon einmal einen Look geflasht hast, die zuletzt geflashte Update-Datei (siehe Schritt 3).",
+    s1_h: "SD-Skripte einschalten (einmalig)",
+    s1: "Das ist eine Einstellung in der Kamera und bleibt an, bis du sie wieder ausschaltest (Schritt 6). Die Firmware ändert sich dabei nicht.",
+    s1_1: "<code>GR-RAMLOAD.zip</code> entpacken. Die beiden Dateien aus <code>ENABLE_SCRIPTS/</code> (<code>00078350.588</code> und <code>DEVELOP.MOD</code>) ins Hauptverzeichnis der Karte kopieren.",
+    s1_2: "Karte in die Kamera. Bei ausgeschalteter Kamera <b>MENU</b> gedrückt halten und den Einschalter drücken.",
+    s1_3: "Die Kamera zeigt <b>Mode Set Command → Complete</b> und schaltet sich selbst aus.",
+    s1_4: "Die beiden Dateien wieder von der Karte löschen.",
+    s1_fw: "Liegt eine Firmware-Update-Datei (<code>FWDC239B.BIN</code>) im Hauptverzeichnis, beachtet die Kamera die Einrichtungsdateien nicht. Nimm sie vorher von der Karte.",
+    s2_h: "Loader auf die Karte (einmalig)",
+    s2: "Den Ordner <code>SCRIPT</code> aus dem Paket ins Hauptverzeichnis der Karte kopieren, neben <code>DCIM</code>. Der Look selbst kommt als <code>LOOK.PAT</code> nach <code>SCRIPT/RAMLOAD/</code>:",
+    tree_pat: "← aus dem Editor, Schritt 3",
+    s3_h: "LOOK.PAT im Editor erstellen",
+    s3: "Bearbeite deinen Look wie gewohnt und öffne dann <b>Export</b>.",
+    s3_1: "Unten im Dialog den Abschnitt <b>Ohne Flashen testen (SD-Karte, experimentell)</b> aufklappen.",
+    s3_2: "Unter <b>Firmware auf der Kamera</b> die Firmware wählen, mit der die Kamera gerade läuft (siehe Kasten unten).",
+    s3_3: "<b>RAM-Patch erstellen</b> klicken, dann <b>LOOK.PAT herunterladen</b>. Der Dialog zeigt, wie viele Änderungen und Bytes der Patch enthält.",
+    s3_4: "<code>LOOK.PAT</code> nach <code>SCRIPT/RAMLOAD/</code> auf die Karte kopieren. Der Name muss genau <code>LOOK.PAT</code> bleiben.",
+    s3_base: "<b>Welche Firmware wählen?</b> Der Patch enthält nur, was sich von der Firmware in der Kamera unterscheidet, und passt deshalb genau zu dieser.<br>• Nie geflasht oder auf Ricohs Datei zurückgeflasht: <b>nichts</b> wählen.<br>• Einen Look aus dem Editor geflasht: <b>diese Update-Datei</b> wählen (<code>FWDC239B.BIN</code>). Der Editor kann nicht erkennen, welche es war; bewahre deshalb bei jedem Flashen die Update-Datei (oder das Preset, aus dem sie entstand) auf.<br>Eine falsche Wahl schadet nicht: Der Loader schreibt dann nichts und meldet Fehler 5.",
+    s4_h: "Einschalten und fotografieren",
+    s4_1: "Kamera normal einschalten, <b>ohne</b> MENU.",
+    s4_2: "Etwa <b>eine Minute</b> warten. Erst muss das Linux der Kamera starten, dann läuft der Loader; das Laden selbst dauert etwa 4 Sekunden. Fotos davor haben den Look noch nicht. Die Kamera zeigt nicht an, wann es fertig ist.",
+    s4_3: "Den Bildstil wählen, den dein Look ersetzt, und fotografieren. Zum Vergleich ein Foto mit einem unveränderten Bildstil machen, zum Beispiel Standard.",
+    s4_4: "Korn ist nur im aufgenommenen Foto zu sehen, nicht im Live-Bild. Das ist nach dem Flashen genauso.",
+    s5_h: "Prüfen, ob es geladen wurde",
+    s5: "Am Computer in <code>SCRIPT/RAMLOAD/</code> auf der Karte nachsehen. Der Loader hinterlässt dort bei jedem Einschalten eine Ergebnisdatei:",
+    col_file: "Datei", col_means: "Bedeutung",
+    f_ok: "Der Look wurde geschrieben. Darin: Anzahl der Änderungen und Bytes, die Prüfsummen vorher und nachher. <code>already 1</code> heißt, er war schon im Speicher (zweiter Lauf nach demselben Einschalten).",
+    f_err: "Es wurde nichts geschrieben; die Kamera läuft wie ohne Karte. Die erste Zeile ist die Fehlernummer (<b>error</b>), siehe unten.",
+    f_none_k: "keine",
+    f_none: "Der Loader lief nie: SD-Skripte sind aus (Schritt 1), <code>SCRIPT</code> liegt nicht im Hauptverzeichnis, oder die Kamera wurde zu früh ausgeschaltet.",
+    err_lead: "Fehler in <code>LOAD.ERR</code>. In jedem Fall ist der Speicher der Kamera wie vorher.",
+    col_err: "error", col_cause: "Ursache", col_todo: "Was tun",
+    e1: ["Der Speicher der Kamera ließ sich nicht öffnen.", "Aus- und wieder einschalten. Bleibt es, funktioniert die Einrichtung an dieser Kamera nicht."],
+    e2: ["Der Speicher ließ sich nicht einblenden.", "Wie Fehler 1."],
+    e3: ["<code>LOOK.PAT</code> fehlt oder ist zu groß.", "Name und Ordner prüfen: <code>SCRIPT/RAMLOAD/LOOK.PAT</code>."],
+    e4: ["<code>LOOK.PAT</code> ist beschädigt.", "Neu aus dem Editor herunterladen und neu kopieren."],
+    e5: ["Der Patch wurde für eine andere Firmware erstellt als die in der Kamera.", "Neu erstellen, mit der richtigen Wahl unter <b>Firmware auf der Kamera</b> (Schritt 3)."],
+    e6: ["Der Patch würde außerhalb des erlaubten Speichers schreiben.", "Sollte mit einer Datei aus dem Editor nicht vorkommen. Neu erstellen."],
+    e7: ["An einer Stelle stehen andere Bytes im Speicher, als der Patch erwartet.", "Wie Fehler 5. Die Zeile <code>detail</code> nennt die Adresse."],
+    e8: ["Ein Teil des Patches steht schon im Speicher, ein Teil nicht, z. B. weil ohne Ausschalten vorher eine andere <code>LOOK.PAT</code> geladen wurde.", "Aus- und wieder einschalten."],
+    e9: ["Schreiben ist fehlgeschlagen und wurde rückgängig gemacht.", "Aus- und wieder einschalten. Wiederholt es sich, nicht weitermachen und die Zeile <code>detail</code> notieren."],
+    e10: ["Beim Zurücklesen kam etwas anderes heraus; rückgängig gemacht.", "Wie Fehler 9."],
+    e11: ["Die Prüfsumme nach dem Schreiben stimmte nicht; rückgängig gemacht.", "Wie Fehler 9."],
+    s6_h: "Nächster Look und zurück zum Normalzustand",
+    s6_1: "<b>Anderer Look:</b> <code>LOOK.PAT</code> auf der Karte ersetzen, Kamera aus- und einschalten. Jedes Einschalten beginnt mit der geflashten Firmware, Patches addieren sich also nie.",
+    s6_2: "<b>Zurück zum Normalzustand:</b> Kamera ausschalten. Ohne Karte, oder ohne <code>SCRIPT</code> darauf, startet sie mit ihrer eigenen Firmware.",
+    s6_3: "<b>Loader pausieren:</b> den Ordner <code>SCRIPT</code> auf der Karte löschen oder umbenennen.",
+    s6_4: "<b>SD-Skripte ausschalten:</b> wie Schritt 1, aber mit den beiden Dateien aus <code>DISABLE_SCRIPTS/</code>. Danach wieder löschen.",
+    s6_5: "<b>Einen Look dauerhaft behalten:</b> im Export-Dialog wie gewohnt eine Update-Datei erstellen und flashen. Danach diese Update-Datei als Firmware der Kamera für die nächste <code>LOOK.PAT</code> wählen.",
+    help_h: "Wenn etwas schiefgeht",
+    help_1: "<b>Die Kamera hängt oder reagiert nicht:</b> Akku heraus, Karte heraus, Akku wieder hinein und ohne Karte einschalten. Mit dem Strom ist der Patch weg; die geflashte Firmware ist unberührt.",
+    help_2: "<b>Der Look ist nicht zu sehen:</b> zuerst nach <code>LOAD.OK</code> sehen. Ist sie da, den Bildstil einmal weg- und zurückschalten, und darauf achten, dass das Foto nach dem Loader entstand.",
+    help_3: "<b>Nicht zusammen mit anderen Werkzeugen, die SD-Skripte nutzen</b> (zum Beispiel grkit): Sie verwenden ebenfalls <code>SCRIPT/STARTUP.TTL</code>. Nimm eine eigene Karte.",
+    help_4: "<b>Video</b> mit geladenem Look ist noch nicht getestet.",
+    risk: "Auf eigene Gefahr. Hier wird in den Speicher der laufenden Kamera geschrieben; in der Kamera gespeichert wird nur die Einstellung für die SD-Skripte. Dies ist ein inoffizielles Projekt ohne Verbindung zu Ricoh Imaging.",
+    footer: "Wie der Loader von der SD-Karte gestartet wird, folgt der Idee von <a href=\"https://github.com/ahonn/grkit\" target=\"_blank\" rel=\"noopener\">grkit</a> (MIT). <a href=\"index.html\">Editor öffnen</a>.",
+  },
+};
+let LANG = (() => { try { const l = localStorage.getItem("lang"); if (T[l]) return l; } catch {} return "en"; })();
+const t = (k) => T[LANG][k] ?? T.en[k] ?? k;
+
+const TOC = [["how", "toc_how"], ["s1", "toc_1"], ["s2", "toc_2"], ["s3", "toc_3"], ["s4", "toc_4"], ["s5", "toc_5"], ["s6", "toc_6"], ["help", "toc_help"]];
+const ERRORS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+const $ = (id) => document.getElementById(id);
+
+function render() {
+  document.documentElement.lang = LANG;
+  for (const el of document.querySelectorAll("[data-t]")) el.textContent = t(el.dataset.t);
+  for (const el of document.querySelectorAll("[data-t-html]")) el.innerHTML = t(el.dataset.tHtml);
+  for (const b of document.querySelectorAll("#lang button")) b.classList.toggle("on", b.dataset.lang === LANG);
+  $("toc").innerHTML = TOC.map(([id, k]) => `<a href="#${id}">${t(k)}</a>`).join("");
+  $("errors").innerHTML = ERRORS.map((n) => { const [cause, todo] = t("e" + n); return `<tr><td>${n}</td><td>${cause}</td><td>${todo}</td></tr>`; }).join("");
+}
+
+for (const b of document.querySelectorAll("#lang button")) b.onclick = () => {
+  LANG = b.dataset.lang;
+  try { localStorage.setItem("lang", LANG); } catch {}
+  render();
+};
+render();
+</script>
+</body>
+</html>

@@ -1,0 +1,33 @@
+Parts of tools/ramload follow GRKit (https://github.com/ahonn/grkit):
+
+- the ModeSet commands, the bytes of DEVELOP.MOD and the ModeSet file names
+  (crates/grkit-core/src/runtime.rs, crates/grkit-core/src/camera.rs)
+- card/dump.ttl and card/load.ttl (runtime/dump/STARTUP.TTL)
+- the syscall wrapper, the _start stub, the compiler flags and the layout of
+  dump.c (runtime/dump/dump.c, crates/grkit-build/src/dump.rs)
+- the way load.c writes: /dev/mem with O_SYNC, dsb and cacheflush after each
+  range, roll-back on failure (runtime/installer.c)
+
+GRKit's licence:
+
+MIT License
+
+Copyright (c) 2026 ahonn
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

@@ -6,8 +6,8 @@ use common::need;
 
 use grlook::{addr, grfw, video};
 
-/// the ten patches of the `manual mlive7 dials osd bitrate` bundle: address
-/// and length in bytes
+/// the fourteen patches of the `manual mlive7 dials osd bitrate ndm` bundle:
+/// address and length in bytes
 fn patches() -> Vec<(u32, usize)> {
     vec![
         (0x5301_A730, 36), // mlive7 stub over the dead AE_Mode handler
@@ -20,15 +20,25 @@ fn patches() -> Vec<(u32, usize)> {
         (0x5329_58B4, 4),  // dial handler 2
         (0x5329_5E84, 4),  // dial handler 3 (ISO)
         (0x5366_A3E8, 4),  // bitrate <=30 fps
+        (0x5301_A78C, 140), // ndm stub, fixed-exposure branch
+        (0x5345_431C, 4),  // AE update: strb -> bl ndm stub
+        (0x5301_A818, 64), // ndm getter stub
+        (0x5345_43D0, 4),  // AE update: bl getter -> bl getter stub
     ]
 }
+
+/// the bundle as it was flashed and camera-tested in work/grlog-test (before ndm)
+const FLASHED: &[&str] = &["manual", "mlive7", "dials", "osd", "bitrate"];
+
+/// bytes the full bundle changes in the stock image: 98 before ndm, 197 from ndm
+const CHANGED: usize = 295;
 
 fn decode(update: Vec<u8>) -> Vec<u8> {
     grfw::Container::parse(update).unwrap().decode().unwrap()
 }
 
-/// applying the bundle to the stock image changes exactly the 98 bytes at the
-/// ten patch addresses (each patch's stock bytes are checked by `apply`, so a
+/// applying the bundle to the stock image changes exactly the CHANGED bytes
+/// at the fourteen patch addresses (each patch's stock bytes are checked by `apply`, so a
 /// moved build is refused rather than silently patched)
 #[test]
 fn patches_stock_at_exactly_the_known_addresses() {
@@ -40,12 +50,12 @@ fn patches_stock_at_exactly_the_known_addresses() {
     assert_eq!(applied.len(), patches().len(), "one report line per patch");
 
     let changed: Vec<usize> = (0..img.len()).filter(|&i| img[i] != stock[i]).collect();
-    assert_eq!(changed.len(), 98, "the bundle changes 98 bytes in total");
+    assert_eq!(changed.len(), CHANGED, "the bundle changes CHANGED bytes in total");
     let in_patch = |i: usize| {
         let va = i as u32 + addr::BIAS;
         patches().iter().any(|&(a, n)| (a..a + n as u32).contains(&va))
     };
-    assert!(changed.iter().all(|&i| in_patch(i)), "no change outside the ten patches");
+    assert!(changed.iter().all(|&i| in_patch(i)), "no change outside the patches");
 }
 
 /// the export path: an empty-targets export with `video: true` changes the
@@ -64,12 +74,12 @@ fn export_applies_the_video_patches() {
     let img = decode(packed);
     // everything before the last word (the image checksum, which `pack` refixes)
     let changed: Vec<usize> = (0..img.len() - 4).filter(|&i| img[i] != stock[i]).collect();
-    assert_eq!(changed.len(), 98, "only the video patches change the image");
+    assert_eq!(changed.len(), CHANGED, "only the video patches change the image");
 }
 
 /// against the camera-tested firmware: `work/grlog-test/video/unpackedFW-video`
-/// is `unpackedFW-looks` (the GR-Log export) plus exactly these patches and a
-/// fixed checksum. Applying the patches to the looks image must reproduce the
+/// is `unpackedFW-looks` (the GR-Log export) plus the bundle as it was then
+/// (FLASHED, without ndm) and a fixed checksum. Applying the patches to the looks image must reproduce the
 /// flashed image byte for byte.
 #[test]
 fn reproduces_the_camera_tested_image() {
@@ -89,7 +99,7 @@ fn reproduces_the_camera_tested_image() {
         }
     };
     assert_eq!(looks.len(), flashed.len());
-    let names = video::MANUAL.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+    let names = FLASHED.iter().map(|s| s.to_string()).collect::<Vec<_>>();
     let mut img = looks;
     video::apply(&mut img, &names).unwrap();
     grfw::fix_image_checksum(&mut img);

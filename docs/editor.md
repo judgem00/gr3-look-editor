@@ -292,6 +292,15 @@ the camera expects it in the root directory of the SD card. If you keep editing
 afterwards, the download disappears until you export again. Before flashing:
 sort out the recovery path.
 
+**Test without flashing (experimental):** the same export as a RAM patch,
+`LOOK.PAT` (`core/src/rampatch.rs`), for a loader that writes it into the
+camera's memory from the SD card at power-on. Give it what the camera runs:
+the update file flashed last, or `RTOS.BIN` of a RAM dump; without a file it
+assumes the official firmware. The dialog also offers the setup package for
+the card (`ramload/GR-RAMLOAD.zip`). Step by step for users:
+`editor/static/ram-loader.html`; the mechanism:
+[firmware/ram-loader.md](firmware/ram-loader.md).
+
 **Loading a preset:** the `*.looks.json` written on export can be read back
 via "Load preset" in the title bar or by drag & drop onto the preview; "Load
 example preset" loads the bundled `editor/static/presets/example.looks.json`.

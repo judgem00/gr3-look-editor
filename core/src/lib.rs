@@ -18,6 +18,7 @@ pub mod looks;
 pub mod lutfit;
 pub mod multiaxial;
 pub mod postmatrix;
+pub mod rampatch;
 pub mod session;
 pub mod space;
 pub mod targets;
