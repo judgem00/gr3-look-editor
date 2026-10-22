@@ -529,6 +529,15 @@ Patch `osd2` (Gruppe in `core/src/video.rs`, in `MANUAL` statt `osd`):
 | `0x532aad04` | Zeit: `cmp r5, #0` → `bl` Stub 1: `cmp r5, #0; cmpne r7, #5; bx lr` (`r7` = Modus; NE = Video und nicht M → ausblenden wie ab Werk) |
 | `0x53173a94` | Blende: `ldrb r2, [r3, #0x940]` → `bl` Stub 2: `r2 = [r3+0x940]`, 0 wenn `[r3+0xb98] == 5` |
 | `0x53b30b95` | Layout, Videozeile: Elemente 30 und 31 an (`00 00` → `01 01`) |
+| `0x53b2fec4` | Positionen Video (Monitor): Element 30/31 auf (40, 440) / (180, 440) wie im Foto |
+| `0x53b301b4` | Positionen Video (HDMI): Element 30/31 auf (40, 680) / (180, 680) wie im Foto |
+
+**Positionen.** `0x53173328` setzt für jedes sichtbare Element die
+Position aus `0x53b2fc5c + 0x178 * [this+0x2d0] + 8 * Nummer` (`x`, `y` als
+int32). `[this+0x2d0]` kommt aus `0x5317305c`: 0 = Foto, 1 = Video, 2/3 =
+dasselbe für die Ausgabe `0x500` (HDMI, 1280 × 720). In den Videotabellen
+stehen 30 und 31 auf (0, 0); ohne die Positionspatches erschienen sie oben
+links (Kameratest 1).
 
 Modus 5 ist M (CommonProperty `+0x74f`, `0x5348dfbc`: 5 → interner Modus
 M); M mit ISO-Automatik meldet `CreateExposureMode` als 4, dort greift wie
@@ -543,15 +552,19 @@ von außen; die 32 Bytes ersetzen den Anfang des alten `osd`-Stubs, die
 Geprüft: `tools/test-osd2.py` wendet die Gruppe aus `video.rs` auf das
 Stock-Image an und führt beide Patchstellen in Unicorn über den Stub zurück
 (Zeit: Video 0/1 × Modus 0, 1, 2, 4, 5, 7, 8; Blende: Video 0/1 × Modus 0,
-2, 4, 5; übrige Register und `sp` erhalten; Layout ändert genau 30/31): 23
-Fälle bestanden. `core/tests/video.rs`: 15 Patches, 287 geänderte Bytes
-(38 von `osd2`); RAM-Patch gegen Stock = Flash-Export (Code-CRC danach
-`81ffd138`). `LOOK.PAT` (`{"targets": {}, "video": true}`): 12 Bereiche,
-331 Bytes, SHA-256 `744921f6…`; Karte: `work/osd2/CARD`.
+2, 4, 5; übrige Register und `sp` erhalten; Layout ändert genau 30/31;
+Videopositionen = Fotopositionen): 27 Fälle bestanden.
+`core/tests/video.rs`: 17 Patches, 299 geänderte Bytes (50 von `osd2`);
+RAM-Patch gegen Stock = Flash-Export (Code-CRC danach `e809f2d0`).
+`LOOK.PAT` (`{"targets": {}, "video": true}`): 14 Bereiche, 359 Bytes;
+Karte: `work/osd2/CARD`.
 
-Offen bis zum Kameratest: ob der Wert `+0x4ec`/`+0x4f0` im Video den
-Rädern folgt, und ob Zeit und Blende im Video-Layout mit anderen Elementen
-kollidieren.
+### Kameratest 1 (2026-10-22): `osd2` ohne Positionen
+
+RAM-Patch, Stock 2.10. Video M: neue Elemente erscheinen, Zeit und Blende
+folgen deutlich den Rädern — der Wert im Modell wird im Video also
+nachgeführt. Aber alle oben links, teils überlagert: Positionstabelle
+(0, 0) für Video. Daraufhin die beiden Positionspatches.
 
 ## ND-Filter im Video-M (Stand 2026-10-16)
 

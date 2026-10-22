@@ -10,7 +10,9 @@ both patch sites through their stub and back:
   untouched;
 - aperture item 0x53173a5c, from the patched `ldrb r2, [r3, #0x940]` at
   0x53173a94: r2 (the formatter's "hide") is the movie flag unless the mode
-  is M, and every other register is kept.
+  is M, and every other register is kept;
+- the layout and position tables: items 30/31 on in the movie row, at the
+  places of the still layouts.
 
     .venv/bin/python tools/test-osd2.py [IMAGE]
 """
@@ -40,7 +42,7 @@ def osd2_patches():
             r'va: 0x([0-9A-F_]+),\s*stock: "([0-9a-f]+)",\s*new: ([A-Z0-9_]+|"[0-9a-f]+")', group):
         new = stub if new == "OSD2_STUB" else new.strip('"')
         out.append((int(va.replace("_", ""), 16), bytes.fromhex(stock), bytes.fromhex(new)))
-    assert len(out) == 4, out
+    assert len(out) == 6, out
     return out
 
 
@@ -134,6 +136,17 @@ def main():
     ok = changed == [30, 31]
     fails += not ok
     print(f"layout   movie row changed items {changed}, on: {len(on)} of 46 {'ok' if ok else 'FAIL'}")
+
+    # positions: in the movie layouts (1 = LCD, 3 = HDMI) items 30/31 get
+    # the places they have in the still layouts (0, 2)
+    import struct
+    def pos(layout, item):
+        return struct.unpack_from("<ii", img, 0x53B2FC5C + 0x178 * layout + 8 * item - BASE)
+    for movie, still in ((1, 0), (3, 2)):
+        for item in (30, 31):
+            ok = pos(movie, item) == pos(still, item) != (0, 0)
+            fails += not ok
+            print(f"position layout {movie} item {item}: {pos(movie, item)} {'ok' if ok else 'FAIL'}")
 
     print("FAILED" if fails else "passed", f"({fails} failures)")
     sys.exit(1 if fails else 0)

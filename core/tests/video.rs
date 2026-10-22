@@ -6,7 +6,7 @@ use common::need;
 
 use grlook::{addr, grfw, video};
 
-/// the fifteen patches of the `manual mlive7 dials osd2 bitrate ndm` bundle:
+/// the seventeen patches of the `manual mlive7 dials osd2 bitrate ndm` bundle:
 /// address and length in bytes
 fn patches() -> Vec<(u32, usize)> {
     vec![
@@ -16,6 +16,8 @@ fn patches() -> Vec<(u32, usize)> {
         (0x532A_AD04, 4),  // shutter formatter: cmp -> bl stub
         (0x5317_3A94, 4),  // aperture item: ldrb -> bl stub
         (0x53B3_0B95, 2),  // overlay layout, movie row
+        (0x53B2_FEC4, 16), // overlay positions, movie (LCD)
+        (0x53B3_01B4, 16), // overlay positions, movie (HDMI)
         (0x5327_12AC, 4),  // CreateExposureMode: movie -> P branch
         (0x5329_52CC, 4),  // dial handler 1
         (0x5329_58B4, 4),  // dial handler 2
@@ -32,15 +34,15 @@ fn patches() -> Vec<(u32, usize)> {
 const FLASHED: &[&str] = &["manual", "mlive7", "dials", "osd", "bitrate"];
 
 /// bytes the full bundle changes in the stock image: 52 from manual, mlive7,
-/// dials and bitrate, 38 from osd2, 197 from ndm
-const CHANGED: usize = 287;
+/// dials and bitrate, 50 from osd2, 197 from ndm
+const CHANGED: usize = 299;
 
 fn decode(update: Vec<u8>) -> Vec<u8> {
     grfw::Container::parse(update).unwrap().decode().unwrap()
 }
 
 /// applying the bundle to the stock image changes exactly the CHANGED bytes
-/// at the fifteen patch addresses (each patch's stock bytes are checked by `apply`, so a
+/// at the seventeen patch addresses (each patch's stock bytes are checked by `apply`, so a
 /// moved build is refused rather than silently patched)
 #[test]
 fn patches_stock_at_exactly_the_known_addresses() {

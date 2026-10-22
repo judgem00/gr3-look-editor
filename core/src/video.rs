@@ -66,7 +66,9 @@ const OSD_STUB: &str = concat!(
 /// switches items 30/31 off, and both formatters return an empty string when
 /// the movie flag is set. The stubs keep the flag only when the exposure mode
 /// is not M (5), so movie P and the other modes stay as they are. Over the
-/// dead AE_Mode code where the osd stub was.
+/// dead AE_Mode code where the osd stub was. The movie position tables
+/// (0x53b2fc5c + 0x178 * layout, x/y per item) put both items at 0,0, so
+/// they get the positions of the still layouts.
 const OSD2_STUB: &str = concat!(
     // shutter formatter 0x532aacc4: r5 = movie flag, r7 = exposure mode;
     // the caller's bne hides the item on NE
@@ -191,6 +193,18 @@ const GROUPS: &[(&str, &[Patch])] = &[
             Patch { va: 0x532A_AD04, stock: "000055e3", new: "95bef5eb", what: "shutter formatter: cmp movie -> bl stub" },
             Patch { va: 0x5317_3A94, stock: "4029d3e5", new: "349bfaeb", what: "aperture item: ldrb movie -> bl stub" },
             Patch { va: 0x53B3_0B95, stock: "0000", new: "0101", what: "overlay layout, movie row: items 30/31 (shutter, aperture) on" },
+            Patch {
+                va: 0x53B2_FEC4,
+                stock: "00000000000000000000000000000000",
+                new: "28000000b8010000b4000000b8010000",
+                what: "overlay positions, movie (LCD): items 30/31 at (40,440), (180,440) as in still",
+            },
+            Patch {
+                va: 0x53B3_01B4,
+                stock: "00000000000000000000000000000000",
+                new: "28000000a8020000b4000000a8020000",
+                what: "overlay positions, movie (HDMI): items 30/31 at (40,680), (180,680) as in still",
+            },
         ],
     ),
     (
