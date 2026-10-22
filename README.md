@@ -49,8 +49,10 @@ Advanced options:
 - **video: manual exposure mode (M)** — the Export dialog's "Video"
   checkbox enables M on the mode dial in movie mode (the firmware otherwise
   forces P), lets the dials set shutter/aperture/ISO, shows them in the
-  overlay and doubles the 24/30p bitrate. These are the AE-engine patches
-  (`video-test.py build manual mlive7 dials osd bitrate`), developed and
+  overlay, makes the ND filter button work in M and doubles the 24/30p
+  bitrate. These are the AE-engine patches
+  (`video-test.py build manual mlive7 dials osd bitrate`, plus `ndm` for the
+  ND filter, docs/firmware/nd-monitor.md), developed and
   camera-tested on the GR III on top of
   [hhornbacher/gr3x-fw-hack](https://github.com/hhornbacher/gr3x-fw-hack)'s
   firmware exploration, now built into the editor's export.

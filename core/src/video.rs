@@ -15,8 +15,8 @@ use crate::addr;
 /// the dead `AE_Mode` debug-shell handler the stubs overwrite
 pub const HOLD_CAVE: u32 = 0x5301_A730;
 
-/// the tested video bundle: `manual mlive7 dials osd bitrate`
-pub const MANUAL: &[&str] = &["manual", "mlive7", "dials", "osd", "bitrate"];
+/// the tested video bundle: `manual mlive7 dials osd bitrate ndm`
+pub const MANUAL: &[&str] = &["manual", "mlive7", "dials", "osd", "bitrate", "ndm"];
 
 /// one byte patch: RTOS address, the stock encoding it replaces, and the
 /// replacement (both hex, little-endian instruction words)

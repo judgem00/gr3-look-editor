@@ -392,7 +392,16 @@ von `0x53454288` der Weg in Video M: der Getter-Stub (`0x534543d0`) ist
 die wirksame Änderung; der Stub im Zweig „feste Belichtung“
 (`0x5345431c`) bleibt als Absicherung.
 
-Offen: Belichtung in M nach dem Einrasten (sollte um die ND-Stufe dunkler
-werden, ohne dass Zeit/Blende/ISO sich ändern); `ndm` gehört noch nicht
-zum Standardpaket `MANUAL` und ist nur als RAM-Patch getestet, nicht
-geflasht.
+Belichtung in M nach dem Einrasten: passt (Nutzer, 2026-10-22).
+
+### Im Standardpaket
+
+`ndm` gehört seit 2026-10-22 zu `MANUAL` (`manual mlive7 dials osd bitrate
+ndm`), also zur Video-Option des Editors — beim Flash-Export wie beim
+RAM-Patch für die Karte. Geprüft mit dem Preset vom 18.10. und Video:
+Flash-Export (`core/examples/video_export.rs`) 14 Video-Patches,
+`fw-pack.py check` ok; RAM-Patch gegen Stock 35 Bereiche; beide ergeben
+denselben Code (CRC `4ad05d15`), Stubs und Sprungstellen byte-genau.
+`core/tests/video.rs`: 14 Patches, 295 geänderte Bytes (98 + 197 von
+`ndm`); der Vergleich mit dem 2026-10 geflashten Video-Image nutzt das
+Paket von damals ohne `ndm`. Geflasht ist `ndm` noch nicht.
