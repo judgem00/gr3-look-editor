@@ -2,6 +2,8 @@
 work/
 *.bin
 *.BIN
+# except our own RAM loader, built from tools/ramload/load.c by build.sh
+!tools/ramload/bin/LOAD.BIN
 unpackedFW*
 # photos carry the camera serial number in their metadata
 *.DNG

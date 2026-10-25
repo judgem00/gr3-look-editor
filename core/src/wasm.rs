@@ -112,6 +112,14 @@ impl Editor {
         Ok(Export { result: r.to_string(), update, preset })
     }
 
+    /// the export as a RAM patch (LOOK.PAT, in `take_update`); `base` is what
+    /// the camera runs: an update file or RTOS.BIN of a RAM dump, empty = stock
+    pub fn export_ram(&self, body: &str, base: Vec<u8>) -> Result<Export, JsError> {
+        let base = (!base.is_empty()).then_some(&base[..]);
+        let (r, update, preset) = self.session.export_ram(&parse(body)?, base).map_err(js)?;
+        Ok(Export { result: r.to_string(), update, preset })
+    }
+
     pub fn lut_info(&self, text: &str) -> Result<String, JsError> {
         Ok(self.session.lut_info(text).map_err(js)?.to_string())
     }

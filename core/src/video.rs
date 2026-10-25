@@ -15,8 +15,8 @@ use crate::addr;
 /// the dead `AE_Mode` debug-shell handler the stubs overwrite
 pub const HOLD_CAVE: u32 = 0x5301_A730;
 
-/// the tested video bundle: `manual mlive7 dials osd bitrate`
-pub const MANUAL: &[&str] = &["manual", "mlive7", "dials", "osd", "bitrate"];
+/// the tested video bundle: `manual mlive7 dials osd bitrate ndm`
+pub const MANUAL: &[&str] = &["manual", "mlive7", "dials", "osd", "bitrate", "ndm"];
 
 /// one byte patch: RTOS address, the stock encoding it replaces, and the
 /// replacement (both hex, little-endian instruction words)
@@ -58,6 +58,73 @@ const OSD_STUB: &str = concat!(
     "2f7a05ea", // b     0x5317904c           original predicate
 );
 
+/// ndm: in M the AE update 0x53454288 skips fetching the settings (fixed
+/// exposure, [ae+0x428b] = 1) and with them the ND setting, so the ND
+/// button never reaches the ND state machine 0x5344d090. The stub, called
+/// from that branch, does the ND part of the other branch and nothing else
+/// (docs/firmware/nd-monitor.md). In movie it takes the ND setting from
+/// UserData MovieNdFilter, since in M the AE settings object never gets it
+/// (camera run 6). r4 = AE context + 0x5000.
+const NDM_STUB: &str = concat!(
+    "04e02de5", // push  {lr}
+    "2c16c4e5", // strb  r1, [r4, #0x62c]     the instruction the bl replaced
+    "5b35d4e5", // ldrb  r3, [r4, #0x55b]
+    "000053e3", // cmp   r3, #0
+    "1c00001a", // bne   done
+    "943694e5", // ldr   r3, [r4, #0x694]     ND requests
+    "050013e3", // tst   r3, #5
+    "1900001a", // bne   done
+    "340f03e3", // movw  r0, #0x3f34          UserData model 0x55063f30, +4: its data
+    "060545e3", // movt  r0, #0x5506
+    "000090e5", // ldr   r0, [r0]
+    "000050e3", // cmp   r0, #0
+    "0600000a", // beq   settings
+    "4430d0e5", // ldrb  r3, [r0, #0x44]      still/movie: 1 = movie
+    "010053e3", // cmp   r3, #1
+    "0300001a", // bne   settings
+    "3025d0e5", // ldrb  r2, [r0, #0x530]     MovieNdFilter: 1 on, 2 off
+    "010052e3", // cmp   r2, #1
+    "0020a013", // movne r2, #0
+    "030000ea", // b     apply
+    "440594e5", // settings: ldr r0, [r4, #0x544]  AE settings object
+    "000050e3", // cmp   r0, #0
+    "0a00000a", // beq   done
+    "3820d0e5", // ldrb  r2, [r0, #0x38]      ND setting (getter 0x5356c688)
+    "5825c4e5", // apply: strb r2, [r4, #0x558]
+    "9126c4e5", // strb  r2, [r4, #0x691]
+    "9036d4e5", // ldrb  r3, [r4, #0x690]     ND state the AE runs with
+    "030052e1", // cmp   r2, r3
+    "0400000a", // beq   done
+    "8436d4e5", // ldrb  r3, [r4, #0x684]     a move still pending
+    "000053e3", // cmp   r3, #0
+    "0130a003", // moveq r3, #1
+    "5a35c405", // strbeq r3, [r4, #0x55a]    apply the ND change
+    "5935c405", // strbeq r3, [r4, #0x559]
+    "04f09de4", // done: pop {pc}
+);
+
+/// ndm, second stub: the other branch of 0x53454288 fetches the ND setting
+/// with the getter 0x5356c688 from the AE settings object, which in movie
+/// M never gets it; in movie the stub hands on MovieNdFilter instead.
+const NDM_GETTER_STUB: &str = concat!(
+    "02402de9", // push  {r1, lr}
+    "994715eb", // bl    0x5356c688           the getter the bl replaced
+    "0240bde8", // pop   {r1, lr}
+    "340f03e3", // movw  r0, #0x3f34          UserData model 0x55063f30, +4: its data
+    "060545e3", // movt  r0, #0x5506
+    "000090e5", // ldr   r0, [r0]
+    "000050e3", // cmp   r0, #0
+    "1eff2f01", // bxeq  lr
+    "4430d0e5", // ldrb  r3, [r0, #0x44]      still/movie: 1 = movie
+    "010053e3", // cmp   r3, #1
+    "1eff2f11", // bxne  lr
+    "3035d0e5", // ldrb  r3, [r0, #0x530]     MovieNdFilter: 1 on, 2 off
+    "010053e3", // cmp   r3, #1
+    "0030a013", // movne r3, #0
+    "0030c1e5", // strb  r3, [r1]             the ND setting the AE update goes on with
+    "1eff2fe1", // bx    lr
+);
+
 const GROUPS: &[(&str, &[Patch])] = &[
     (
         "manual",
@@ -93,6 +160,25 @@ const GROUPS: &[(&str, &[Patch])] = &[
         &[
             Patch { va: HOLD_CAVE, stock: "0dc0a0e130d82de904b04ce214304be208d04de2040023e50300a0e1ff811aeb000050e3", new: MLIVE7_STUB, what: "movie: mode +0x122 -> +0x8e stub over dead shell handler" },
             Patch { va: 0x5346_C84C, stock: "771900eb", new: "b7b7eeeb", what: "AE event loop: bl 0x53472e30 -> bl stub" },
+        ],
+    ),
+    (
+        "ndm",
+        &[
+            Patch {
+                va: 0x5301_A78C,
+                stock: "f00804e3c10345e36d761aebd80401e3c20345e36a761aebe40401e3c20345e367761aebf00401e3c20345e364761aebfc0401e3c20345e361761aeb080501e3c20345e35e761aeb140501e3c20345e35b761aeb200501e3c20345e358761aeb0000a0e314d04be230a89de80040a0e30150a0e398ef11eb0c3090e55450c3e595ef11eb080090e50410a0e1",
+                new: NDM_STUB,
+                what: "ND in M: stub over dead shell handler (after osd)",
+            },
+            Patch { va: 0x5345_431C, stock: "2c16c4e5", new: "1a19efeb", what: "AE update, fixed-exposure branch: strb -> bl ND stub" },
+            Patch {
+                va: 0x5301_A818,
+                stock: "bcda11eb91ef11eb080090e50410a0e1cfdb11eb0000a0e314d04be230a89de80240a0e30150a0e3eeffffea0540a0e30150a0e3ebffffea0140a0e30450a0e1",
+                new: NDM_GETTER_STUB,
+                what: "ND in M: getter stub over dead shell handler (after the ND stub)",
+            },
+            Patch { va: 0x5345_43D0, stock: "ac6004eb", new: "1019efeb", what: "AE update, settings branch: bl ND getter -> bl getter stub" },
         ],
     ),
 ];
