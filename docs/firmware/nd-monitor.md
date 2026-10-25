@@ -396,7 +396,7 @@ Belichtung in M nach dem Einrasten: passt (Nutzer, 2026-10-22).
 
 ### Im Standardpaket
 
-`ndm` gehört seit 2026-10-22 zu `MANUAL` (`manual mlive7 dials osd bitrate
+`ndm` gehört seit 2026-10-22 zu `MANUAL` (damals `manual mlive7 dials osd bitrate
 ndm`), also zur Video-Option des Editors — beim Flash-Export wie beim
 RAM-Patch für die Karte. Geprüft mit dem Preset vom 18.10. und Video:
 Flash-Export (`core/examples/video_export.rs`) 14 Video-Patches,

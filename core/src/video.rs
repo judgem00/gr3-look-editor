@@ -15,8 +15,8 @@ use crate::addr;
 /// the dead `AE_Mode` debug-shell handler the stubs overwrite
 pub const HOLD_CAVE: u32 = 0x5301_A730;
 
-/// the tested video bundle: `manual mlive7 dials osd bitrate ndm`
-pub const MANUAL: &[&str] = &["manual", "mlive7", "dials", "osd", "bitrate", "ndm"];
+/// the tested video bundle: `manual mlive7 dials osd2 bitrate ndm`
+pub const MANUAL: &[&str] = &["manual", "mlive7", "dials", "osd2", "bitrate", "ndm"];
 
 /// one byte patch: RTOS address, the stock encoding it replaces, and the
 /// replacement (both hex, little-endian instruction words)
@@ -43,7 +43,10 @@ const MLIVE7_STUB: &str = concat!(
     "b66111ea", // b     0x53472e30           unchanged per-frame AE
 );
 
-/// osd: overlay predicate stub (dead AE_Mode code after the mlive7 stub)
+/// osd: overlay predicate stub (dead AE_Mode code after the mlive7 stub).
+/// Without effect: the predicate belongs to the playback footer
+/// (PlaybackSingleController), not to the live view overlay. Kept for the
+/// image flashed in 2026-10; replaced by osd2.
 const OSD_STUB: &str = concat!(
     "10402de9", // push  {r4, lr}
     "0040a0e1", // mov   r4, r0
@@ -56,6 +59,29 @@ const OSD_STUB: &str = concat!(
     "0400a0e1", // mov   r0, r4
     "1040bde8", // pop   {r4, lr}
     "2f7a05ea", // b     0x5317904c           original predicate
+);
+
+/// osd2: the live view overlay (LiveViewController::UpdateOsd 0x5317365c)
+/// hides shutter speed and aperture in movie twice: the layout row for movie
+/// switches items 30/31 off, and both formatters return an empty string when
+/// the movie flag is set. The stubs keep the flag only when the exposure mode
+/// is not M (5), so movie P and the other modes stay as they are. Over the
+/// dead AE_Mode code where the osd stub was. The movie position tables
+/// (0x53b2fc5c + 0x178 * layout, x/y per item) put both items at 0,0, so
+/// they get the positions of the still layouts.
+const OSD2_STUB: &str = concat!(
+    // shutter formatter 0x532aacc4: r5 = movie flag, r7 = exposure mode;
+    // the caller's bne hides the item on NE
+    "000055e3", // cmp   r5, #0
+    "05005713", // cmpne r7, #5               movie and not M: NE
+    "1eff2fe1", // bx    lr
+    // aperture item 0x53173a5c: r3 = [this+0x4e8], the capture-ready data;
+    // r2 is the formatter's "hide" argument (0x532ab0dc)
+    "4029d3e5", // ldrb  r2, [r3, #0x940]     movie flag (tracked copy)
+    "98cbd3e5", // ldrb  ip, [r3, #0xb98]     exposure mode (tracked copy)
+    "05005ce3", // cmp   ip, #5
+    "0020a003", // moveq r2, #0               M: show
+    "1eff2fe1", // bx    lr
 );
 
 /// ndm: in M the AE update 0x53454288 skips fetching the settings (fixed
@@ -153,6 +179,32 @@ const GROUPS: &[(&str, &[Patch])] = &[
             },
             Patch { va: 0x5317_BBA8, stock: "27f5ffeb", new: "ec7afaeb", what: "shutter overlay item: bl predicate -> stub" },
             Patch { va: 0x5317_BCC4, stock: "e0f4ffeb", new: "a57afaeb", what: "aperture overlay item: bl predicate -> stub" },
+        ],
+    ),
+    (
+        "osd2",
+        &[
+            Patch {
+                va: 0x5301_A760,
+                stock: "2400000a610053e33200000a740053e33600000a730053e33700000a6d0053e3",
+                new: OSD2_STUB,
+                what: "overlay: shutter/aperture in movie M, stubs over dead shell handler",
+            },
+            Patch { va: 0x532A_AD04, stock: "000055e3", new: "95bef5eb", what: "shutter formatter: cmp movie -> bl stub" },
+            Patch { va: 0x5317_3A94, stock: "4029d3e5", new: "349bfaeb", what: "aperture item: ldrb movie -> bl stub" },
+            Patch { va: 0x53B3_0B95, stock: "0000", new: "0101", what: "overlay layout, movie row: items 30/31 (shutter, aperture) on" },
+            Patch {
+                va: 0x53B2_FEC4,
+                stock: "00000000000000000000000000000000",
+                new: "28000000b8010000b4000000b8010000",
+                what: "overlay positions, movie (LCD): items 30/31 at (40,440), (180,440) as in still",
+            },
+            Patch {
+                va: 0x53B3_01B4,
+                stock: "00000000000000000000000000000000",
+                new: "28000000a8020000b4000000a8020000",
+                what: "overlay positions, movie (HDMI): items 30/31 at (40,680), (180,680) as in still",
+            },
         ],
     ),
     (
